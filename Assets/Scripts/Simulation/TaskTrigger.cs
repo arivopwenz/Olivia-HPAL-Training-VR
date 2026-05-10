@@ -1,23 +1,49 @@
 using UnityEngine;
-using UnityEngine.XR.Interaction.Toolkit;
-using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 public class TaskTrigger : MonoBehaviour
 {
+    public enum TaskType { Helm, Rompi, Kacamata, Sepatu, ScannerAmbil }
+    
+    [Header("=== SOP Task Configuration ===")]
+    [Tooltip("Pilih jenis APD atau tugas yang akan dilaporkan saat objek ini diinteraksi.")]
+    public TaskType tipeTugas;
+
     private PhaseManager phaseManager;
 
     void Start()
     {
-        // Cari Game_Manager di awal game
         phaseManager = GameObject.FindObjectOfType<PhaseManager>();
+        if (phaseManager == null)
+        {
+            Debug.LogError($"[TaskTrigger] PhaseManager tidak ditemukan di scene! Pastikan ada objek PhaseManager.");
+        }
     }
 
-    // Fungsi ini kita panggil lewat Event di Inspector
+    /// <summary>
+    /// Panggil fungsi ini dari event 'Select Entered' di XR Grab Interactable 
+    /// atau event interaksi lainnya di Inspector.
+    /// </summary>
     public void NotifyGrab()
     {
-        if (phaseManager != null)
+        if (phaseManager == null) return;
+
+        switch (tipeTugas)
         {
-            phaseManager.OnScannerGrabbed();
+            case TaskType.Helm: 
+                phaseManager.OnHelmetWorn(); 
+                break;
+            case TaskType.Rompi: 
+                phaseManager.OnVestWorn(); 
+                break;
+            case TaskType.Kacamata: 
+                phaseManager.OnGlassesWorn(); 
+                break;
+            case TaskType.Sepatu: 
+                phaseManager.OnBootsWorn(); 
+                break;
+            case TaskType.ScannerAmbil: 
+                phaseManager.OnScannerGrabbed(); 
+                break;
         }
     }
 }

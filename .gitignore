@@ -67,8 +67,14 @@ crashlytics-build.properties
 # Packed tutorial avatars
 *.ht
 
-# Exported fbxs
-*.fbx
+# 3D Models (Kept included in project)
+# *.fbx
+# *.obj
+
 
 # Visual script graph generated file
 *.vsgraph.meta
+
+# Ignore local research documents
+Assets/Script/Roadmap/HPAL_DeepResearch.md
+Assets/Script/Roadmap/HPAL_DeepResearch.md.meta
