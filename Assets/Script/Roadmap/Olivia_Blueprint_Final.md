@@ -1,466 +1,184 @@
-# 🏭 OLIVIA — Blueprint Final
-## Simulasi VR: Pengendalian Reaktor HPAL & Limbah Tailing B3
+# 🏭 OLIVIA VR — Blueprint Final v3.0
+## Sistem Level-Based HPAL Process Simulation
 
-> Dokumen lengkap yang menggabungkan **rincian teknis industri HPAL**, **alur gameplay VR**, dan **strategi untuk memenangkan lomba**. Disusun sebagai panduan utama pengembangan proyek.
-
----
-
-# 📖 BAGIAN 1 — DASAR TEKNIS INDUSTRI HPAL
-
-## 1.1 Apa Itu HPAL?
-
-**HPAL (High-Pressure Acid Leaching)** adalah metode hidrometalurgi canggih yang menggunakan cairan kimia, suhu tinggi, dan tekanan tinggi untuk mengekstrak **nikel** serta **kobalt** dari bijih nikel kadar rendah (limonit).
-
-| Parameter | Nilai |
-|-----------|-------|
-| Suhu operasional | 240°C – 270°C |
-| Tekanan operasional | 40 – 60 Bar |
-| Bahan kimia utama | Asam Sulfat (H₂SO₄) |
-| Bahan baku | Bijih nikel laterit (limonit) |
-| Waktu tinggal di reaktor | ± 60 menit |
+> **Konsep Utama:** Setiap Level = Satu Tahap dalam Flowsheet HPAL Nyata (Total 14 Level)
+> **Mekanisme Unik:** X-Ray/Invisible View, Voice Walkie-Talkie Wajib (dengan balasan suara NPC), Perspective Shift DCS ↔ Lapangan, Sinkronisasi Parameter DCS dengan Realita Lapangan.
+> **Patokan Industri:** Flowsheet 14-Titik (Crusher → Dry Stack Tailings → K3 Emergency)
 
 ---
 
-## 1.2 Proses Awal: Persiapan Material (Benefisiasi)
+## 🗺️ Peta Dunia Game (3 Zona Bisa Dijelajahi)
 
-Sebelum masuk ke reaktor utama, bahan baku harus dipersiapkan melalui 3 langkah:
-
-### 🪨 Penghancuran Material
-Proses dimulai dengan menambang bijih nikel laterit, yang kemudian **dihancurkan dan disaring** menjadi partikel halus.
-
-### 💧 Pembuatan Slurry
-Material halus dicampur dengan air untuk membentuk **bubur lumpur pekat** yang disebut **slurry**.
-
-### 🔥 Pemanasan Awal
-Sebelum dipompa masuk ke reaktor utama, slurry dipanaskan terlebih dahulu menggunakan **uap (steam) sisa** untuk menghemat energi.
-
-```
-Alur Persiapan:
-Tambang Batu Nikel → Hancurkan jadi halus → Campur air → SLURRY → Panaskan dengan uap sisa
-```
+| Zona | Nama | Isi |
+|------|------|-----|
+| 🔵 A | DCS Control Room | Monitor layar besar, **14 Tombol Sistem (sesuai level)**, Walkie Talkie, Tombol ESD |
+| 🟠 B | Lantai Pabrik (Atas) | Autoclave, pipa steam, platform, tangga, catwalk |
+| 🟢 C | Lantai Pabrik (Bawah) | Crusher, Slurry Tank, Pump, Flash Vessel, CCD, MHP, Tailing |
 
 ---
 
-## 1.3 Alat Utama: Reaktor Autoclave
+## 📋 Sistem Level Lengkap (Level 0 - 14)
 
-Jantung dari fasilitas HPAL adalah **Reaktor Autoclave**. Alat ini bukan tungku pembakaran dengan api, melainkan semacam **"panci presto" kimia raksasa** bertekanan sangat tinggi.
-
-### Bentuk & Material Konstruksi
-- Berbentuk **silinder horizontal raksasa**
-- Terbuat dari **baja karbon tebal**
-- Bagian dalam dilapisi **Titanium murni** atau **batu bata tahan api khusus** (karena campurannya sangat korosif dan panas)
-
-### Komponen Internal
-- **Kompartemen** yang dipisahkan oleh dinding penyekat (**baffles**)
-- **Baling-baling pengaduk (agitator)** berbahan titanium yang berputar konstan untuk mencampur slurry secara merata
-
-### Mekanisme Reaksi
-Slurry yang sudah dipanaskan **dipompa masuk** ke dalam autoclave, kemudian **Asam Sulfat (H₂SO₄) disuntikkan**. Pada suhu dan tekanan tinggi, nikel dan kobalt **larut terpisah** dari batuan.
-
-### Parameter Operasional (KRITIS)
-
-| Parameter | Nilai Optimal | Batas Bahaya |
-|-----------|--------------|-------------|
-| Suhu | 250°C | > 270°C |
-| Tekanan | 50 Bar | > 65 Bar |
-
-### Sistem Pendinginan (Quench Water)
-Reaksi pelarutan asam bersifat **eksotermik** (menghasilkan panasnya sendiri). Jika suhu terus melonjak, sistem harus **secara otomatis menyuntikkan air pendingin (quench water)** ke dalam reaktor untuk mencegah suhu melampaui batas aman.
-
-### Tantangan Operasional Utama: KERAK (Scale)
-Reaksi ini menghasilkan produk padat (seperti **hematit** dan **alunit**) yang rentan membentuk **kerak tebal (scale)** pada dinding dan bilah agitator titanium. Dampaknya:
-- ❌ Mengganggu aliran cairan
-- ❌ Merusak pengaduk
-- ❌ Menyumbat katup tekanan
+**PENTING: Di setiap level, pemain WAJIB melakukan laporan via Walkie Talkie setelah menyelesaikan tugas, dan akan selalu ada suara balasan (MP3/WAV) dari operator NPC (DCS/Field) sebagai konfirmasi.**
 
 ---
 
-## 1.4 Alat Lanjutan: Flash Vessel & Tata Kelola Limbah
+### ⚫ LEVEL 0 — Tutorial VR (Mekanik Dasar)
+**Lokasi:** Ruang Briefing / Lobby  
+**Tujuan:** Pemain belajar cara mengontrol game sebelum masuk area pabrik.
 
-### Flash Vessels (Penurun Tekanan)
-Setelah ± 60 menit di dalam autoclave, slurry nikel cair yang sangat panas dan bertekanan tinggi **tidak bisa dikeluarkan langsung** ke udara terbuka. Slurry harus dialirkan melalui serangkaian tangki yang disebut **Flash Vessels** (stasiun letdown) untuk menurunkan suhu dan tekanannya **secara bertahap** kembali ke kondisi atmosfer normal (1 atm).
-
-```
-Autoclave (250°C, 50 Bar) → Flash Vessel 1 → Flash Vessel 2 → ... → Kondisi Normal (1 atm)
-```
-
-### Limbah Tailing (B3) ☠️
-Setelah nikel dan kobalt berhasil diekstraksi, **sekitar 99% sisa material** menjadi limbah bubur asam (**acid tailings**).
-
-| Aspek | Detail |
-|-------|--------|
-| Kategori | Limbah Bahan Berbahaya dan Beracun (B3) |
-| Kandungan | Logam berat + asam sulfat |
-| Penanganan | Dinetralkan → disaring kadar air → disimpan ketat |
-| Fasilitas penyimpanan | Bendungan tailing atau Dry Stack Tailings Facility (DSTF) |
-| Risiko | Bencana lingkungan jika tidak ditangani dengan benar |
+**Materi Tutorial:**
+1. Cara berjalan (Joystick Continuous Move)
+2. Cara grab/megang objek (XR Grab)
+3. Cara menggunakan Walkie Talkie (Grab HT + tekan PTT + bicara) → Terdengar balasan audio instruktur.
+4. Cara membaca UI Hologram/Outline.
 
 ---
 
-# 🎮 BAGIAN 2 — ALUR GAMEPLAY VR
-
-Di dalam aplikasi VR, pemain ditempatkan di tengah operasional pabrik dan diuji kesigapannya dalam mengatasi malfungsi industri skala besar.
-
----
-
-## Fase 0 — Tutorial & Onboarding (BARU ✨)
-
-> Fase perkenalan sebelum simulasi utama dimulai.
-
-### Visual
-- Ruang virtual netral dengan hologram 3D interaktif
-
-### Aktivitas
-- **Narasi voice-over** menjelaskan: *"Selamat datang di pabrik HPAL..."*
-- Hologram 3D menunjukkan **alur proses** dari batu → nikel
-- Pemain bisa **mengangkat dan memegang** model 3D bijih nikel, autoclave mini, dll
-- Pengenalan **kontrol VR** dasar (grip, trigger, teleport)
-
-### Durasi
-- 2-3 menit, **bisa di-skip** untuk pemain berpengalaman
-
-### Tujuan
-- Memastikan semua pemain (termasuk juri) **memahami konteks** sebelum masuk simulasi
+### 🟢 LEVEL 1 — Persiapan APD (Safety Zone)
+**Lokasi:** Ruang Loker  
+**Peran:** Operator Baru  
+**Checklist Quest:** Pakai 7 item APD: Helm, Rompi, Kacamata, Sepatu, Sarung Tangan, **Masker/Respirator**, dan **Walkie Talkie**.
+**Selesai jika:** Lapor HT: *"DCS, APD lengkap."* Balasan: *"Copy, pintu Safety Gate terbuka."*
 
 ---
 
-## Fase 1 — Ruang Kontrol DCS 🖥️
-
-> Pemain bertugas sebagai operator DCS di ruang kendali pusat.
-
-### Visual
-- Ruang DCS (Distributed Control System) yang aman
-- Dipenuhi **layar komputer, monitor HMI (Human-Machine Interface), dan panel alarm**
-- Suasana tenang, profesional
-
-### Dashboard Monitor Real-Time
-
-```
-┌──────────────────────────────────────────────┐
-│  🏭 HPAL REACTOR MONITORING SYSTEM v2.1      │
-├──────────┬──────────┬──────────┬─────────────┤
-│ SUHU     │ TEKANAN  │ pH ASAM  │ ALIRAN      │
-│ 248.7°C  │ 49.2 Bar │ 1.3      │ 12.4 m³/h   │
-│ [██████] │ [█████░] │ [██░░░░] │ [███████░]  │
-│ ✅ NORMAL │ ✅ NORMAL│ ⚠️ LOW  │ ✅ NORMAL    │
-├──────────┴──────────┴──────────┴─────────────┤
-│ AGITATOR RPM: 45.2  │  QUENCH: STANDBY       │
-│ SCALE LEVEL: 23%    │  UPTIME: 847h          │
-└──────────────────────────────────────────────┘
-```
-
-### Parameter yang Dimonitor
-| Parameter | Fungsi | Target |
-|-----------|--------|--------|
-| Suhu | Temperatur reaktor | 250°C |
-| Tekanan | Tekanan dalam autoclave | 50 Bar |
-| pH Level | Keasaman cairan | Optimal range |
-| Flow Rate | Laju aliran asam sulfat | Stabil |
-| RPM Agitator | Kecepatan pengaduk | 45 RPM |
-| Scale Level | Tingkat kerak | < 30% |
-
-### Aktivitas Pemain
-1. Mengawasi grafik indikator suhu dan tekanan
-2. **Mengkalibrasi** laju aliran asam sulfat
-3. Memastikan suhu bertahan di **250°C** dan tekanan stabil di **50 Bar**
-4. Merespons jika ada parameter yang keluar batas normal
+### 🔵 LEVEL 2 — DCS: Persiapan Menghidupkan Mesin
+**Lokasi:** DCS Control Room  
+**Peran:** DCS Operator  
+**Mekanik DCS Panel:** Panel utama DCS memiliki **14 Tombol**. Pada level ini, belum ada tombol mesin yang ditekan. Pemain hanya cek parameter awal.
+**Selesai jika:** Lapor HT: *"Field, siapkan area Crusher."* Balasan audio: *"Siap, menuju Crusher."*
 
 ---
 
-## Fase 1.5 — Persiapan APD (BARU ✨)
-
-> Sebelum turun ke lantai pabrik, pemain WAJIB memakai Alat Pelindung Diri.
-
-### Aktivitas
-Pemain harus **mengambil dan memasang** APD secara fisik menggunakan controller VR:
-
-| APD | Cara Pakai VR |
-|-----|--------------|
-| 🪖 Helm safety | Ambil dari rak → taruh di kepala |
-| 🥽 Kacamata pelindung | Ambil → pasang di wajah |
-| 🧤 Sarung tangan tahan panas | Ambil → pakai di kedua tangan |
-| 👢 Sepatu safety | Otomatis (visual indicator) |
-
-### Aturan
-- Jika APD **tidak lengkap** → akses ke lantai pabrik **DITOLAK**
-- Muncul penjelasan: *"Mengapa APD penting di fasilitas HPAL?"*
-- Ini mengajarkan **K3 secara natural** tanpa terasa menggurui
+### 🟠 LEVEL 3 — Lapangan: Ore Masuk ke Slurry Tank
+**Lokasi:** Area Crusher & Slurry Tank  
+**Peran:** Field Worker  
+**Quest:** X-Ray View di Crusher & Slurry Tank. Tunggu cairan 25%.
+**Selesai jika:** Lapor HT: *"Ore masuk ke Slurry Tank, cairan 25%."* Balasan DCS: *"Copy, standby untuk aktivasi Slurry Pump."*
 
 ---
 
-## Fase 2 — Lantai Pabrik & X-Ray Vision 🔍
-
-> Pemain turun ke lantai pabrik untuk inspeksi langsung pada Autoclave.
-
-### Visual
-- **Lantai pabrik (plant floor)** dengan suara mesin bising dan getaran ringan
-- Berdiri tepat di depan **tabung Autoclave raksasa**
-- Uap/asap tipis keluar dari pipa, lampu industri kuning-oranye
-
-### Aktivitas
-1. Menggunakan controller VR, pemain mengaktifkan mode **"X-Ray Vision"**
-2. Dinding baja pelindung autoclave berubah **transparan secara holografis**
-3. Pemain melihat **agitator titanium** berputar di dalam cairan asam
-4. Pemain harus **mencari area penumpukan kerak (scale)** berlebih
-5. **Menandai** area rusak dalam sistem pemeliharaan pabrik
-
-### Interaksi VR
-| Aksi | Gesture |
-|------|---------|
-| Aktifkan X-Ray | Tekan tombol khusus di controller |
-| Zoom inspeksi | Pinch gesture (cubit) |
-| Tandai kerak | Point & confirm |
-| Rotasi pandangan | Putar kepala (head tracking) |
+### 🔵 LEVEL 4 — DCS: Aktifkan Slurry Pump + Pengaturan Flow Rate
+**Lokasi:** DCS Control Room  
+**Peran:** DCS Operator  
+**Mekanik DCS Panel:** Tombol ke-4 (**Slurry Pump**) di panel DCS akan berkedip. Setelah mesin menyala, pemain harus menekan **tombol [+] atau [-]** di bawah monitor mini untuk mengatur laju aliran sesuai Standard Operating Procedure (SOP).
+**Target SOP Pabrik:** Flow Rate Slurry harus tepat di **450 m³/h**.
+**Sinkronisasi Visual:** Kecepatan animasi aliran cairan di lapangan akan **100% sinkron** dengan angka di DCS monitor mini.
+**Selesai jika:** Angka di monitor mini mencapai ± 450 m³/h + Lapor HT: *"Slurry Pump aktif, flow rate diset 450 meter kubik per jam."* Balasan Field: *"Copy, memantau aliran ke Pre-heater."*
 
 ---
 
-## Fase 3 — Skenario Kebocoran & Tanggap Darurat 🚨
-
-> **KLIMAKS FINAL** — Situasi darurat yang menguji kecepatan dan ketepatan pemain.
-
-### Kondisi Bahaya
-- Katup penurun tekanan (**letdown valve**) **macet** karena terganjal kerak tebal
-- Lampu VR berubah **MERAH**
-- **Sirine tanda bahaya** berbunyi kencang
-- Monitor menunjukkan tekanan melonjak drastis melewati **65 Bar**
-
-### Aktivitas Penyelamatan
-
-```
-⚠️  ALARM: KATUP MACET — KERAK MENYUMBAT
-     ↓
-📈  Tekanan naik > 65 Bar (ZONA BAHAYA!)
-     ↓
-🔴  Lampu merah, sirine, alarm blaring
-     ↓
-⏱️  COUNTDOWN: 45 DETIK
-     ↓
-🏃  Pemain harus:
-     ├── 1. Berlari menyusuri jalur pipa
-     ├── 2. Mencari & memutar tuas ISOLATION VALVE
-     └── 3. Menekan tombol EMERGENCY SHUT-DOWN (ESD)
-```
-
-### Interaksi VR Detail
-| Aksi | Implementasi |
-|------|-------------|
-| Putar isolation valve | **Grip + putar tangan** searah jarum jam |
-| Tekan tombol ESD | **Pecahkan kaca pelindung** dulu → baru tekan tombol |
-| Navigasi | Berlari virtual / teleport menyusuri jalur pipa |
-
-### Skenario Dinamis (Bukan Scripted!)
-| Aspek | Implementasi |
-|-------|-------------|
-| Lokasi kebocoran | **Random** — berbeda setiap kali main |
-| Kecepatan tekanan naik | Tergantung **reaksi pemain** — lambat bereaksi = naik lebih cepat |
-| Tingkat kerak | **Tumbuh progresif** sepanjang simulasi |
-| Difficulty | **Adaptif** — makin jago, makin menantang |
+### 🟠 LEVEL 5 — Lapangan: Buka Katup Steam & Pre-heater
+**Lokasi:** Area Pre-heater  
+**Quest:** Putar Valve Steam 100%. X-Ray Pre-heater (suhu naik 180°C).
+**Selesai jika:** Valve diputar + Lapor HT: *"Katup steam terbuka, suhu naik."* Balasan DCS: *"Copy, bersiap untuk injeksi asam."*
 
 ---
 
-## Hasil: Berhasil ✅
-
-### Sistem Rapor & Sertifikat
-
-```
-╔══════════════════════════════════════╗
-║   SERTIFIKAT KOMPETENSI K3          ║
-║   OPERATOR REAKTOR HPAL             ║
-╠══════════════════════════════════════╣
-║ Nama      : [Input pemain]          ║
-║ Tanggal   : [Auto-generated]        ║
-║ Skor      : 87/100 ⭐⭐⭐⭐           ║
-╠══════════════════════════════════════╣
-║ Waktu Tanggap    : 12.3 dtk  (A)    ║
-║ Akurasi Katup    : 94%       (A+)   ║
-║ Kepatuhan K3     : 78%       (B+)   ║
-║ Inspeksi Scale   : 100%      (A+)   ║
-╠══════════════════════════════════════╣
-║ GRADE KESELURUHAN: A-               ║
-║ STATUS: LULUS ✅                     ║
-╚══════════════════════════════════════╝
-```
-
-### Metrik Penilaian
-| Metrik | Bobot | Penjelasan |
-|--------|-------|-----------|
-| Waktu tanggap darurat | 30% | Seberapa cepat pemain merespons alarm |
-| Ketepatan memutar katup | 25% | Akurasi gerakan putar valve |
-| Kepatuhan K3 | 25% | APD lengkap, prosedur benar |
-| Inspeksi scale | 20% | Ketepatan menandai area kerak |
-
-### Fitur Tambahan
-- Bisa di-**screenshot** atau **export** sebagai gambar
-- Ada **ranking/leaderboard** untuk beberapa pemain
-- **Replay value** — pemain ingin main lagi untuk skor lebih tinggi
+### 🔵 LEVEL 6 — DCS: Pengaturan Presisi Injeksi Asam (Acid Injection)
+**Lokasi:** DCS Control Room  
+**Quest:** Tekan tombol ke-6 (**Acid Injection**). Sebuah UI panel kontrol presisi (monitor mini dengan tombol [+] dan [-]) akan muncul. Pemain harus memasukkan rasio injeksi asam sulfat (H₂SO₄) sesuai patokan pabrik.
+**Target SOP Pabrik:** Dosis Asam Sulfat = **350 kg/ton bijih**.
+Jika dosis diset tepat dengan tombol, nilai pH akan turun perlahan dan stabil di **pH 1.0**.
+**Selesai jika:** Dosis diset 350 kg/ton + pH 1.0 + Lapor HT: *"Acid Injection aktif, rasio 350 kg per ton, pH 1.0."* Balasan Field: *"Copy, aman masuk Autoclave."*
 
 ---
 
-## Hasil: Gagal ❌
-
-### Konsekuensi Kegagalan
-Jika pemain gagal menekan tombol ESD tepat waktu:
-- Pipa **meledak**
-- Limbah tailing asam bersuhu **250°C menyembur** ke area pabrik
-
-### Visualisasi Dampak Lingkungan (Cutscene 15 detik)
-```
-Pipa meledak → Tailing menyembur →
-   ↓
-Cutscene:
-   - Limbah mengalir ke sungai terdekat
-   - Air sungai berubah warna
-   - Ikan-ikan mati mengambang
-   - Warga desa terlihat panik
-   - Teks: "2,400 hektar lahan pertanian tercemar"
-   - Teks: "Butuh 25 tahun untuk pemulihan"
-```
-
-### Tujuan
-Bukan untuk menakuti, tapi untuk **menunjukkan stakes nyata** dari kelalaian operasional. Poin edukasi lingkungan yang sangat kuat.
+### 🟠 LEVEL 7 — Lapangan: Monitor Parameter Autoclave
+**Lokasi:** Samping Autoclave Raksasa  
+**Quest:** X-Ray Autoclave. Lihat agitator berputar, slurry, dan perubahan warna kimia. Pemain lapangan harus membaca indikator analog di mesin dan memastikan sesuai dengan patokan.
+**Target SOP Pabrik (Autoclave):** 
+- **Tekanan Atmosfer (Pressure):** 45 - 50 atm
+- **Suhu (Temperature):** 250°C - 255°C
+- **Putaran Agitator:** 60 RPM
+**Selesai jika:** Lapor HT: *"Autoclave normal, Suhu 250 derajat, Tekanan 50 atm, Agitator 60 RPM."* Balasan DCS: *"Copy, parameter sesuai SOP, lanjut monitoring ketat."*
 
 ---
 
-# 🎬 BAGIAN 3 — ELEMEN PENDUKUNG
-
-## 3.1 Opening Cinematic (30 detik)
-
-```
-[Layar hitam]
-Teks: "Indonesia adalah produsen nikel terbesar dunia."
-
-[Aerial shot pabrik HPAL di tengah hutan tropis]
-Teks: "Setiap tahun, ribuan pekerja menghadapi risiko di fasilitas HPAL."
-
-[Close-up autoclave, uap mengepul]
-Teks: "Satu kesalahan kecil bisa mengubah segalanya."
-
-[Fade to white]
-Teks: "Apakah kamu siap?"
-
-[OLIVIA — HPAL Safety Training Simulator]
-[Tekan trigger untuk mulai]
-```
+### 🔵 LEVEL 8 — DCS: Monitoring Ketat & Koreksi Parameter
+**Lokasi:** DCS Control Room  
+**Quest:** Pantau parameter selama 60 detik. Secara acak, **RPM Agitator akan drop ke 40 RPM** atau **Tekanan naik ke 53 atm**. Pemain harus cepat menekan tombol **[+] atau [-]** di monitor mini koreksi DCS untuk mengembalikan nilai ke Target SOP (Suhu 250°C, Tekanan 50 atm, RPM 60).
+**Selesai jika:** Lapor HT: *"Parameter terkoreksi dan stabil di angka SOP."* Balasan: *"Copy, proses optimal."*
 
 ---
 
-## 3.2 Narasi Suara & Subtitle
-
-| Bahasa | Fungsi |
-|--------|--------|
-| 🇮🇩 Indonesia | Narasi utama (voice-over) |
-| 🇬🇧 English | Subtitle (toggle on/off) |
-
-- Gunakan AI TTS jika belum ada voice actor
-- Suara serius, profesional, gaya narrator dokumenter industri
-- Menunjukkan proyek **siap untuk audiens internasional**
+### 🟠 LEVEL 9 — Lapangan: Letdown & Flash Vessel
+**Lokasi:** Area Letdown Valve & Flash Vessel  
+**Quest:** X-Ray Flash Vessel, lihat tekanan turun ke 12 atm. Uap keluar.
+**Selesai jika:** Lapor HT: *"Flash Vessel normal, tekanan 12 atm."* Balasan DCS: *"Copy, siap ke CCD."*
 
 ---
 
-## 3.3 Sound Design
-
-| Situasi | Sound Design |
-|---------|-------------|
-| Ruang Kontrol (Fase 1) | Dengungan AC, beep monitor, keyboard |
-| Lantai Pabrik (Fase 2) | Mesin berderu, pipa bergetar, langkah kaki di metal grating |
-| X-Ray Mode | Suara sci-fi futuristik, hum energi |
-| ALARM! (Fase 3) | Sirine industri, detak jantung makin kencang |
-| Berhasil | Sound relief, musik heroik singkat |
-| Gagal | Ledakan, gas mendesis, silence → dampak |
-
-> **PENTING:** Gunakan **Spatial Audio (3D Audio)** — suara datang dari arah sumber. Mesin di kiri, terdengar dari kiri. Ini standar VR modern.
+### 🔵 LEVEL 10 — DCS: Aktifkan CCD Separator
+**Lokasi:** DCS Control Room  
+**Quest:** Tekan tombol ke-10 (**CCD Separator**) yang berkedip.
+**Selesai jika:** Lapor HT: *"CCD aktif, PLS mengalir."* Balasan Field: *"Copy, menuju area presipitasi."*
 
 ---
 
-## 3.4 Visual Atmosphere
-
-- **Pencahayaan:** Lampu industri kuning-oranye, bayangan keras, area gelap di sudut
-- **Partikel:** Uap/asap tipis keluar dari pipa, percikan api las di kejauhan
-- **Cuaca:** Langit mendung, awan bergerak (area outdoor)
-- **Detail kecil:** Stiker peringatan K3, pemadam kebakaran, rambu-rambu safety
+### 🟠 LEVEL 11 — Lapangan: MHP Precipitation
+**Lokasi:** Area MHP Tank  
+**Quest:** X-Ray MHP Tank (endapan hijau). Ambil botol sampel.
+**Selesai jika:** Sampel diambil + Lapor HT: *"MHP terbentuk, produk normal."* Balasan DCS: *"Copy, proses produksi utama selesai."*
 
 ---
 
-## 3.5 Mode Studi Kasus (Menu Ekstra)
-
-Tampilkan 2-3 **kasus kecelakaan HPAL/smelter dunia nyata**:
-- Lokasi, tahun, penyebab, dampak
-- Analisis: apa yang salah, bagaimana seharusnya
-- Hubungkan ke skenario gameplay: *"Di simulasi ini, kamu baru saja mencegah insiden serupa!"*
-
-> Menunjukkan riset mendalam, bukan cuma bikin game.
+### 🟢 LEVEL 12 — DCS: Mengalirkan Limbah ke Tailing
+**Lokasi:** DCS Control Room  
+**Quest:** Tekan tombol ke-12 (**Tailing Discharge**) untuk mengalirkan sisa limbah asam ke area pengolahan. 
+**Selesai jika:** Lapor HT: *"Limbah dialirkan ke area Tailing."* Balasan Field: *"Copy, siap melakukan netralisasi."*
 
 ---
 
-# 🏆 BAGIAN 4 — STRATEGI PRESENTASI & LOMBA
-
-## 4.1 Framing yang Kuat
-
-**JANGAN** presentasikan sebagai: *"Kami membuat game VR"*
-
-**PRESENTASIKAN** sebagai:
-> *"Kami mengembangkan industrial training simulator berbasis VR yang mensimulasikan operasional reaktor HPAL untuk melatih kesiapan tanggap darurat operator pabrik nikel, sekaligus meningkatkan kesadaran dampak lingkungan dari limbah B3."*
-
----
-
-## 4.2 Poin Highlight untuk Juri
-
-1. ✅ **Relevansi nasional** — Indonesia penghasil nikel terbesar, banyak pabrik HPAL baru dibangun
-2. ✅ **Solusi nyata** — Bisa dipakai beneran untuk training operator baru
-3. ✅ **Keselamatan** — Operator bisa latihan di VR tanpa risiko cedera
-4. ✅ **Edukasi lingkungan** — Menunjukkan dampak nyata limbah tailing
-5. ✅ **Teknologi canggih** — VR + fisika dinamis + spatial audio + X-Ray vision
+### 🟢 LEVEL 13 — Lapangan: Tailing & Waste Management (Immersive Learning Limbah)
+**Lokasi:** Area Tailing (Suasana berbeda, label B3)  
+**Peran:** Field Worker  
+**Fokus Immersive:** Edukasi cara mengolah limbah B3 nikel agar aman bagi lingkungan.
+**Quest:**
+1. Cek indikator pH Tailing (awalnya asam, < 3.0).
+2. Grab karung/ember **Kapur (Limestone)** dan tuang ke tangki netralisasi.
+3. Tunggu pH naik menjadi **8.0 - 9.0** (Aman).
+4. Tekan tombol lokal untuk mengaktifkan **Filter Press**. X-Ray Filter Press: cairan dipisahkan dari lumpur padat (Tailing Cake).
+5. Konfirmasi tailing cake jatuh ke area Dry Stack Storage yang aman.
+**Selesai jika:** pH netral + Filter Press jalan + Lapor HT: *"Netralisasi berhasil, pH 8.5. Tailing aman di Dry Stack."* Balasan DCS: *"Copy, lingkungan aman."*
 
 ---
 
-## 4.3 Kata Kunci Power untuk Proposal
-
-- *"Immersive industrial training"*
-- *"Hazard awareness through experiential learning"*
-- *"Dynamic scenario generation"*
-- *"Real-time monitoring simulation"*
-- *"Environmental impact visualization"*
-- *"Occupational safety compliance training"*
-
----
-
-# 📋 BAGIAN 5 — PRIORITAS IMPLEMENTASI
-
-Kerjakan sesuai urutan prioritas:
-
-| Prioritas | Fitur | Estimasi |
-|-----------|-------|----------|
-| 🔴 **P0 — WAJIB** | 3 Fase utama berjalan (Kontrol → Inspeksi → Darurat) | Inti proyek |
-| 🔴 **P0 — WAJIB** | Dashboard monitor real-time | 2-3 hari |
-| 🔴 **P0 — WAJIB** | Sound design & alarm system | 1-2 hari |
-| 🟡 **P1 — PENTING** | Tutorial/Onboarding (Fase 0) | 1-2 hari |
-| 🟡 **P1 — PENTING** | Sistem skor + sertifikat K3 | 1 hari |
-| 🟡 **P1 — PENTING** | Wajib pakai APD sebelum masuk pabrik | 1 hari |
-| 🟡 **P1 — PENTING** | Opening cinematic | 1 hari |
-| 🟢 **P2 — NILAI TAMBAH** | Skenario dinamis (random kebocoran) | 2-3 hari |
-| 🟢 **P2 — NILAI TAMBAH** | Visualisasi dampak lingkungan (cutscene gagal) | 2 hari |
-| 🟢 **P2 — NILAI TAMBAH** | Narasi voice-over + subtitle bilingual | 1-2 hari |
-| 🔵 **P3 — BONUS** | Mode studi kasus kejadian nyata | 1 hari |
-| 🔵 **P3 — BONUS** | Interaksi tangan VR advanced | 2-3 hari |
+### 🔴 LEVEL 14 — DARURAT: Situasi K3 & Kebocoran Sistem (REALISTIS)
+**Lokasi:** DCS Control Room  
+**Pemicu:** Tiba-tiba saat operasional normal.  
+**Situasi Realistis (TIDAK ADA LEDAKAN):**
+- Terjadi **Kebocoran Pipa Asam Sulfat (H2SO4)** atau **Overpressure Uap Panas (Steam Leak)**.
+- Suara mendesis keras, asap putih pekat / uap kimia menyebar di lantai pabrik.
+- Alarm K3 berbunyi. Lampu merah berkedip.
+- Bar kesehatan/safety field worker (jika ada di area itu) akan terancam jika tidak pakai Respirator.
+**Quest Darurat (SOP K3 Nasional/Internasional):**
+1. **[DCS]** Acknowledge alarm kebocoran.
+2. **[DCS]** Ambil Walkie Talkie: *"EMERGENCY! Kebocoran Asam di Sektor 2! Semua personel evakuasi!"* Balasan audio panik dari lapangan: *"Copy, kami evakuasi sekarang!"*
+3. **[DCS]** Cari dan tekan tombol **ESD (Emergency Shutdown)** di DCS panel.
+4. Semua valve input asam dan steam akan menutup otomatis. Pompa mati.
+**Ending BERHASIL:** Kebocoran berhenti, uap menghilang perlahan. *"SISTEM AMAN. Evakuasi berhasil, tidak ada korban."*  
+**Ending GAGAL:** Terlambat menekan ESD. Sistem shutdown otomatis namun dengan damage tinggi. *"KEGAGALAN SISTEM. Paparan kimia melewati batas aman."*
 
 ---
 
-# 📊 RINGKASAN PROYEK
+## ⚙️ Breakdown Mekanisme Mesin Utama
 
-| Aspek | Detail |
-|-------|--------|
-| **Nama** | OLIVIA |
-| **Tema** | Industri HPAL (pengolahan nikel) |
-| **Platform** | VR (Virtual Reality) |
-| **Peran pemain** | Operator pabrik / DCS Operator |
-| **Tujuan utama** | Edukasi K3 & pengendalian reaktor |
-| **Jumlah fase** | 5 (Tutorial → Kontrol → APD → Inspeksi → Darurat) |
-| **Klimaks** | Skenario darurat kebocoran reaktor |
-| **Output akhir** | Skor evaluasi & Sertifikat K3 |
-| **Diferensiasi** | Skenario dinamis, X-Ray Vision, dampak lingkungan |
+1. **Slurry Pump (Pompa Lumpur):** Menghisap campuran bijih nikel dan air. Menggunakan variabel **Flow Rate (m³/h)**. Laju aliran di DCS mengontrol kecepatan putaran baling-baling animasi dan kecepatan mengalirnya partikel cairan di pipa secara real-time.
+2. **Pre-Heater (Pemanas Awal):** Memanfaatkan injeksi uap panas (Steam). Dioperasikan dengan memutar **Rotary Valve** fisik menggunakan tangan VR. Variabel utamanya adalah **Temperature (°C)**.
+5. **Autoclave (Reaktor Jantung HPAL):** Silinder bertekanan tinggi berbahan Titanium. Menggunakan agitator berputar cepat. Variabel: **Tekanan Atmosfer (atm)**, **Suhu (°C)**, dan **RPM Agitator**. Reaksi kimia (pelindian) terjadi di sini mengubah nikel padat menjadi larutan cair (PLS).
+6. **Flash Vessel:** Penurun tekanan cepat. Mengubah tekanan ekstrem Autoclave (50 atm) kembali mendekati normal (1-12 atm) dengan cara melepaskan sebagian besar cairan menjadi uap (Flash Steam).
+5. **CCD (Counter Current Decantation):** Tangki pemisah gravitasi raksasa. Memisahkan cairan kaya nikel (PLS) yang jernih di atas, dari sisa lumpur padat yang mengendap di bawah.
+6. **Filter Press (Pengolah Limbah):** Mesin pres hidrolik berlapis-lapis. Memeras sisa lumpur asam (setelah dinetralkan kapur) menjadi "kue" kering (Tailing Cake) agar airnya bisa didaur ulang dan padatannya aman ditumpuk (Dry Stack).
 
 ---
 
-> 💡 *Yang membedakan proyek **bagus** dengan proyek **juara** bukan jumlah fitur, tapi **kedalaman dan polish**. Lebih baik punya 3 fase yang sangat polished daripada 10 fitur setengah jadi. Buat juri lupa mereka pakai VR headset.*
->
-> *"Simplicity is the ultimate sophistication."* — Leonardo da Vinci
+## 🏆 Sistem Skor Per Level
+| Aspek | Bobot |
+|-------|-------|
+| Kecepatan selesaikan quest | 25% |
+| Ketepatan Voice Command | 25% |
+| Kelengkapan inspeksi (X-Ray) | 25% |
+| Kesesuaian Urutan SOP | 25% |
+**Nilai Akhir:** Rata-rata semua level. Syarat lulus ≥ 70% (Mendapat Sertifikat K3 Virtual).

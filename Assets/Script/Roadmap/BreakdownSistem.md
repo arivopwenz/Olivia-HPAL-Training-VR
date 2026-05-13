@@ -1,53 +1,134 @@
-Berikut adalah rincian lengkap mengenai cara kerja industri HPAL, spesifikasi mesin, dan alur skenario simulasi VR-nya. Penjelasan ini telah disusun dalam format Markdown (.md) agar mudah Anda salin dan gunakan langsung sebagai bahan penyusunan proposal Anda.
+# ⚙️ Breakdown Sistem & Mekanik Teknis OLIVIA VR v3.0
+## Panduan Developer — Semua Mekanik Dipetakan ke Industri HPAL Nyata
 
-Rincian Teknis dan Alur Simulasi VR: Pengendalian Reaktor HPAL & Limbah Tailing B3
-1. Proses Awal dan Persiapan Material (Benefisiasi)
-Proses HPAL (High-Pressure Acid Leaching) adalah metode hidrometalurgi canggih yang menggunakan cairan kimia, suhu tinggi, dan tekanan tinggi untuk mengekstrak nikel serta kobalt dari bijih nikel kadar rendah (limonit).
+---
 
-Penghancuran Material: Proses dimulai dengan menambang bijih nikel laterit, yang kemudian dihancurkan dan disaring menjadi partikel halus.
+## 1. Arsitektur Level System
 
-Pembuatan Slurry: Material halus ini dicampur dengan air untuk membentuk bubur lumpur pekat yang disebut slurry.
+```
+GameLevelManager (Pusat Kontrol)
+    │
+    ├── Level 0  Tutorial
+    ├── Level 1  APD Safety
+    ├── Level 2  DCS Voice Prep
+    ├── Level 3  Field: Ore → Slurry
+    ├── Level 4  DCS: Slurry Pump (Sync Speed)
+    ├── Level 5  Field: Steam Valve + Pre-heater
+    ├── Level 6  DCS: Acid Injection
+    ├── Level 7  Field: X-Ray Autoclave
+    ├── Level 8  DCS: Monitoring Ketat
+    ├── Level 9  Field: Letdown + Flash Vessel
+    ├── Level 10 DCS: CCD Activation
+    ├── Level 11 Field: MHP Sampling
+    ├── Level 12 DCS: Tailing Discharge
+    ├── Level 13 Field: Tailing Waste Management (Immersive Learning)
+    └── Level 14 DARURAT: K3 Kebocoran Asam/Steam (NO EXPLOSION)
+```
 
-Pemanasan Awal: Sebelum dipompa masuk ke reaktor utama, slurry ini dipanaskan terlebih dahulu menggunakan uap (steam) sisa untuk menghemat energi.
+**Script Utama:**
+- `GameLevelManager.cs` — state machine level, unlock, skor
+- `DCSMonitorUI.cs` — 14 Tombol Sinkronisasi Level & Kecepatan Flow
+- `PhaseManager.cs` — sub-state dalam setiap level (APD, operasional, dll)
+- `VoiceCommandSystem.cs` — pendeteksi kata kunci pemain (wajib per level) + trigger balasan MP3 NPC.
+- `XRayViewController.cs` — toggle transparan pada mesin
 
-2. Alat Utama: Reaktor Autoclave dan Mekanisme Kerjanya
-Jantung dari fasilitas HPAL adalah reaktor Autoclave. Alat ini bukan tungku pembakaran dengan api, melainkan semacam "panci presto" kimia raksasa bertekanan sangat tinggi.
+---
 
-Bentuk dan Material Konstruksi: Autoclave berbentuk silinder horizontal raksasa yang terbuat dari baja karbon tebal. Karena campuran di dalamnya sangat korosif dan panas, seluruh bagian dalam dinding autoclave wajib dilapisi dengan material Titanium murni atau batu bata tahan api khusus agar tidak hancur atau meleleh.
+## 2. Mekanisme DCS 14-Tombol & Flow Sync
 
-Komponen Internal: Di dalam autoclave terdapat kompartemen yang dipisahkan oleh dinding penyekat (baffles), serta dilengkapi dengan baling-baling pengaduk (agitator) berbahan titanium yang berputar konstan untuk mencampur slurry secara merata,.
+**UI Hologram Tombol DCS:**
+Panel utama DCS memiliki **14 tombol khusus**, merepresentasikan 14 titik kontrol. Di setiap level yang membutuhkan aksi DCS, tombol yang relevan akan **berkedip** dan memiliki **outline tepi tebal bercahaya (glowing outline) / hologram panah** ke arah tombol tersebut. Pemain tahu persis tombol mana yang harus ditekan.
 
-Mekanisme Reaksi: Slurry yang sudah dipanaskan dipompa masuk ke dalam autoclave, kemudian Asam Sulfat (H2SO4) disuntikkan.
+**Sinkronisasi Kecepatan (Flow Sync):**
+Nilai parameter `Flow Rate (m³/h)` di layar DCS mengontrol langsung parameter animasi di lapangan:
+- Jika Flow Rate di DCS = `12 m³/h`, kecepatan shader aliran cairan dan RPM rotasi partikel slurry di lapangan berada pada `Speed = 1.0`.
+- Jika Flow Rate turun = `5 m³/h`, parameter `Speed` di Material Shader cairan turun menjadi `0.41` (animasi berjalan sangat lambat). Hal ini menjadi parameter penilaian yang presisi.
 
-Parameter Operasional (Kritis): Reaktor ini beroperasi pada suhu ekstrem sekitar 240°C hingga 270°C, dan harus ditahan pada tekanan sangat tinggi antara 40 hingga 60 Bar,.
+---
 
-Pendinginan (Quench Water): Reaksi pelarutan asam ini bersifat eksotermik, yang berarti menghasilkan panasnya sendiri. Jika suhu terus melonjak, sistem harus secara otomatis menyuntikkan air pendingin (quench water) ke dalam reaktor untuk mencegah suhu melampaui batas aman.
+## 3. Sistem APD — Level 1 (7 Item Wajib)
 
-Tantangan Operasional Utama: Reaksi ini menghasilkan produk padat (seperti hematit dan alunit) yang rentan membentuk kerak tebal (scale) pada dinding dan bilah agitator titanium,. Kerak ini dapat mengganggu aliran cairan, merusak pengaduk, dan menyumbat katup tekanan,.
+| No | Item APD | Fungsi Industri Nyata | Socket Target |
+|----|----------|----------------------|---------------|
+| 1 | Helm K3 | Lindungi kepala dari benda jatuh | Head socket |
+| 2 | Rompi Safety | Visibilitas + pelindung dada | Torso socket |
+| 3 | Kacamata Pelindung | Lindungi dari percikan H₂SO₄ | Face socket |
+| 4 | Sepatu Safety | Lindungi kaki dari asam & benda berat | Feet socket |
+| 5 | Sarung Tangan Kimia | Kontak pipa & peralatan berasam | Hands socket |
+| 6 | **Masker / Respirator** | Wajib area H₂SO₄ & uap panas | Face socket (lapis) |
+| 7 | **Walkie Talkie / HT** | Komunikasi DCS ↔ Lapangan | Hip socket (pinggang) |
 
-3. Alat Lanjutan: Flash Vessel dan Tata Kelola Limbah Tailing
-Flash Vessels (Penurun Tekanan): Slurry menghabiskan waktu sekitar 60 menit di dalam autoclave. Setelah itu, slurry nikel cair yang sangat panas dan bertekanan tinggi ini tidak bisa dikeluarkan langsung ke udara terbuka. Slurry harus dialirkan melalui serangkaian tangki yang disebut Flash Vessels atau stasiun letdown untuk menurunkan suhu dan tekanannya secara bertahap kembali ke kondisi atmosfer normal (1 atm),.
+---
 
-Limbah Tailing (B3): Setelah nikel dan kobalt berhasil diekstraksi dari cairan, sekitar 99% sisa materialnya menjadi limbah bubur asam (acid tailings). Limbah ini masuk ke dalam kategori Limbah Bahan Berbahaya dan Beracun (B3) yang mengandung logam berat dan asam sulfat. Limbah tailing ini harus dinetralkan terlebih dahulu, disaring kadar airnya, lalu disimpan dengan sangat ketat di fasilitas bendungan tailing atau Dry Stack Tailings Facility (DSTF) agar tidak memicu bencana lingkungan.
+## 4. Sistem Walkie Talkie & Voice Command Wajib
 
-4. Alur Gameplay VR (Dari Awal Hingga Final)
-Di dalam aplikasi VR, pemain akan ditempatkan di tengah operasional pabrik dan diuji kesigapannya dalam mengatasi malfungsi industri skala besar.
+**Teknologi:** `UnityEngine.Windows.Speech.KeywordRecognizer` (offline, gratis, akurat) dikombinasikan dengan pemutar `AudioSource` MP3/WAV.
 
-Fase 1: Ruang Kontrol DCS (Awal)
-Visual: Pemain memulai simulasi di dalam Ruang DCS (Distributed Control System), yakni ruang kendali pusat yang aman dan dipenuhi oleh layar komputer, monitor HMI (Human-Machine Interface), serta panel alarm.
+**Alur Penggunaan:**
+1. Pemain **grab Walkie Talkie** dari pinggang
+2. Tekan **tombol PTT** (XR Button Interactable)
+3. Pemain **bicara** → kata kunci terdeteksi
+4. Jika cocok → event dikirim ke `GameLevelManager`
+5. **Wajib: Audio Balasan Manusia (NPC) diputar** (e.g. *"Copy DCS, melaksanakan."*) 
 
-Aktivitas: Pemain bertugas sebagai operator DCS yang mengawasi grafik indikator suhu dan tekanan. Tugas pertama mereka adalah mengkalibrasi laju aliran asam sulfat dan memastikan suhu bertahan di angka 250°C dan tekanan stabil di 50 Bar.
+**Kamus Kata Kunci (Update 14 Level):**
 
-Fase 2: Lantai Pabrik & Fitur X-Ray Vision (Pertengahan)
-Visual: Pemain diarahkan turun ke lantai pabrik (plant floor) yang disimulasikan memiliki suara mesin bising dan getaran ringan, berdiri tepat di depan tabung Autoclave raksasa.
+| Level | Kata Kunci Pemain | Arah | Audio Balasan NPC (Contoh) |
+|-------|-------------------|------|----------------------------|
+| 1 | "APD lengkap" | Field → DCS | "Copy, pintu Safety Gate terbuka." |
+| 2 | "siapkan area", "cek crusher" | DCS → Field | "Siap, menuju area Crusher." |
+| 3 | "ore masuk", "cairan 25%" | Field → DCS | "Copy, standby aktivasi Slurry Pump." |
+| 4 | "slurry pump aktif", "450 kubik" | DCS → Field | "Copy, memantau aliran ke Pre-heater." |
+| 5 | "katup steam terbuka" | Field → DCS | "Copy, bersiap untuk injeksi asam." |
+| 6 | "acid aktif", "rasio 350 kilo" | DCS → Field | "Copy, aman masuk Autoclave." |
+| 7 | "suhu 250", "tekanan 50 atm" | Field → DCS | "Copy, lanjut monitoring ketat." |
+| 8 | "parameter stabil" | DCS → Field | "Copy, proses optimal." |
+| 9 | "flash vessel normal" | Field → DCS | "Copy, siap ke CCD." |
+| 10| "CCD aktif" | DCS → Field | "Copy, menuju area presipitasi." |
+| 11| "MHP terbentuk" | Field → DCS | "Copy, produksi utama selesai." |
+| 12| "limbah dialirkan" | DCS → Field | "Copy, siap melakukan netralisasi." |
+| 13| "tailing aman", "pH 8.5" | Field → DCS | "Copy, lingkungan aman." |
+| 14| "emergency", "evakuasi" | DCS → Sirine| "Copy, kami evakuasi sekarang!" |
 
-Aktivitas: Menggunakan controller VR, pemain mengaktifkan mode canggih "X-Ray Vision". Dinding baja pelindung autoclave akan berubah menjadi transparan secara holografis. Pemain diwajibkan melakukan inspeksi visual untuk melihat agitator titanium yang sedang berputar di dalam cairan asam. Pemain harus mencari area yang terkena penumpukan kerak (scale) berlebih dan menandainya dalam sistem pemeliharaan pabrik.
+---
 
-Fase 3: Skenario Kebocoran & Tanggap Darurat (Klimaks Final)
-Kondisi Bahaya: Sistem mendadak mengalami malfungsi. Katup penurun tekanan (letdown valve) macet karena terganjal kerak tebal. Lampu VR berubah merah, sirine tanda bahaya berbunyi kencang, dan monitor menunjukkan tekanan melonjak drastis melewati 65 Bar.
+## 5. Sistem X-Ray / Invisible View
 
-Aktivitas Penyelamatan: Pemain diberi waktu hitung mundur yang menegangkan (contoh: 45 detik). Mereka harus berlari secara virtual menyusuri jalur pipa, mencari dan memutar tuas katup manual (isolation valve), serta menekan tombol keras Emergency Shut-Down (ESD) untuk memotong injeksi asam secara instan.
+**Opsi Implementasi:** Stencil Buffer atau Material Swap Shader. Pemain dapat melihat proses di dalam mesin seperti partikel dihancurkan, campuran cairan (slurry), proses pemanasan, reaksi kimia perubahan warna, hingga proses pres press pemisahan air dan lumpur limbah.
 
-Konsekuensi Kegagalan: Jika pemain gagal menekan tombol ESD tepat waktu, simulasi akan menampilkan kegagalan pipa meledak, menyemburkan limbah tailing asam bersuhu 250°C ke area pabrik, yang mencerminkan kecelakaan fatal dunia nyata.
+---
 
-Sistem Rapor: Di penghujung simulasi, layar akan menampilkan skor evaluasi berdasarkan metrik waktu tanggap darurat, ketepatan memutar katup, dan kepatuhan pemain terhadap protokol Keselamatan dan Kesehatan Kerja (K3).
+## 6. Detail Mekanisme Mesin & Target SOP Pabrik
+
+- **Slurry Pump:** Input menggunakan **tombol [+] atau [-]** di monitor mini DCS. Pemain harus menekan pelan hingga target **Flow Rate: 450 m³/h**. Laju aliran ini mengontrol kecepatan shader partikel slurry di pipa secara real-time.
+- **Pre-Heater:** Memutar Rotary Valve fisik. Interaksi memutar roda mengubah nilai **Suhu** secara linear menuju target **180°C - 200°C**.
+- **Autoclave (Reaktor HPAL):** Menggunakan agitator. Parameter target yang WAJIB dipenuhi: **Tekanan Atmosfer: 45 - 50 atm**, **Suhu: 250°C - 255°C**, dan **RPM Agitator: 60 RPM**.
+- **Acid Injection:** Pemain harus memasukkan rasio asam yang tepat, yaitu **350 kg/ton bijih** menggunakan **tombol [+] atau [-]** di monitor mini. Target akhir adalah menurunkan **pH menjadi 1.0**.
+- **Filter Press (Level 13):** Saat pemain menekan start, plat filter merapat. Targetnya adalah menekan sisa air hingga kelembaban kue tailing (tailing cake moisture) turun di bawah **25%**.
+- **Limestone / Kapur (Level 13):** Grab karung, tuangkan ke tangki asam. Setiap taburan menaikkan pH. Target akhir adalah **pH 8.0 - 9.0** sebelum dibuang ke tailing.
+
+---
+
+## 7. Sistem ESD — HANYA DI DCS! (Level 14)
+
+**Penting:** Tidak ada ledakan. Fokus ke prosedur K3 menangani kegagalan sistem. 
+
+**Mekanisme Emergency Level 14:**
+1. Secara tiba-tiba, alarm gas detektor menyala.
+2. Terdengar suara mendesis keras dari lantai pabrik (Kebocoran H2SO4 atau Steam). Efek partikel asap putih/kuning menyebar.
+3. Pemain DCS harus melaporkan *"Emergency! Evakuasi!"* via Walkie Talkie.
+4. Pemain DCS menekan tombol **ESD (merah)**.
+5. Tombol ESD akan menutup paksa semua `Valve Input Asam` dan `Valve Steam` (Status UI Valve DCS berubah menjadi TUTUP semua).
+6. Proses di pabrik terhenti aman. Asap berhenti menyembur. Skenario Lulus.
+
+---
+
+## 8. Sistem Skor Per Level
+
+```
+Skor Level = (Kecepatan × 0.25) + (Kesesuaian Flow/Aksi × 0.25) + (Laporan Walkie Talkie × 0.25) + (Urutan SOP K3 × 0.25)
+
+Nilai Akhir = Rata-rata semua 14 level
+Syarat Lulus: ≥ 70%
+Output: Sertifikat K3 Virtual OLIVIA (ditampilkan di layar akhir)
+```

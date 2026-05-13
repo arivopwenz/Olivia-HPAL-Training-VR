@@ -2,190 +2,504 @@ using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System.Collections;
+using System.Collections.Generic;
 
+/// <summary>
+/// DCS Monitor UI v3.0 — OLIVIA VR Simulator
+/// 
+/// Fully integrated with GameLevelManager (14-Level system).
+/// Menampilkan parameter reaktor real-time, valve status, flow tracker,
+/// alarm, dan ESD panel.
+/// 
+/// TIDAK lagi bergantung pada PhaseManager untuk alur level.
+/// </summary>
 public class DCSMonitorUI : MonoBehaviour
 {
+    // ============================================================
+    //  PANEL HEADER
+    // ============================================================
     [Header("=== Panel Header ===")]
     public TextMeshProUGUI txtJudulMonitor;
     public TextMeshProUGUI txtStatusFase;
+    public TextMeshProUGUI txtWaktuShift;
 
-    [Header("=== Parameter Reaktor (Panel Kiri) ===")]
+    // ============================================================
+    //  PANEL 1: PARAMETER REAKTOR
+    // ============================================================
+    [Header("=== Parameter Reaktor (Panel 1) ===")]
     public TextMeshProUGUI txtSuhu;
     public TextMeshProUGUI txtTekanan;
     public TextMeshProUGUI txtPH;
     public TextMeshProUGUI txtFlowRate;
     public TextMeshProUGUI txtRPM;
     public TextMeshProUGUI txtScaleLevel;
-
-    [Header("=== Output Reaktor (Panel Kanan) ===")]
     public TextMeshProUGUI txtKadarNikel;
     public TextMeshProUGUI txtEfisiensi;
     public TextMeshProUGUI txtKadarAsam;
     public TextMeshProUGUI txtWaktuProses;
     public TextMeshProUGUI txtStatusMesin;
 
-    [Header("=== Task Fase Mesin ===")]
+    // ============================================================
+    //  PANEL TASK MESIN (untuk level tertentu)
+    // ============================================================
+    [Header("=== Task Mesin (DCS Display) ===")]
     public GameObject panelTaskMesin;
     public TextMeshProUGUI taskScannerDCS;
     public TextMeshProUGUI taskMesinDCS;
 
-    [Header("=== Alarm Panel ===")]
+    // ============================================================
+    //  PANEL 2: FLOW TRACKER
+    // ============================================================
+    [Header("=== Flow Tracker — Posisi Cairan (Panel 2) ===")]
+    [Tooltip("Image berupa lingkaran kecil untuk setiap titik proses")]
+    public Image[] flowStepIndicators;
+    public TextMeshProUGUI txtFlowCurrentStep;
+    public TextMeshProUGUI txtFlowProgress;
+
+    [Header("Warna Flow Indicator")]
+    public Color warnaNodeBelum = new Color(0.3f, 0.3f, 0.3f);
+    public Color warnaNodeAktif = new Color(1f, 0.85f, 0.1f);
+    public Color warnaNodeSelesai = new Color(0.2f, 0.9f, 0.4f);
+
+    // ============================================================
+    //  PANEL 3: VALVE STATUS
+    // ============================================================
+    [Header("=== Valve Status Tracker (Panel 3) ===")]
+    public TextMeshProUGUI txtValveSteam;
+    public TextMeshProUGUI txtValveAcidFeed;
+    public TextMeshProUGUI txtValveSlurryFeed;
+    public TextMeshProUGUI txtValveLetdown;
+    public TextMeshProUGUI txtValveFlash;
+    public TextMeshProUGUI txtValveIsolation;
+
+    // ============================================================
+    //  PANEL 4: ESD
+    // ============================================================
+    [Header("=== ESD Panel (Panel 4) ===")]
+    public GameObject panelESD;
+    public Button btnESD;
+    public TextMeshProUGUI txtESDStatus;
+    public Image btnESDBackground;
+    public TextMeshProUGUI txtCountdown;
+    public Image imgCountdownBar;
+
+    // ============================================================
+    //  PANEL 5: ALARM
+    // ============================================================
+    [Header("=== Alarm System (Panel 5) ===")]
     public GameObject panelAlarm;
     public TextMeshProUGUI txtAlarm;
     public Image bgAlarm;
 
+    // ============================================================
+    //  WARNA STANDARD
+    // ============================================================
     [Header("=== Warna ===")]
     public Color warnaHijau = new Color(0.2f, 0.9f, 0.4f);
     public Color warnaKuning = new Color(1f, 0.85f, 0.1f);
     public Color warnaMerah = new Color(0.95f, 0.2f, 0.2f);
     public Color warnaBlue = new Color(0.3f, 0.8f, 1f);
+    public Color warnaAbu = new Color(0.5f, 0.5f, 0.5f);
 
-    private float _suhu = 248f;
-    private float _tekanan = 49f;
-    private float _pH = 0.9f;
-    private float _flowRate = 12.2f;
-    private float _rpm = 45f;
-    private float _scaleLevel = 22f;
-    private float _nikel = 85f;
-    private float _efisiensi = 91f;
-    private float _kadarAsam = 18.5f;
+    // ============================================================
+    //  DATA INTERNAL — PARAMETER REAKTOR
+    // ============================================================
+    private float _suhu = 25f;
+    private float _tekanan = 1f;
+    private float _pH = 7f;
+    private float _flowRate = 0f;
+    private float _rpm = 0f;
+    private float _scaleLevel = 12f;
+    private float _nikel = 0f;
+    private float _efisiensi = 0f;
+    private float _kadarAsam = 0f;
     private float _waktuProses = 0f;
+    private float _waktuShift = 0f;
 
+    // Target saat mesin aktif
+    private float _targetSuhu = 250f;
+    private float _targetTekanan = 47.5f;
+    private float _targetRPM = 60f;
+    private float _targetFlow = 450f;
+
+    // ============================================================
+    //  DATA INTERNAL — VALVE
+    // ============================================================
+    private bool _valveSteam = false;
+    private bool _valveAcidFeed = false;
+    private bool _valveSlurry = false;
+    private bool _valveLetdown = false;
+    private bool _valveFlash = false;
+    private bool _valveIsolation = false;
+
+    // ============================================================
+    //  DATA INTERNAL — FLOW TRACKER
+    // ============================================================
+    private int _flowCurrentStep = 0;
+    private readonly string[] _flowStepNames = {
+        "IDLE", "Crusher", "Slurry Tank", "Pre-heater",
+        "Acid Injection", "AUTOCLAVE", "Flash Vessel", "CCD Separator", "MHP Tank"
+    };
+
+    // ============================================================
+    //  STATE FLAGS
+    // ============================================================
     private bool _mesinAktif = false;
+    private bool _daruratAktif = false;
     private bool _alarmAktif = false;
+    private bool _esdSudahDitekan = false;
+    private float _countdownSisa = 45f;
 
+    // ============================================================
+    //  LIFECYCLE
+    // ============================================================
     void Start()
     {
-        PhaseManager.OnPhaseChanged += OnFaseBerubah;
-        PhaseManager.OnScannerPickedUp += OnScannerDiambil;
-        PhaseManager.OnScannerInstalled += OnScannerDipasang;
+        // Subscribe ke event sistem 14-level
+        GameLevelManager.OnLevelStarted += OnLevelBerubah;
 
+        // Setup tombol ESD
+        if (btnESD != null)
+            btnESD.onClick.AddListener(TekanESD);
+
+        // Sembunyikan panel yang belum perlu
         if (panelAlarm != null) panelAlarm.SetActive(false);
+        if (panelESD != null) panelESD.SetActive(false);
         if (panelTaskMesin != null) panelTaskMesin.SetActive(false);
 
-        StartCoroutine(SimulasiNilaiReaktor());
+        // Init valve semua TUTUP
+        ResetSemuaValve();
+
+        StartCoroutine(SimulasiReaktor());
         StartCoroutine(KejapAlarm());
-        UpdateTampilan();
+        StartCoroutine(UpdateWaktuShift());
+
+        UpdateSemuaTampilan();
+        UpdateFlowTracker();
+        UpdateValvePanel();
     }
 
     void OnDestroy()
     {
-        PhaseManager.OnPhaseChanged -= OnFaseBerubah;
-        PhaseManager.OnScannerPickedUp -= OnScannerDiambil;
-        PhaseManager.OnScannerInstalled -= OnScannerDipasang;
+        GameLevelManager.OnLevelStarted -= OnLevelBerubah;
+
+        if (btnESD != null)
+            btnESD.onClick.RemoveListener(TekanESD);
     }
 
-    void OnFaseBerubah(PhaseManager.SimulationPhase fase)
+    // ============================================================
+    //  EVENT HANDLER: LEVEL BERUBAH
+    // ============================================================
+    private void OnLevelBerubah(GameLevelManager.GameLevel level)
     {
         if (txtStatusFase == null) return;
 
-        switch (fase)
+        // 1. Update teks status sesuai level
+        switch (level)
         {
-            case PhaseManager.SimulationPhase.PreparasiAPD:
-                txtStatusFase.text = "STATUS: STANDBY - MENUNGGU OPERATOR";
+            case GameLevelManager.GameLevel.Level0_Tutorial:
+                txtStatusFase.text = "STATUS: ORIENTASI AWAL";
                 txtStatusFase.color = warnaKuning;
                 break;
 
-            case PhaseManager.SimulationPhase.OperasionalAlat:
-                txtStatusFase.text = "STATUS: SIAP OPERASIONAL";
-                txtStatusFase.color = warnaHijau;
-                if (panelTaskMesin != null) panelTaskMesin.SetActive(true);
-                TriggerAlarm("OPERATOR SIAP - MULAI PROSEDUR SCANNER", false);
+            case GameLevelManager.GameLevel.Level1_APD:
+                txtStatusFase.text = "STATUS: PERSIAPAN APD";
+                txtStatusFase.color = warnaKuning;
+                TriggerAlarm("OPERATOR — LENGKAPI APD SEBELUM MASUK AREA", false);
                 break;
 
-            case PhaseManager.SimulationPhase.AktifMesin:
-                txtStatusFase.text = "STATUS: REAKTOR AKTIF";
+            case GameLevelManager.GameLevel.Level2_DCSPrep:
+                txtStatusFase.text = "STATUS: INISIALISASI DCS";
                 txtStatusFase.color = warnaBlue;
-                _mesinAktif = true;
-                SetTaskDone(taskScannerDCS);
-                TriggerAlarm("SCANNER TERPASANG - AKTIFKAN MESIN HPAL", false);
-                if (txtStatusMesin != null)
-                {
-                    txtStatusMesin.text = "AKTIF";
-                    txtStatusMesin.color = warnaHijau;
-                }
+                TriggerAlarm("DCS AKTIF — SIAPKAN AREA OPERASIONAL", false);
                 break;
 
-            case PhaseManager.SimulationPhase.Selesai:
-                txtStatusFase.text = "STATUS: PROSES SELESAI";
+            case GameLevelManager.GameLevel.Level3_OreSlurry:
+                txtStatusFase.text = "STATUS: ORE → SLURRY";
+                txtStatusFase.color = warnaBlue;
+                break;
+
+            case GameLevelManager.GameLevel.Level4_SlurryPump:
+                txtStatusFase.text = "STATUS: SLURRY PUMP AKTIF";
+                txtStatusFase.color = warnaBlue;
+                SetValve(ref _valveSlurry, true);
+                _targetFlow = 450f;
+                break;
+
+            case GameLevelManager.GameLevel.Level5_SteamValve:
+                txtStatusFase.text = "STATUS: PEMANASAN AWAL";
+                txtStatusFase.color = warnaBlue;
+                SetValve(ref _valveSteam, true);
+                _targetSuhu = 190f;
+                break;
+
+            case GameLevelManager.GameLevel.Level6_AcidInjection:
+                txtStatusFase.text = "STATUS: INJEKSI ASAM SULFAT";
+                txtStatusFase.color = warnaKuning;
+                SetValve(ref _valveAcidFeed, true);
+                TriggerAlarm("PERHATIAN — INJEKSI H₂SO₄ DIMULAI!", false);
+                break;
+
+            case GameLevelManager.GameLevel.Level7_Autoclave:
+                txtStatusFase.text = "STATUS: AUTOCLAVE AKTIF";
                 txtStatusFase.color = warnaHijau;
-                SetTaskDone(taskMesinDCS);
-                TriggerAlarm("PROSES HPAL SELESAI - LAPORAN SIAP", true);
+                _mesinAktif = true;
+                _targetSuhu = 252f;
+                _targetTekanan = 47.5f;
+                _targetRPM = 60f;
+                if (panelTaskMesin != null) panelTaskMesin.SetActive(true);
+                if (txtStatusMesin != null) { txtStatusMesin.text = "AKTIF"; txtStatusMesin.color = warnaHijau; }
+                TriggerAlarm("REAKTOR AUTOCLAVE BEROPERASI — PANTAU PARAMETER!", false);
+                break;
+
+            case GameLevelManager.GameLevel.Level8_Monitoring:
+                txtStatusFase.text = "STATUS: MONITORING KETAT";
+                txtStatusFase.color = warnaHijau;
+                break;
+
+            case GameLevelManager.GameLevel.Level9_FlashVessel:
+                txtStatusFase.text = "STATUS: FLASH VESSEL";
+                txtStatusFase.color = warnaBlue;
+                SetValve(ref _valveLetdown, true);
+                SetValve(ref _valveFlash, true);
+                break;
+
+            case GameLevelManager.GameLevel.Level10_CCD:
+                txtStatusFase.text = "STATUS: SEPARASI CCD";
+                txtStatusFase.color = warnaBlue;
+                break;
+
+            case GameLevelManager.GameLevel.Level11_MHP:
+                txtStatusFase.text = "STATUS: PRESIPITASI MHP";
+                txtStatusFase.color = warnaHijau;
+                break;
+
+            case GameLevelManager.GameLevel.Level12_TailingDischarge:
+            case GameLevelManager.GameLevel.Level13_TailingWaste:
+                txtStatusFase.text = "STATUS: DISPOSAL TAILING";
+                txtStatusFase.color = warnaKuning;
+                break;
+
+            case GameLevelManager.GameLevel.Level14_Emergency:
+                txtStatusFase.text = "STATUS: ⚠ DARURAT!";
+                txtStatusFase.color = warnaMerah;
+                OnDaruratDimulai();
                 break;
         }
+
+        // 2. Update flow step berdasarkan level
+        _flowCurrentStep = Mathf.Clamp((int)level, 0, 8);
+        UpdateFlowTracker();
     }
 
-    void OnScannerDiambil()
-    {
-        TriggerAlarm("SCANNER DIAMBIL - PASANG KE SILINDER MERAH", false);
-    }
-
-    void OnScannerDipasang()
-    {
-        SetTaskDone(taskScannerDCS);
-    }
-
-    void SetTaskDone(TextMeshProUGUI txt)
-    {
-        if (txt == null) return;
-        string t = txt.text;
-        if (t.StartsWith("[ ]")) txt.text = "[OK]" + t.Substring(3);
-        txt.color = warnaHijau;
-    }
-
-    IEnumerator SimulasiNilaiReaktor()
+    // ============================================================
+    //  SIMULASI REAKTOR (Coroutine)
+    // ============================================================
+    IEnumerator SimulasiReaktor()
     {
         while (true)
         {
-            _suhu += Random.Range(-0.4f, 0.4f);
-            _suhu = Mathf.Clamp(_suhu, 245f, 255f);
+            yield return new WaitForSeconds(1.2f);
 
-            _tekanan += Random.Range(-0.2f, 0.2f);
-            _tekanan = Mathf.Clamp(_tekanan, 47f, 53f);
-
-            _pH += Random.Range(-0.02f, 0.02f);
-            _pH = Mathf.Clamp(_pH, 0.7f, 1.3f);
-
-            _flowRate += Random.Range(-0.1f, 0.1f);
-            _flowRate = Mathf.Clamp(_flowRate, 11f, 14f);
-
-            _rpm += Random.Range(-0.3f, 0.3f);
-            _rpm = Mathf.Clamp(_rpm, 43f, 47f);
-
-            _scaleLevel += Random.Range(-0.05f, 0.1f);
-            _scaleLevel = Mathf.Clamp(_scaleLevel, 20f, 40f);
-
-            if (_mesinAktif)
+            if (_mesinAktif && !_daruratAktif)
             {
-                _nikel += Random.Range(-0.2f, 0.3f);
-                _nikel = Mathf.Clamp(_nikel, 83f, 95f);
+                // Parameter berfluktuasi mendekati target SOP
+                _suhu = Mathf.Clamp(_suhu + Random.Range(-0.4f, 0.4f), _targetSuhu - 5f, _targetSuhu + 5f);
+                _tekanan = Mathf.Clamp(_tekanan + Random.Range(-0.2f, 0.2f), _targetTekanan - 2f, _targetTekanan + 2f);
+                _rpm = Mathf.Clamp(_rpm + Random.Range(-0.5f, 0.5f), _targetRPM - 3f, _targetRPM + 3f);
+                _flowRate = Mathf.Clamp(_flowRate + Random.Range(-2f, 2f), _targetFlow - 20f, _targetFlow + 20f);
+                _pH = Mathf.Clamp(_pH + Random.Range(-0.02f, 0.02f), 0.7f, 1.3f);
+                _scaleLevel = Mathf.Clamp(_scaleLevel + Random.Range(-0.05f, 0.1f), 10f, 40f);
 
-                _efisiensi += Random.Range(-0.1f, 0.15f);
-                _efisiensi = Mathf.Clamp(_efisiensi, 88f, 97f);
-
-                _kadarAsam += Random.Range(-0.1f, 0.1f);
-                _kadarAsam = Mathf.Clamp(_kadarAsam, 17f, 22f);
-
+                _nikel = Mathf.Clamp(_nikel + Random.Range(-0.2f, 0.3f), 83f, 95f);
+                _efisiensi = Mathf.Clamp(_efisiensi + Random.Range(-0.1f, 0.15f), 88f, 97f);
+                _kadarAsam = Mathf.Clamp(_kadarAsam + Random.Range(-0.1f, 0.1f), 17f, 22f);
                 _waktuProses += 1.2f / 60f;
+
+                // Flow tracker: majukan setiap ~10 detik simulasi
+                if (Time.frameCount % 500 == 0 && _flowCurrentStep < 8)
+                    _flowCurrentStep++;
+
+                // Trigger darurat otomatis saat Scale > 40% DAN tekanan > 65 Bar
+                if (_scaleLevel > 40f && _tekanan > 65f && !_daruratAktif)
+                {
+                    if (GameLevelManager.Instance != null)
+                        GameLevelManager.Instance.TriggerEmergency();
+                }
+            }
+            else if (_daruratAktif)
+            {
+                // Saat darurat: tekanan terus naik tidak terkendali sampai ESD ditekan
+                _tekanan += Random.Range(0.3f, 0.8f);
+                _scaleLevel += Random.Range(0.2f, 0.5f);
+            }
+            else
+            {
+                // Mesin belum aktif — nilai idle
+                _suhu = Mathf.MoveTowards(_suhu, 25f, 0.2f);
+                _tekanan = Mathf.MoveTowards(_tekanan, 1f, 0.05f);
+                _rpm = Mathf.MoveTowards(_rpm, 0f, 0.3f);
+                _flowRate = Mathf.MoveTowards(_flowRate, 0f, 1f);
             }
 
-            UpdateTampilan();
-            yield return new WaitForSeconds(1.2f);
+            UpdateSemuaTampilan();
+            UpdateValvePanel();
+            UpdateFlowTracker();
+
+            // Countdown ESD saat darurat
+            if (_daruratAktif && !_esdSudahDitekan)
+                UpdateCountdown();
         }
     }
 
-    void UpdateTampilan()
+    // ============================================================
+    //  DARURAT DIMULAI
+    // ============================================================
+    private void OnDaruratDimulai()
+    {
+        _daruratAktif = true;
+        _countdownSisa = 45f;
+
+        if (panelESD != null) panelESD.SetActive(true);
+        if (panelAlarm != null) panelAlarm.SetActive(true);
+
+        if (txtESDStatus != null)
+        {
+            txtESDStatus.text = "⚠ DARURAT! TEKAN ESD SEGERA!";
+            txtESDStatus.color = warnaMerah;
+        }
+
+        if (txtAlarm != null) txtAlarm.text = "‼ KONDISI DARURAT — TEKANAN KRITIS! SEGERA TEKAN ESD!";
+        if (bgAlarm != null) bgAlarm.color = new Color(0.5f, 0.05f, 0.05f, 0.95f);
+        _alarmAktif = true;
+    }
+
+    // ============================================================
+    //  COUNTDOWN ESD
+    // ============================================================
+    private void UpdateCountdown()
+    {
+        _countdownSisa -= 1.2f;
+        if (_countdownSisa < 0) _countdownSisa = 0f;
+
+        if (txtCountdown != null)
+            txtCountdown.text = $"WAKTU TERSISA: {Mathf.CeilToInt(_countdownSisa)}s";
+
+        if (imgCountdownBar != null)
+            imgCountdownBar.fillAmount = _countdownSisa / 45f;
+    }
+
+    // ============================================================
+    //  ESD BUTTON
+    // ============================================================
+    public void TekanESD()
+    {
+        if (_esdSudahDitekan) return;
+        _esdSudahDitekan = true;
+        _daruratAktif = false;
+
+        // Tutup semua valve saat emergency
+        SetValve(ref _valveAcidFeed, false);
+        SetValve(ref _valveSlurry, false);
+        SetValve(ref _valveSteam, false);
+        SetValve(ref _valveIsolation, true);  // Isolation valve BUKA untuk bypass tekanan
+
+        if (txtESDStatus != null)
+        {
+            txtESDStatus.text = "✅ ESD AKTIF — REAKTOR SHUTDOWN";
+            txtESDStatus.color = warnaHijau;
+        }
+
+        if (btnESDBackground != null)
+            btnESDBackground.color = warnaHijau;
+
+        TriggerAlarm("EMERGENCY SHUTDOWN BERHASIL — Semua pompa berhenti. Reaktor aman.", true);
+
+        // Selesaikan Level 14 (Emergency) via GameLevelManager
+        if (GameLevelManager.Instance != null &&
+            GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level14_Emergency)
+        {
+            GameLevelManager.Instance.SelesaikanLevel(GameLevelManager.GameLevel.Level14_Emergency);
+        }
+    }
+
+    // ============================================================
+    //  VALVE HELPERS
+    // ============================================================
+    private void SetValve(ref bool valveState, bool buka)
+    {
+        valveState = buka;
+        UpdateValvePanel();
+    }
+
+    private void ResetSemuaValve()
+    {
+        _valveSteam = false;
+        _valveAcidFeed = false;
+        _valveSlurry = false;
+        _valveLetdown = false;
+        _valveFlash = false;
+        _valveIsolation = false;
+    }
+
+    void UpdateValvePanel()
+    {
+        SetValveText(txtValveSteam, "V-01 STEAM INJECT ", _valveSteam);
+        SetValveText(txtValveAcidFeed, "V-02 ACID FEED    ", _valveAcidFeed);
+        SetValveText(txtValveSlurryFeed, "V-03 SLURRY PUMP  ", _valveSlurry);
+        SetValveText(txtValveLetdown, "V-04 LETDOWN      ", _valveLetdown);
+        SetValveText(txtValveFlash, "V-05 FLASH VENT   ", _valveFlash);
+        SetValveText(txtValveIsolation, "V-06 ISOLATION    ", _valveIsolation);
+    }
+
+    private void SetValveText(TextMeshProUGUI txt, string label, bool buka)
+    {
+        if (txt == null) return;
+        txt.text = $"{label}  {(buka ? "[BUKA]" : "[TUTUP]")}";
+        txt.color = buka ? warnaHijau : warnaAbu;
+    }
+
+    // ============================================================
+    //  UPDATE FLOW TRACKER
+    // ============================================================
+    void UpdateFlowTracker()
+    {
+        if (flowStepIndicators == null) return;
+
+        for (int i = 0; i < flowStepIndicators.Length; i++)
+        {
+            if (flowStepIndicators[i] == null) continue;
+            int nodeIndex = i + 1;
+            if (nodeIndex < _flowCurrentStep)
+                flowStepIndicators[i].color = warnaNodeSelesai;
+            else if (nodeIndex == _flowCurrentStep)
+                flowStepIndicators[i].color = warnaNodeAktif;
+            else
+                flowStepIndicators[i].color = warnaNodeBelum;
+        }
+
+        if (txtFlowCurrentStep != null)
+            txtFlowCurrentStep.text = $"CAIRAN DI: {(_flowCurrentStep < _flowStepNames.Length ? _flowStepNames[_flowCurrentStep] : "—")}";
+
+        if (txtFlowProgress != null)
+            txtFlowProgress.text = $"PROGRESS: {_flowCurrentStep}/8 Titik";
+    }
+
+    // ============================================================
+    //  UPDATE SEMUA TAMPILAN
+    // ============================================================
+    void UpdateSemuaTampilan()
     {
         if (txtSuhu != null)
         {
-            txtSuhu.text = $"{_suhu:F1} C";
-            txtSuhu.color = _suhu > 265f ? warnaMerah : (_suhu > 258f ? warnaKuning : warnaHijau);
+            txtSuhu.text = $"{_suhu:F1} °C";
+            txtSuhu.color = _suhu > 260f ? warnaMerah : (_suhu > 255f ? warnaKuning : warnaHijau);
         }
 
         if (txtTekanan != null)
         {
-            txtTekanan.text = $"{_tekanan:F1} Bar";
-            txtTekanan.color = _tekanan > 60f ? warnaMerah : (_tekanan > 55f ? warnaKuning : warnaHijau);
+            txtTekanan.text = $"{_tekanan:F1} atm";
+            txtTekanan.color = _tekanan > 55f ? warnaMerah : (_tekanan > 50f ? warnaKuning : warnaHijau);
         }
 
         if (txtPH != null)
@@ -195,10 +509,10 @@ public class DCSMonitorUI : MonoBehaviour
         }
 
         if (txtFlowRate != null)
-            txtFlowRate.text = $"{_flowRate:F1} m3/h";
+            txtFlowRate.text = $"{_flowRate:F0} m³/h";
 
         if (txtRPM != null)
-            txtRPM.text = $"RPM: {_rpm:F1}";
+            txtRPM.text = $"RPM: {_rpm:F0}";
 
         if (txtScaleLevel != null)
         {
@@ -227,9 +541,15 @@ public class DCSMonitorUI : MonoBehaviour
             txtStatusMesin.text = "STANDBY";
             txtStatusMesin.color = warnaKuning;
         }
+
+        if (txtWaktuShift != null)
+            txtWaktuShift.text = $"SHIFT: {Mathf.FloorToInt(_waktuShift / 60f):00}:{Mathf.FloorToInt(_waktuShift % 60f):00}";
     }
 
-    void TriggerAlarm(string pesan, bool sukses)
+    // ============================================================
+    //  ALARM SYSTEM
+    // ============================================================
+    public void TriggerAlarm(string pesan, bool sukses)
     {
         if (panelAlarm == null) return;
         _alarmAktif = true;
@@ -245,8 +565,8 @@ public class DCSMonitorUI : MonoBehaviour
     IEnumerator MatikanAlarm(float delay)
     {
         yield return new WaitForSeconds(delay);
-        if (panelAlarm != null) panelAlarm.SetActive(false);
-        _alarmAktif = false;
+        if (!_daruratAktif && panelAlarm != null) panelAlarm.SetActive(false);
+        if (!_daruratAktif) _alarmAktif = false;
     }
 
     IEnumerator KejapAlarm()
@@ -256,10 +576,30 @@ public class DCSMonitorUI : MonoBehaviour
             if (_alarmAktif && bgAlarm != null)
             {
                 Color c = bgAlarm.color;
-                c.a = c.a > 0.5f ? 0.3f : 0.92f;
+                c.a = c.a > 0.5f ? 0.25f : 0.92f;
                 bgAlarm.color = c;
             }
-            yield return new WaitForSeconds(0.6f);
+            yield return new WaitForSeconds(_daruratAktif ? 0.3f : 0.6f);
         }
+    }
+
+    IEnumerator UpdateWaktuShift()
+    {
+        while (true)
+        {
+            yield return new WaitForSeconds(1f);
+            _waktuShift += 1f;
+        }
+    }
+
+    // ============================================================
+    //  TASK DONE HELPER
+    // ============================================================
+    public void SetTaskDone(TextMeshProUGUI txt)
+    {
+        if (txt == null) return;
+        string t = txt.text;
+        if (t.StartsWith("[ ]")) txt.text = "[OK]" + t.Substring(3);
+        txt.color = warnaHijau;
     }
 }

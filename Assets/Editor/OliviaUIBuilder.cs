@@ -168,15 +168,15 @@ public class OliviaUIBuilder : EditorWindow
         dcs.txtScaleLevel = pKiri.transform.Find("Val_Scale").GetComponent<TextMeshProUGUI>();
         dcs.txtKadarNikel = pKanan.transform.Find("Txt_Nikel").GetComponent<TextMeshProUGUI>();
         dcs.txtEfisiensi = pKanan.transform.Find("Txt_Efisiensi").GetComponent<TextMeshProUGUI>();
-        dcs.txtKadarAsam = pKanan.transform.Find("Txt_Asam").GetComponent<TextMeshProUGUI>();
-        dcs.txtWaktuProses = pKanan.transform.Find("Txt_Waktu").GetComponent<TextMeshProUGUI>();
+        dcs.txtKadarAsam = pKanan.transform.Find("Txt_Asam").GetComponent<TMPro.TextMeshProUGUI>();
+        dcs.txtWaktuProses = pKanan.transform.Find("Txt_Waktu").GetComponent<TMPro.TextMeshProUGUI>();
         dcs.txtStatusMesin = txtStatusMesin;
         dcs.panelTaskMesin = pTask;
         dcs.taskScannerDCS = taskScanner;
         dcs.taskMesinDCS = taskMesin;
         dcs.panelAlarm = pAlarm;
         dcs.txtAlarm = txtAlarm;
-        dcs.bgAlarm = pAlarm.GetComponent<Image>();
+        dcs.bgAlarm = pAlarm.GetComponent<UnityEngine.UI.Image>();
 
         EditorUtility.SetDirty(canvasGO);
         EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
@@ -231,8 +231,8 @@ public class OliviaUIBuilder : EditorWindow
         divRT.sizeDelta = new Vector2(-20, 2);
         divRT.anchoredPosition = new Vector2(0, -76);
 
-        string[] apdLabels = { "Helm K3", "Rompi Safety", "Kacamata Pelindung", "Sepatu Safety" };
-        string[] apdIds = { "Task_Helm", "Task_Rompi", "Task_Kacamata", "Task_Sepatu" };
+        string[] apdLabels = { "Helm K3", "Rompi Safety", "Kacamata Pelindung", "Sepatu Safety", "Sarung Tangan", "Respirator", "Walkie Talkie" };
+        string[] apdIds = { "Task_Helm", "Task_Rompi", "Task_Kacamata", "Task_Sepatu", "Task_SarungTangan", "Task_Respirator", "Task_WalkieTalkie" };
 
         var bgApd = MkPanel("BG_APD", pQuest.transform, cPanel, 0.7f);
         RectTransform bgApdRT = bgApd.GetComponent<RectTransform>();
@@ -250,19 +250,40 @@ public class OliviaUIBuilder : EditorWindow
         lblApdRT.sizeDelta = new Vector2(-20, 40);
         lblApdRT.anchoredPosition = new Vector2(0, -12);
 
-        TextMeshProUGUI[] taskTxts = new TextMeshProUGUI[4];
-        for (int i = 0; i < 4; i++)
+        TextMeshProUGUI[] taskTxts = new TextMeshProUGUI[7];
+        for (int i = 0; i < 7; i++)
         {
-            float yPos = -56f + (i * -60f);
-            var t = MkTMP(apdIds[i], bgApd.transform, "[ ] " + apdLabels[i], 20, cGray);
+            float yPos = -56f + (i * -42f); // Spasi lebih rapat untuk 7 item
+            var t = MkTMP(apdIds[i], bgApd.transform, "[ ] " + apdLabels[i], 18, cGray);
             RectTransform trt = t.GetComponent<RectTransform>();
             trt.anchorMin = new Vector2(0, 1);
             trt.anchorMax = new Vector2(1, 1);
             trt.pivot = new Vector2(0, 1);
-            trt.sizeDelta = new Vector2(-32, 52);
+            trt.sizeDelta = new Vector2(-32, 40);
             trt.anchoredPosition = new Vector2(16, yPos);
             taskTxts[i] = t;
         }
+
+        // Panel Walkie Talkie Hint (Baru)
+        var pWTHint = MkPanel("Panel_WalkieTalkie", pQuest.transform, new Color(0, 0, 0, 0.5f), 1f);
+        RectTransform pWTHintRT = pWTHint.GetComponent<RectTransform>();
+        pWTHintRT.anchorMin = new Vector2(0, 0);
+        pWTHintRT.anchorMax = new Vector2(1, 0);
+        pWTHintRT.pivot = new Vector2(0.5f, 0);
+        pWTHintRT.sizeDelta = new Vector2(-20, 80);
+        pWTHintRT.anchoredPosition = new Vector2(0, 120);
+
+        var txtHTHint = MkTMP("Txt_HTHint", pWTHint.transform, "Ucapkan: 'siap'", 18, cYellow, TextAlignmentOptions.Center);
+        Stretch(txtHTHint.gameObject);
+
+        // Deskripsi Quest (Baru)
+        var txtQuest = MkTMP("Txt_Quest", pQuest.transform, "Quest: -", 16, Color.white);
+        RectTransform txtQuestRT = txtQuest.GetComponent<RectTransform>();
+        txtQuestRT.anchorMin = new Vector2(0, 1);
+        txtQuestRT.anchorMax = new Vector2(1, 1);
+        txtQuestRT.pivot = new Vector2(0.5f, 1);
+        txtQuestRT.sizeDelta = new Vector2(-40, 60);
+        txtQuestRT.anchoredPosition = new Vector2(0, -390); // Di bawah APD list
 
         var pOps = MkPanel("Panel_Operasional", pQuest.transform, cPanel, 0.7f);
         RectTransform pOpsRT = pOps.GetComponent<RectTransform>();
@@ -281,29 +302,13 @@ public class OliviaUIBuilder : EditorWindow
         lblOpsRT.sizeDelta = new Vector2(-20, 40);
         lblOpsRT.anchoredPosition = new Vector2(0, -12);
 
-        var taskScan = MkTMP("Task_ScannerAmbil", pOps.transform, "[ ] Ambil Scanner", 20, cGray);
-        RectTransform taskScanRT = taskScan.GetComponent<RectTransform>();
-        taskScanRT.anchorMin = new Vector2(0, 1);
-        taskScanRT.anchorMax = new Vector2(1, 1);
-        taskScanRT.pivot = new Vector2(0, 1);
-        taskScanRT.sizeDelta = new Vector2(-32, 52);
-        taskScanRT.anchoredPosition = new Vector2(16, -56);
-
-        var taskPasang = MkTMP("Task_ScannerPasang", pOps.transform, "[ ] Pasang Scanner ke Reaktor", 20, cGray);
-        RectTransform taskPasangRT = taskPasang.GetComponent<RectTransform>();
-        taskPasangRT.anchorMin = new Vector2(0, 1);
-        taskPasangRT.anchorMax = new Vector2(1, 1);
-        taskPasangRT.pivot = new Vector2(0, 1);
-        taskPasangRT.sizeDelta = new Vector2(-32, 52);
-        taskPasangRT.anchoredPosition = new Vector2(16, -112);
-
-        var taskMesin = MkTMP("Task_MesinAktif", pOps.transform, "[ ] Aktifkan Mesin HPAL", 20, cGray);
-        RectTransform taskMesinRT = taskMesin.GetComponent<RectTransform>();
-        taskMesinRT.anchorMin = new Vector2(0, 0);
-        taskMesinRT.anchorMax = new Vector2(1, 0);
-        taskMesinRT.pivot = new Vector2(0, 0);
-        taskMesinRT.sizeDelta = new Vector2(-32, 52);
-        taskMesinRT.anchoredPosition = new Vector2(16, 8);
+        var txtParam = MkTMP("Txt_ParamInfo", pOps.transform, "Parameter: -", 18, Color.white, TextAlignmentOptions.Left);
+        RectTransform txtParamRT = txtParam.GetComponent<RectTransform>();
+        txtParamRT.anchorMin = new Vector2(0, 0);
+        txtParamRT.anchorMax = new Vector2(1, 1);
+        txtParamRT.pivot = new Vector2(0.5f, 0.5f);
+        txtParamRT.sizeDelta = new Vector2(-32, -60);
+        txtParamRT.anchoredPosition = new Vector2(16, -20);
 
         var pNotif = MkPanel("Panel_Notif", canvasGO.transform, new Color(0.06f, 0.18f, 0.42f), 0.95f);
         RectTransform pNotifRT = pNotif.GetComponent<RectTransform>();
@@ -318,16 +323,20 @@ public class OliviaUIBuilder : EditorWindow
         Stretch(txtNotif.gameObject);
 
         var hud = canvasGO.AddComponent<PlayerHUD>();
-        hud.txtFaseLabel = txtFaseLabel;
+        hud.txtLevelLabel = txtFaseLabel;
+        hud.txtQuestLabel = txtQuest;
         hud.bgHeader = bgH.GetComponent<Image>();
         hud.taskHelm = taskTxts[0];
         hud.taskRompi = taskTxts[1];
         hud.taskKacamata = taskTxts[2];
         hud.taskSepatu = taskTxts[3];
+        hud.taskSarungTangan = taskTxts[4];
+        hud.taskRespirator = taskTxts[5];
+        hud.taskWalkieTalkie = taskTxts[6];
         hud.panelOperasional = pOps;
-        hud.taskScannerAmbil = taskScan;
-        hud.taskScannerPasang = taskPasang;
-        hud.taskMesinAktif = taskMesin;
+        hud.txtParameterInfo = txtParam;
+        hud.panelWalkieTalkieHint = pWTHint;
+        hud.txtHintKataKunci = txtHTHint;
         hud.panelNotif = pNotif;
         hud.txtNotif = txtNotif;
         hud.bgNotif = pNotif.GetComponent<Image>();

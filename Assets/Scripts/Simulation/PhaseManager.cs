@@ -1,162 +1,215 @@
 using UnityEngine;
-using System.Collections.Generic;
 using System;
+using System.Collections.Generic;
 
+/// <summary>
+/// OLIVIA VR - PhaseManager.cs (Refactored v3.0)
+/// Sub-sistem APD & Safety Gate yang dikendalikan oleh GameLevelManager.
+/// 
+/// TANGGUNG JAWAB PhaseManager:
+///   - Tracking 7 item APD (equipped / not equipped)
+///   - Validasi akses area (kimia, mesin, tailing)
+///   - Membuka Safety Gate saat APD lengkap
+/// 
+/// PhaseManager TIDAK lagi mengatur level atau alur game secara langsung.
+/// Semua alur level sekarang dikendalikan oleh GameLevelManager.cs
+/// </summary>
 public class PhaseManager : MonoBehaviour
 {
-    public enum SimulationPhase
-    {
-        Idle = 0,
-        PreparasiAPD = 1,
-        OperasionalAlat = 2,
-        AktifMesin = 3,
-        Selesai = 4
-    }
+    // ============================================================
+    //  SINGLETON
+    // ============================================================
+    public static PhaseManager Instance { get; private set; }
 
+    // ============================================================
+    //  EVENTS
+    // ============================================================
+    public static event Action<string> OnApdItemWorn;       // Satu item APD dipakai
+    public static event Action         OnAPD7Lengkap;       // Semua 7 APD lengkap → buka Safety Gate
+    public static event Action         OnAPDTidakLengkap;   // Pemain mencoba akses tanpa APD
+
+    // ============================================================
+    //  MODEL APD
+    // ============================================================
     [Serializable]
     public class ApdItem
     {
         public string namaApd;
-        public bool sudahDipakai = false;
+        public bool   sudahDipakai = false;
+        public ApdItem(string nama) { namaApd = nama; }
+    }
 
-        public ApdItem(string nama)
+    // ============================================================
+    //  INSPECTOR — 7 APD WAJIB
+    // ============================================================
+    [Header("=== APD Dasar (5 Item) ===")]
+    [SerializeField] private ApdItem _helm         = new ApdItem("Helm K3");
+    [SerializeField] private ApdItem _rompi        = new ApdItem("Rompi Safety");
+    [SerializeField] private ApdItem _kacamata     = new ApdItem("Kacamata Pelindung");
+    [SerializeField] private ApdItem _sepatuBots   = new ApdItem("Sepatu Safety");
+    [SerializeField] private ApdItem _sarungTangan = new ApdItem("Sarung Tangan Kimia");
+
+    [Header("=== APD Khusus (2 Item Wajib Tambahan) ===")]
+    [SerializeField] private ApdItem _respirator   = new ApdItem("Respirator / Masker Gas");
+    [SerializeField] private ApdItem _walikieTalkie = new ApdItem("Walkie Talkie / HT");
+
+    // ============================================================
+    //  PROPERTIES
+    // ============================================================
+    public bool ApdDasarLengkap =>
+        _helm.sudahDipakai         &&
+        _rompi.sudahDipakai        &&
+        _kacamata.sudahDipakai     &&
+        _sepatuBots.sudahDipakai   &&
+        _sarungTangan.sudahDipakai;
+
+    public bool RespiratiorTerpasang   => _respirator.sudahDipakai;
+    public bool WalkieTalkieDiambil    => _walikieTalkie.sudahDipakai;
+
+    /// <summary>True jika semua 7 item APD sudah dipakai/diambil.</summary>
+    public bool APD7Lengkap =>
+        ApdDasarLengkap            &&
+        RespiratiorTerpasang       &&
+        WalkieTalkieDiambil;
+
+    public int JumlahAPDTerpasang
+    {
+        get
         {
-            namaApd = nama;
+            int count = 0;
+            foreach (var apd in SemuaAPD()) if (apd.sudahDipakai) count++;
+            return count;
         }
     }
 
-    public static event Action<SimulationPhase> OnPhaseChanged;
-    public static event Action OnAllApdEquipped;
-    public static event Action<string> OnApdItemWorn;
-    public static event Action OnScannerPickedUp;
-    public static event Action OnScannerInstalled;
-
-    [Header("=== Status Fase Saat Ini ===")]
-    [SerializeField] private SimulationPhase _currentPhase = SimulationPhase.Idle;
-
-    [Header("=== Status APD ===")]
-    [SerializeField] private ApdItem _helm = new ApdItem("Helm K3");
-    [SerializeField] private ApdItem _rompi = new ApdItem("Rompi Safety");
-    [SerializeField] private ApdItem _kacamata = new ApdItem("Kacamata Pelindung");
-    [SerializeField] private ApdItem _sepatuBots = new ApdItem("Sepatu Boots");
-
-    [Header("=== Status Operasional ===")]
-    [SerializeField] private bool _scannerSudahDiambil = false;
-    [SerializeField] private bool _scannerSudahDipasang = false;
-
-    public SimulationPhase CurrentPhase => _currentPhase;
-    public bool ScannerSudahDiambil => _scannerSudahDiambil;
+    // ============================================================
+    //  LIFECYCLE
+    // ============================================================
+    private void Awake()
+    {
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        Instance = this;
+    }
 
     private void Start()
     {
-        MulaiSimulasi();
+        Log("APD SYSTEM", "Siap! Pakai 7 APD sebelum masuk area plant.", "yellow");
     }
 
-    public void OnHelmetWorn()
+    // ============================================================
+    //  HANDLER APD — Dipanggil dari XR Socket/Grab Events
+    // ============================================================
+    public void OnHelmetWorn()        { PakaiApd(_helm);          }
+    public void OnVestWorn()          { PakaiApd(_rompi);         }
+    public void OnGlassesWorn()       { PakaiApd(_kacamata);      }
+    public void OnBootsWorn()         { PakaiApd(_sepatuBots);    }
+    public void OnGlovesWorn()        { PakaiApd(_sarungTangan);  }
+    public void OnRespiratiorWorn()   { PakaiApd(_respirator);    }
+    public void OnWalkieTalkieTaken() { PakaiApd(_walikieTalkie); }
+
+    // ============================================================
+    //  VALIDASI AKSES AREA (Dipanggil dari SafetyGate.cs)
+    // ============================================================
+
+    /// <summary>Cek akses ke area utama plant (butuh semua 7 APD).</summary>
+    public bool BolehMasukAreaPlant()
     {
-        CatatApdDipakai(_helm);
-        CekSemuaApdLengkap();
+        if (APD7Lengkap) return true;
+
+        string namaKurang = CaraAPDYangKurang();
+        Log("SAFETY GATE", $"AKSES DITOLAK! APD kurang: {namaKurang}", "red");
+        OnAPDTidakLengkap?.Invoke();
+        return false;
     }
 
-    public void OnVestWorn()
+    /// <summary>Cek akses area kimia khusus (butuh respirator).</summary>
+    public bool BolehMasukAreaKimia()
     {
-        CatatApdDipakai(_rompi);
-        CekSemuaApdLengkap();
+        if (ApdDasarLengkap && RespiratiorTerpasang) return true;
+        Log("SAFETY GATE", "AKSES AREA KIMIA DITOLAK! Respirator belum terpasang.", "red");
+        OnAPDTidakLengkap?.Invoke();
+        return false;
     }
 
-    public void OnGlassesWorn()
+    /// <summary>Kembalikan nama APD pertama yang belum dipakai.</summary>
+    public string CaraAPDYangKurang()
     {
-        CatatApdDipakai(_kacamata);
-        CekSemuaApdLengkap();
+        foreach (var apd in SemuaAPD())
+            if (!apd.sudahDipakai) return apd.namaApd;
+        return "—";
     }
 
-    public void OnBootsWorn()
+    /// <summary>Kembalikan daftar semua nama APD yang belum dipakai.</summary>
+    public List<string> DaftarAPDKurang()
     {
-        CatatApdDipakai(_sepatuBots);
-        CekSemuaApdLengkap();
+        var kurang = new List<string>();
+        foreach (var apd in SemuaAPD())
+            if (!apd.sudahDipakai) kurang.Add(apd.namaApd);
+        return kurang;
     }
 
-    public void OnScannerGrabbed()
-    {
-        if (_scannerSudahDiambil) return;
-
-        if (_currentPhase != SimulationPhase.OperasionalAlat)
-        {
-            Log("PERINGATAN", "Scanner belum bisa diambil. Lengkapi APD terlebih dahulu!", "orange");
-            return;
-        }
-
-        _scannerSudahDiambil = true;
-        OnScannerPickedUp?.Invoke();
-        Log("TUGAS SELESAI", "Scanner berhasil diambil!", "green");
-        Log("TUGAS BERIKUTNYA", "Bawa scanner ke silinder merah dan tempatkan di sana.", "yellow");
-    }
-
-    public void OnScannerPlaced()
-    {
-        if (_scannerSudahDipasang) return;
-
-        _scannerSudahDipasang = true;
-        OnScannerInstalled?.Invoke();
-        Log("FASE 2 SELESAI", "Scanner terpasang! Sistem siap diaktifkan.", "green");
-        Log("SOP SELANJUTNYA", "Tekan tombol utama untuk menyalakan mesin HPAL (Fase 3).", "cyan");
-
-        UbahFase(SimulationPhase.AktifMesin);
-    }
-
-    public void OnMachineActivated()
-    {
-        if (_currentPhase != SimulationPhase.AktifMesin)
-        {
-            Log("PERINGATAN", "Mesin belum siap. Pastikan Scanner sudah terpasang!", "orange");
-            return;
-        }
-
-        Log("FASE 3 AKTIF", "Mesin HPAL berhasil dinyalakan! Proses dimulai.", "green");
-        UbahFase(SimulationPhase.Selesai);
-    }
-
-    private void MulaiSimulasi()
-    {
-        Log("OLIVIA SIMULATOR", "Selamat Datang! Ikuti SOP dengan benar.", "white");
-        UbahFase(SimulationPhase.PreparasiAPD);
-    }
-
-    private void CatatApdDipakai(ApdItem apd)
+    // ============================================================
+    //  INTERNAL
+    // ============================================================
+    private void PakaiApd(ApdItem apd)
     {
         if (apd.sudahDipakai) return;
         apd.sudahDipakai = true;
         OnApdItemWorn?.Invoke(apd.namaApd);
-        Log("APD TERPASANG", $"{apd.namaApd} berhasil dipakai. Bagus!", "green");
-    }
+        Log("APD", $"✓ <b>{apd.namaApd}</b> terpasang! ({JumlahAPDTerpasang}/7)", "green");
 
-    private void CekSemuaApdLengkap()
-    {
-        var daftarApd = new List<ApdItem> { _helm, _rompi, _kacamata, _sepatuBots };
-
-        ApdItem sisaApd = daftarApd.Find(a => !a.sudahDipakai);
-        if (sisaApd != null)
+        if (APD7Lengkap)
         {
-            Log("TUGAS", $"Masih perlu memakai: <b>{sisaApd.namaApd}</b>", "yellow");
-            return;
+            Log("APD LENGKAP", "Semua 7 APD terpasang! Safety Gate terbuka.", "green");
+            OnAPD7Lengkap?.Invoke();
+            // Notifikasi GameLevelManager bahwa Level 1 (APD) bisa diselesaikan
+            GameLevelManager.Instance?.OnVoiceKeywordTerdeteksi("APD lengkap");
         }
-
-        Log("FASE 1 SELESAI", "Semua APD terpasang! Kamu siap masuk ke area kerja HPAL.", "green");
-        Log("TUGAS BERIKUTNYA", "Ambil Scanner untuk memulai operasional.", "cyan");
-
-        OnAllApdEquipped?.Invoke();
-        UbahFase(SimulationPhase.OperasionalAlat);
+        else
+        {
+            string kurang = CaraAPDYangKurang();
+            Log("APD CHECKLIST", $"Masih perlu: <b>{kurang}</b>", "yellow");
+        }
     }
 
-    private void UbahFase(SimulationPhase faseBaru)
+    private IEnumerable<ApdItem> SemuaAPD()
     {
-        _currentPhase = faseBaru;
-        Log("FASE BERUBAH", $"Sekarang masuk ke fase: <b>{faseBaru}</b>", "cyan");
-        OnPhaseChanged?.Invoke(faseBaru);
+        yield return _helm;
+        yield return _rompi;
+        yield return _kacamata;
+        yield return _sepatuBots;
+        yield return _sarungTangan;
+        yield return _respirator;
+        yield return _walikieTalkie;
     }
 
     private void Log(string label, string pesan, string warna = "white")
+        => Debug.Log($"<color={warna}>[APD-{label}]</color> {pesan}");
+
+    // ============================================================
+    //  DEBUG
+    // ============================================================
+#if UNITY_EDITOR
+    [ContextMenu("DEBUG: Pakai Semua APD (Instant)")]
+    private void D_PakaiSemuaAPD()
     {
-        Debug.Log($"<color={warna}>[{label}]</color> {pesan}");
+        OnHelmetWorn(); OnVestWorn(); OnGlassesWorn();
+        OnBootsWorn(); OnGlovesWorn(); OnRespiratiorWorn(); OnWalkieTalkieTaken();
     }
+
+    [ContextMenu("DEBUG: Reset Semua APD")]
+    private void D_ResetAPD()
+    {
+        foreach (var apd in SemuaAPD()) apd.sudahDipakai = false;
+        Log("RESET", "Semua APD direset.", "orange");
+    }
+
+    [ContextMenu("DEBUG: Cek Status APD")]
+    private void D_CekAPD()
+    {
+        Log("STATUS", $"APD Terpasang: {JumlahAPDTerpasang}/7 | Lengkap: {APD7Lengkap}", "cyan");
+        foreach (var kurang in DaftarAPDKurang())
+            Log("KURANG", kurang, "orange");
+    }
+#endif
 }
