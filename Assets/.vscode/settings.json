@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^powershell -Command \"Get-ChildItem -Path 'c:\\\\Users\\\\mp2dz\\\\Olivia\\\\Assets' -Filter '\\*\\.cs' -Recurse \\| Where-Object \\{ \\\\\\$_\\.Name -like '\\*DCS\\*' \\} \\| Select-Object -ExpandProperty FullName\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

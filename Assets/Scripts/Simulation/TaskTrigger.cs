@@ -13,19 +13,22 @@ public class TaskTrigger : MonoBehaviour
         Rompi,
         Kacamata,
         Sepatu,
-        SarungTangan,       // Chemical-resistant gloves (BARU)
+        SarungTangan,
 
-        // === APD KHUSUS ZONA (Safety Gate Berjenjang) ===
-        Respirator,         // Wajib area kimia / H2SO4 (BARU)
-        EarProtection,      // Wajib area mesin / >85dB (BARU)
+        // === APD KHUSUS ZONA ===
+        Respirator,
+        EarProtection,
 
         // === ITEM OPERASIONAL ===
-        RadioHT,            // Walkie-Talkie dari loker (Ganti Scanner)
+        RadioHT,
 
         // === INTERAKSI LAPANGAN ===
-        SteamValveOpen,     // Katup injeksi uap dibuka (Ganti Scanner)
-        ESDButton,          // Tombol Emergency Shutdown ditekan
-        IsolationValve,     // Isolation valve diputar manual (backup ESD)
+        SteamValveOpen,
+        ESDButton,
+        IsolationValve,
+
+        // === DCS AREA ===
+        LihatDCS,
     }
 
     [Header("=== SOP Task Configuration ===")]
@@ -43,39 +46,49 @@ public class TaskTrigger : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Panggil dari event 'Select Entered' di XR Grab Interactable di Inspector.
-    /// </summary>
     public void NotifyGrab()
+    {
+        DoNotify();
+    }
+
+    private void OnTriggerEnter(Collider other)
+    {
+        if (other.CompareTag("Player") || other.GetComponentInChildren<Camera>() != null)
+        {
+            Debug.Log($"[AutoEquip] Player menyentuh {gameObject.name}, otomatis memakai {tipeTugas}");
+            DoNotify();
+        }
+    }
+
+    private void DoNotify()
     {
         if (phaseManager == null) return;
 
         switch (tipeTugas)
         {
-            // --- APD Dasar ---
-            case TaskType.Helm: phaseManager.OnHelmetWorn(); break;
-            case TaskType.Rompi: phaseManager.OnVestWorn(); break;
-            case TaskType.Kacamata: phaseManager.OnGlassesWorn(); break;
-            case TaskType.Sepatu: phaseManager.OnBootsWorn(); break;
-            case TaskType.SarungTangan: phaseManager.OnGlovesWorn(); break;
+            case TaskType.Helm:         phaseManager.OnHelmetWorn();        break;
+            case TaskType.Rompi:        phaseManager.OnVestWorn();          break;
+            case TaskType.Kacamata:     phaseManager.OnGlassesWorn();       break;
+            case TaskType.Sepatu:       phaseManager.OnBootsWorn();         break;
+            case TaskType.SarungTangan: phaseManager.OnGlovesWorn();        break;
 
-            // --- APD Khusus Zona ---
-            case TaskType.Respirator: phaseManager.OnRespiratiorWorn(); break;
-            case TaskType.EarProtection: phaseManager.OnRespiratiorWorn(); break; // EarProtection mapped to Respirator APD slot
+            case TaskType.Respirator:   phaseManager.OnRespiratiorWorn();   break;
+            case TaskType.EarProtection:phaseManager.OnEarplugWorn();       break;
 
-            // --- Item Operasional ---
-            case TaskType.RadioHT: phaseManager.OnWalkieTalkieTaken(); break;
+            case TaskType.RadioHT:      phaseManager.OnWalkieTalkieTaken(); break;
 
-            // --- Interaksi Lapangan ---
             case TaskType.SteamValveOpen: 
-                Debug.Log("[TaskTrigger] Steam Valve Opened. Check GameLevelManager Level 5.");
+                Debug.Log("[TaskTrigger] Steam Valve Opened.");
                 break;
             case TaskType.ESDButton: 
                 if (GameLevelManager.Instance != null && GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level14_Emergency)
                     GameLevelManager.Instance.SelesaikanLevel(GameLevelManager.GameLevel.Level14_Emergency);
                 break;
             case TaskType.IsolationValve: 
-                Debug.Log("[TaskTrigger] Isolation Valve Closed. Used in Emergency.");
+                Debug.Log("[TaskTrigger] Isolation Valve Closed.");
+                break;
+            case TaskType.LihatDCS:
+                GameLevelManager.Instance?.NotifyDcsViewed();
                 break;
         }
     }

@@ -24,22 +24,21 @@
 ---
 
 ### ⚫ LEVEL 0 — Tutorial VR (Mekanik Dasar)
-**Lokasi:** Ruang Briefing / Lobby  
-**Tujuan:** Pemain belajar cara mengontrol game sebelum masuk area pabrik.
-
-**Materi Tutorial:**
-1. Cara berjalan (Joystick Continuous Move)
-2. Cara grab/megang objek (XR Grab)
-3. Cara menggunakan Walkie Talkie (Grab HT + tekan PTT + bicara) → Terdengar balasan audio instruktur.
-4. Cara membaca UI Hologram/Outline.
+**Lokasi:** Area Lapangan Bebas (Tutorial Zone)  
+**Tujuan:** Pemain belajar kontrol dasar VR (berjalan, mengambil barang, Walkie Talkie).
+**Akhir Level:** Setelah tutorial selesai, layar *Fade Out* dan pemain **diteleportasi otomatis ke depan Gerbang Gedung Loker**.
 
 ---
 
-### 🟢 LEVEL 1 — Persiapan APD (Safety Zone)
-**Lokasi:** Ruang Loker  
-**Peran:** Operator Baru  
-**Checklist Quest:** Pakai 7 item APD: Helm, Rompi, Kacamata, Sepatu, Sarung Tangan, **Masker/Respirator**, dan **Walkie Talkie**.
-**Selesai jika:** Lapor HT: *"DCS, APD lengkap."* Balasan: *"Copy, pintu Safety Gate terbuka."*
+### 🟢 LEVEL 1 — Persiapan APD (The Hub & Safety Zone)
+**Lokasi:** Ruang Loker (The Hub)  
+**Peran:** Operator Lapangan  
+**Mekanisme "The Hub" (Teleporter):**
+- Di level operasional, pemain akan selalu berawal dari ruang loker ini.
+- Sistem mengecek SOP level tersebut dan **memunculkan APD khusus** tambahan secara dinamis (mendukung total 10 APD, termasuk Harness, Lanyard, Jas Hujan).
+- Setelah memakai APD yang benar, pemain membuka **Pintu Keluar Loker** untuk diteleportasi langsung ke depan mesin target di lapangan.
+**Checklist Quest Level 1:** Pakai 7 item APD Dasar (Helm, Rompi, Kacamata, Sepatu, Sarung Tangan, Respirator, EarPlug) + Walkie Talkie.
+**Selesai jika:** Lapor HT: *"APD lengkap."* -> Buka Pintu Loker -> Layar *Fade Out* -> Teleport ke DCS Room (Level 2).
 
 ---
 

@@ -55,6 +55,7 @@ public class DCSTombolPanel : MonoBehaviour
     // ============================================================
     private void Awake()
     {
+        AutoBindReferences();
         SetupInteractable();
         if (_labelText != null) _labelText.text = _nomorTombol.ToString();
         AturMaterial(_materialNormal);
@@ -76,6 +77,18 @@ public class DCSTombolPanel : MonoBehaviour
     {
         if (_xrInteractable == null) return;
         _xrInteractable.selectEntered.AddListener(_ => OnTombolDitekan());
+    }
+
+    private void AutoBindReferences()
+    {
+        if (_xrInteractable == null)
+            _xrInteractable = GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>();
+
+        if (_meshRenderer == null)
+            _meshRenderer = GetComponentInChildren<MeshRenderer>();
+
+        if (_labelText == null)
+            _labelText = GetComponentInChildren<TextMeshPro>();
     }
 
     // ============================================================

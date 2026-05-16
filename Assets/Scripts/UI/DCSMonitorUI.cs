@@ -157,6 +157,7 @@ public class DCSMonitorUI : MonoBehaviour
     {
         // Subscribe ke event sistem 14-level
         GameLevelManager.OnLevelStarted += OnLevelBerubah;
+        GameLevelManager.OnDCSButtonPressed += OnDcsButtonPressed;
 
         // Setup tombol ESD
         if (btnESD != null)
@@ -182,6 +183,7 @@ public class DCSMonitorUI : MonoBehaviour
     void OnDestroy()
     {
         GameLevelManager.OnLevelStarted -= OnLevelBerubah;
+        GameLevelManager.OnDCSButtonPressed -= OnDcsButtonPressed;
 
         if (btnESD != null)
             btnESD.onClick.RemoveListener(TekanESD);
@@ -289,6 +291,40 @@ public class DCSMonitorUI : MonoBehaviour
 
         // 2. Update flow step berdasarkan level
         _flowCurrentStep = Mathf.Clamp((int)level, 0, 8);
+        UpdateFlowTracker();
+    }
+
+    private void OnDcsButtonPressed(int nomorTombol)
+    {
+        if (GameLevelManager.Instance == null)
+            return;
+
+        if (GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level3_OreSlurry || nomorTombol != 3)
+            return;
+
+        _mesinAktif = true;
+        _flowCurrentStep = 2;
+        _targetFlow = 120f;
+        _rpm = Mathf.Max(_rpm, 18f);
+        _flowRate = Mathf.Max(_flowRate, 90f);
+        _nikel = Mathf.Max(_nikel, 12f);
+        _efisiensi = Mathf.Max(_efisiensi, 8f);
+        _kadarAsam = Mathf.Max(_kadarAsam, 5f);
+        _waktuProses = 0f;
+        SetValve(ref _valveSlurry, true);
+
+        if (txtStatusMesin != null)
+        {
+            txtStatusMesin.text = "STARTING";
+            txtStatusMesin.color = warnaBlue;
+        }
+
+        if (panelTaskMesin != null)
+            panelTaskMesin.SetActive(true);
+
+        SetTaskDone(taskMesinDCS);
+        TriggerAlarm("Crusher dan slurry tank mulai beroperasi. Tunggu laporan HT operator.", false);
+        UpdateSemuaTampilan();
         UpdateFlowTracker();
     }
 
