@@ -78,3 +78,4 @@ crashlytics-build.properties
 # Ignore local research documents
 Assets/Script/Roadmap/HPAL_DeepResearch.md
 Assets/Script/Roadmap/HPAL_DeepResearch.md.meta
+Assets/_Recovery/

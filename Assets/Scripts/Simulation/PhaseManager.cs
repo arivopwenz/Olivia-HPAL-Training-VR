@@ -132,7 +132,6 @@ public class PhaseManager : MonoBehaviour
         {
             Log("APD LENGKAP", $"Semua {TOTAL_APD} APD terpasang sempurna!", "green");
             OnAPD7Lengkap?.Invoke();
-            GameLevelManager.Instance?.OnVoiceKeywordTerdeteksi("APD lengkap");
         }
     }
 

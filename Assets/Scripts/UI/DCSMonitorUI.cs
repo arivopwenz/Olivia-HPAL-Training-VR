@@ -3,6 +3,9 @@ using UnityEngine.UI;
 using TMPro;
 using System.Collections;
 using System.Collections.Generic;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 /// <summary>
 /// DCS Monitor UI v3.0 — OLIVIA VR Simulator
@@ -101,6 +104,10 @@ public class DCSMonitorUI : MonoBehaviour
     public Color warnaBlue = new Color(0.3f, 0.8f, 1f);
     public Color warnaAbu = new Color(0.5f, 0.5f, 0.5f);
 
+    [Header("=== Kontrol Flow Rate ===")]
+    [SerializeField] private float _langkahFlowRate = 10f;
+    [SerializeField] private bool _izinkanKeyboardFlowTest = true;
+
     // ============================================================
     //  DATA INTERNAL — PARAMETER REAKTOR
     // ============================================================
@@ -180,6 +187,31 @@ public class DCSMonitorUI : MonoBehaviour
         UpdateValvePanel();
     }
 
+    void Update()
+    {
+        if (!_izinkanKeyboardFlowTest || GameLevelManager.Instance == null)
+            return;
+
+        if (GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level4_SlurryPump)
+            return;
+
+#if ENABLE_INPUT_SYSTEM
+        var keyboard = Keyboard.current;
+        if (keyboard == null)
+            return;
+
+        if (keyboard.equalsKey.wasPressedThisFrame || keyboard.numpadPlusKey.wasPressedThisFrame)
+            TambahFlowRate();
+        else if (keyboard.minusKey.wasPressedThisFrame || keyboard.numpadMinusKey.wasPressedThisFrame)
+            KurangiFlowRate();
+#elif ENABLE_LEGACY_INPUT_MANAGER
+        if (Input.GetKeyDown(KeyCode.Equals) || Input.GetKeyDown(KeyCode.KeypadPlus))
+            TambahFlowRate();
+        else if (Input.GetKeyDown(KeyCode.Minus) || Input.GetKeyDown(KeyCode.KeypadMinus))
+            KurangiFlowRate();
+#endif
+    }
+
     void OnDestroy()
     {
         GameLevelManager.OnLevelStarted -= OnLevelBerubah;
@@ -222,9 +254,8 @@ public class DCSMonitorUI : MonoBehaviour
                 break;
 
             case GameLevelManager.GameLevel.Level4_SlurryPump:
-                txtStatusFase.text = "STATUS: SLURRY PUMP AKTIF";
+                txtStatusFase.text = "STATUS: SLURRY PUMP READY";
                 txtStatusFase.color = warnaBlue;
-                SetValve(ref _valveSlurry, true);
                 _targetFlow = 450f;
                 break;
 
@@ -299,33 +330,63 @@ public class DCSMonitorUI : MonoBehaviour
         if (GameLevelManager.Instance == null)
             return;
 
-        if (GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level3_OreSlurry || nomorTombol != 3)
-            return;
-
-        _mesinAktif = true;
-        _flowCurrentStep = 2;
-        _targetFlow = 120f;
-        _rpm = Mathf.Max(_rpm, 18f);
-        _flowRate = Mathf.Max(_flowRate, 90f);
-        _nikel = Mathf.Max(_nikel, 12f);
-        _efisiensi = Mathf.Max(_efisiensi, 8f);
-        _kadarAsam = Mathf.Max(_kadarAsam, 5f);
-        _waktuProses = 0f;
-        SetValve(ref _valveSlurry, true);
-
-        if (txtStatusMesin != null)
+        if (GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level3_OreSlurry && nomorTombol == 3)
         {
-            txtStatusMesin.text = "STARTING";
-            txtStatusMesin.color = warnaBlue;
+            _mesinAktif = true;
+            _flowCurrentStep = 2;
+            _targetFlow = 120f;
+            _rpm = Mathf.Max(_rpm, 18f);
+            _flowRate = Mathf.Max(_flowRate, 90f);
+            _nikel = Mathf.Max(_nikel, 12f);
+            _efisiensi = Mathf.Max(_efisiensi, 8f);
+            _kadarAsam = Mathf.Max(_kadarAsam, 5f);
+            _waktuProses = 0f;
+            SetValve(ref _valveSlurry, true);
+
+            if (txtStatusMesin != null)
+            {
+                txtStatusMesin.text = "STARTING";
+                txtStatusMesin.color = warnaBlue;
+            }
+
+            if (panelTaskMesin != null)
+                panelTaskMesin.SetActive(true);
+
+            SetTaskDone(taskMesinDCS);
+            TriggerAlarm("Crusher dan slurry tank mulai beroperasi. Tunggu laporan HT operator.", false);
+            UpdateSemuaTampilan();
+            UpdateFlowTracker();
+            return;
         }
 
-        if (panelTaskMesin != null)
-            panelTaskMesin.SetActive(true);
+        if (GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level4_SlurryPump && nomorTombol == 4)
+        {
+            _mesinAktif = true;
+            _flowCurrentStep = 3;
+            _targetFlow = 450f;
+            _rpm = Mathf.Max(_rpm, 28f);
+            _flowRate = Mathf.Max(_flowRate, 180f);
+            _nikel = Mathf.Max(_nikel, 18f);
+            _efisiensi = Mathf.Max(_efisiensi, 14f);
+            _kadarAsam = Mathf.Max(_kadarAsam, 6f);
+            _waktuProses = 0f;
+            SetValve(ref _valveSlurry, true);
 
-        SetTaskDone(taskMesinDCS);
-        TriggerAlarm("Crusher dan slurry tank mulai beroperasi. Tunggu laporan HT operator.", false);
-        UpdateSemuaTampilan();
-        UpdateFlowTracker();
+            if (txtStatusMesin != null)
+            {
+                txtStatusMesin.text = "SLURRY PUMP ON";
+                txtStatusMesin.color = warnaHijau;
+            }
+
+            if (panelTaskMesin != null)
+                panelTaskMesin.SetActive(true);
+
+            SetTaskDone(taskMesinDCS);
+            TriggerAlarm("Slurry pump aktif. Atur flow rate ke 450 m3/h lalu kirim laporan HT.", false);
+            SyncFlowRateKeLevelManager();
+            UpdateSemuaTampilan();
+            UpdateFlowTracker();
+        }
     }
 
     // ============================================================
@@ -343,7 +404,15 @@ public class DCSMonitorUI : MonoBehaviour
                 _suhu = Mathf.Clamp(_suhu + Random.Range(-0.4f, 0.4f), _targetSuhu - 5f, _targetSuhu + 5f);
                 _tekanan = Mathf.Clamp(_tekanan + Random.Range(-0.2f, 0.2f), _targetTekanan - 2f, _targetTekanan + 2f);
                 _rpm = Mathf.Clamp(_rpm + Random.Range(-0.5f, 0.5f), _targetRPM - 3f, _targetRPM + 3f);
-                _flowRate = Mathf.Clamp(_flowRate + Random.Range(-2f, 2f), _targetFlow - 20f, _targetFlow + 20f);
+                if (GameLevelManager.Instance != null &&
+                    GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level4_SlurryPump)
+                {
+                    _flowRate = Mathf.Clamp(_flowRate, 0f, 600f);
+                }
+                else
+                {
+                    _flowRate = Mathf.Clamp(_flowRate + Random.Range(-2f, 2f), _targetFlow - 20f, _targetFlow + 20f);
+                }
                 _pH = Mathf.Clamp(_pH + Random.Range(-0.02f, 0.02f), 0.7f, 1.3f);
                 _scaleLevel = Mathf.Clamp(_scaleLevel + Random.Range(-0.05f, 0.1f), 10f, 40f);
 
@@ -386,6 +455,20 @@ public class DCSMonitorUI : MonoBehaviour
             if (_daruratAktif && !_esdSudahDitekan)
                 UpdateCountdown();
         }
+    }
+
+    public void TambahFlowRate()
+    {
+        _flowRate = Mathf.Clamp(_flowRate + _langkahFlowRate, 0f, 600f);
+        SyncFlowRateKeLevelManager();
+        UpdateSemuaTampilan();
+    }
+
+    public void KurangiFlowRate()
+    {
+        _flowRate = Mathf.Clamp(_flowRate - _langkahFlowRate, 0f, 600f);
+        SyncFlowRateKeLevelManager();
+        UpdateSemuaTampilan();
     }
 
     // ============================================================
@@ -580,6 +663,19 @@ public class DCSMonitorUI : MonoBehaviour
 
         if (txtWaktuShift != null)
             txtWaktuShift.text = $"SHIFT: {Mathf.FloorToInt(_waktuShift / 60f):00}:{Mathf.FloorToInt(_waktuShift % 60f):00}";
+
+        SyncFlowRateKeLevelManager();
+    }
+
+    private void SyncFlowRateKeLevelManager()
+    {
+        if (GameLevelManager.Instance == null)
+            return;
+
+        if (GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level4_SlurryPump)
+            return;
+
+        GameLevelManager.Instance.SetFlowRate(_flowRate);
     }
 
     // ============================================================

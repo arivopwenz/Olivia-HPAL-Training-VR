@@ -34,51 +34,44 @@ public class WalkieTalkieManager : MonoBehaviour
     [SerializeField] private bool _autoShowOnPTT = true;
 
     [Header("=== Voice Recognition ===")]
-#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-    [SerializeField] private ConfidenceLevel _tingkatKepercayaan = ConfidenceLevel.Medium;
-#endif
     [SerializeField] private float _delaySebelumDiproses = 1.35f;
     [SerializeField] private float _delaySebelumBalasan = 0.75f;
+    [SerializeField] private float _initialSilenceTimeout = 5f;
+    [SerializeField] private float _autoSilenceTimeout = 3f;
     [SerializeField] private bool _pakaiFallbackKeyboard = true;
-    [SerializeField] private bool _autoSubmitKeywordSaatSpeechGagal = true;
+    [SerializeField] private bool _izinkanMouseUntukPTT = false;
+    [SerializeField] private bool _modeTanpaVoiceUntukTempatRame = false;
+    [SerializeField] private bool _autoSubmitKeywordSaatSpeechGagal = false;
     [SerializeField] private float _minimumDurasiPttUntukFallback = 0.25f;
+
+    [Header("=== Debug Mic Input ===")]
+    [SerializeField] private bool _debugMicInput = true;
+    [SerializeField] private int _micSampleRate = 16000;
+    [SerializeField] private int _micWindowSize = 128;
+    [SerializeField] private float _ambangMicTerdengar = 0.01f;
 
     [Header("=== Status (Read Only) ===")]
     [SerializeField] private bool _pttSedangDitekan;
     [SerializeField] private bool _recognizerAktif;
     [SerializeField] private string _lastKeyword = "";
+    [SerializeField] private float _debugMicPeak;
 
     public static event Action<string> OnKeywordTerdeteksi;
     public static event Action OnPTTDitekan;
     public static event Action OnPTTDilepas;
 
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-    private KeywordRecognizer _recognizer;
+    private DictationRecognizer _recognizer;
 #endif
     private bool _sistemSiap;
     private float _waktuMulaiPtt = -1f;
     private string _pendingSpeechText = string.Empty;
+    private string _pendingHypothesisText = string.Empty;
     private bool _adaKeywordPadaSesiPtt;
     private Coroutine _coroutineProsesLaporan;
-
-    private readonly string[] _frasaFallbackDasar =
-    {
-        "apd lengkap",
-        "siapkan area",
-        "ore masuk",
-        "slurry pump aktif",
-        "katup steam terbuka",
-        "acid aktif",
-        "suhu 250",
-        "parameter stabil",
-        "flash vessel normal",
-        "ccd aktif",
-        "mhp terbentuk",
-        "limbah dialirkan",
-        "tailing aman",
-        "emergency",
-        "evakuasi"
-    };
+    private AudioClip _debugMicClip;
+    private string _debugMicDevice;
+    private bool _debugMicMonitoring;
 
     private void Awake()
     {
@@ -100,6 +93,9 @@ public class WalkieTalkieManager : MonoBehaviour
 
     private void Update()
     {
+        if (_debugMicMonitoring)
+            UpdateMicDebugLevel();
+
 #if ENABLE_INPUT_SYSTEM
         var keyboard = Keyboard.current;
         if (keyboard != null)
@@ -112,7 +108,7 @@ public class WalkieTalkieManager : MonoBehaviour
         }
 
         var mouse = Mouse.current;
-        if (mouse != null)
+        if (_izinkanMouseUntukPTT && mouse != null)
         {
             if (mouse.leftButton.wasPressedThisFrame) OnPTTPress();
             else if (mouse.leftButton.wasReleasedThisFrame) OnPTTRelease();
@@ -124,8 +120,11 @@ public class WalkieTalkieManager : MonoBehaviour
         if (_pakaiFallbackKeyboard && _pttSedangDitekan && Input.GetKeyDown(KeyCode.Alpha1))
             SimulasikanKeywordLevelAktif();
 
-        if (Input.GetMouseButtonDown(0)) OnPTTPress();
-        else if (Input.GetMouseButtonUp(0)) OnPTTRelease();
+        if (_izinkanMouseUntukPTT)
+        {
+            if (Input.GetMouseButtonDown(0)) OnPTTPress();
+            else if (Input.GetMouseButtonUp(0)) OnPTTRelease();
+        }
 #endif
     }
 
@@ -144,10 +143,9 @@ public class WalkieTalkieManager : MonoBehaviour
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
         try
         {
-            _recognizer = new KeywordRecognizer(BangunDatabaseFrasa(), _tingkatKepercayaan);
-            _recognizer.OnPhraseRecognized += OnFrasaTerdeteksi;
+            BuatDictationRecognizer();
             _sistemSiap = true;
-            Log("INIT", "KeywordRecognizer siap untuk laporan HT lengkap.", "cyan");
+            Log("INIT", "DictationRecognizer siap untuk laporan HT natural.", "cyan");
         }
         catch (Exception e)
         {
@@ -160,32 +158,20 @@ public class WalkieTalkieManager : MonoBehaviour
 #endif
     }
 
-    private string[] BangunDatabaseFrasa()
+#if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
+    private void BuatDictationRecognizer()
     {
-        var phrases = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (string item in _frasaFallbackDasar)
-            phrases.Add(item);
+        BersihkanRecognizer();
 
-        if (GameLevelManager.Instance != null)
-        {
-            for (int i = 1; i <= 14; i++)
-            {
-                var level = (GameLevelManager.GameLevel)i;
-                if (!GameLevelManager.Instance.TryGetLevelData(level, out var data))
-                    continue;
-
-                if (!string.IsNullOrWhiteSpace(data.kataKunciVoice))
-                    phrases.Add(data.kataKunciVoice);
-
-                if (!string.IsNullOrWhiteSpace(data.laporanVoiceLengkap))
-                    phrases.Add(data.laporanVoiceLengkap);
-            }
-        }
-
-        var result = new string[phrases.Count];
-        phrases.CopyTo(result);
-        return result;
+        _recognizer = new DictationRecognizer();
+        _recognizer.InitialSilenceTimeoutSeconds = _initialSilenceTimeout;
+        _recognizer.AutoSilenceTimeoutSeconds = _autoSilenceTimeout;
+        _recognizer.DictationHypothesis += OnFrasaHipotesis;
+        _recognizer.DictationResult += OnFrasaTerdeteksi;
+        _recognizer.DictationComplete += OnDictationComplete;
+        _recognizer.DictationError += OnDictationError;
     }
+#endif
 
     private void BersihkanRecognizer()
     {
@@ -193,8 +179,11 @@ public class WalkieTalkieManager : MonoBehaviour
         if (_recognizer == null)
             return;
 
-        _recognizer.OnPhraseRecognized -= OnFrasaTerdeteksi;
-        if (_recognizer.IsRunning)
+        _recognizer.DictationHypothesis -= OnFrasaHipotesis;
+        _recognizer.DictationResult -= OnFrasaTerdeteksi;
+        _recognizer.DictationComplete -= OnDictationComplete;
+        _recognizer.DictationError -= OnDictationError;
+        if (_recognizer.Status == SpeechSystemStatus.Running)
             _recognizer.Stop();
 
         _recognizer.Dispose();
@@ -210,6 +199,7 @@ public class WalkieTalkieManager : MonoBehaviour
         _pttSedangDitekan = true;
         _adaKeywordPadaSesiPtt = false;
         _pendingSpeechText = string.Empty;
+        _pendingHypothesisText = string.Empty;
         _waktuMulaiPtt = Time.time;
         OnPTTDitekan?.Invoke();
 
@@ -225,8 +215,14 @@ public class WalkieTalkieManager : MonoBehaviour
         if (_audioSourceRadio != null && _suaraStaticBuka != null)
             _audioSourceRadio.PlayOneShot(_suaraStaticBuka);
 
+        if (_debugMicInput)
+            MulaiMicDebugMonitor();
+
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-        if (_recognizer != null && !_recognizer.IsRunning)
+        if (_recognizer == null)
+            BuatDictationRecognizer();
+
+        if (_recognizer != null && _recognizer.Status != SpeechSystemStatus.Running)
         {
             _recognizer.Start();
             _recognizerAktif = true;
@@ -235,7 +231,11 @@ public class WalkieTalkieManager : MonoBehaviour
         _recognizerAktif = false;
 #endif
 
-        Log("PTT", "MENDENGARKAN... Sampaikan laporan HT sampai selesai.", "yellow");
+        Log("PTT",
+            _modeTanpaVoiceUntukTempatRame
+                ? "MODE TANPA VOICE AKTIF. Tahan T sebentar lalu lepas untuk kirim laporan level aktif."
+                : "MENDENGARKAN... Sampaikan laporan HT sampai selesai.",
+            "yellow");
     }
 
     public void OnPTTRelease()
@@ -252,8 +252,11 @@ public class WalkieTalkieManager : MonoBehaviour
         if (_audioSourceRadio != null && _suaraStaticTutup != null)
             _audioSourceRadio.PlayOneShot(_suaraStaticTutup);
 
+        if (_debugMicInput)
+            HentikanMicDebugMonitor();
+
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-        if (_recognizer != null && _recognizer.IsRunning)
+        if (_recognizer != null && _recognizer.Status == SpeechSystemStatus.Running)
         {
             _recognizer.Stop();
             _recognizerAktif = false;
@@ -271,19 +274,46 @@ public class WalkieTalkieManager : MonoBehaviour
     }
 
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
-    private void OnFrasaTerdeteksi(PhraseRecognizedEventArgs args)
+    private void OnFrasaHipotesis(string text)
     {
-        if (!_pttSedangDitekan)
-            return;
-
-        string phrase = args.text?.Trim() ?? string.Empty;
+        string phrase = text?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(phrase))
             return;
 
-        _pendingSpeechText = phrase.Length >= _pendingSpeechText.Length ? phrase : _pendingSpeechText;
+        _pendingHypothesisText = phrase;
+    }
+
+    private void OnFrasaTerdeteksi(string text, ConfidenceLevel confidence)
+    {
+        string phrase = text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(phrase))
+            return;
+
+        _pendingSpeechText = string.IsNullOrWhiteSpace(_pendingSpeechText)
+            ? phrase
+            : $"{_pendingSpeechText} {phrase}".Trim();
+        _pendingHypothesisText = phrase;
         _lastKeyword = phrase;
         _adaKeywordPadaSesiPtt = true;
-        Log("DETECTED", $"Frasa tertangkap: '<b>{phrase}</b>' (confidence: {args.confidence})", "cyan");
+        Log("DETECTED", $"Dictation tertangkap: '<b>{phrase}</b>' (confidence: {confidence})", "cyan");
+    }
+
+    private void OnDictationComplete(DictationCompletionCause cause)
+    {
+        _recognizerAktif = false;
+        if (string.IsNullOrWhiteSpace(_pendingSpeechText) && !string.IsNullOrWhiteSpace(_pendingHypothesisText))
+        {
+            _pendingSpeechText = _pendingHypothesisText.Trim();
+            Log("DICTATION", $"Tidak ada hasil final. Memakai hypothesis terakhir: '<b>{_pendingSpeechText}</b>'", "orange");
+        }
+
+        Log("DICTATION", $"Dictation selesai dengan status: {cause}", cause == DictationCompletionCause.Complete ? "cyan" : "orange");
+    }
+
+    private void OnDictationError(string error, int hresult)
+    {
+        _recognizerAktif = false;
+        Log("ERROR", $"Dictation error: {error} (0x{hresult:X})", "red");
     }
 #endif
 
@@ -292,21 +322,43 @@ public class WalkieTalkieManager : MonoBehaviour
         yield return new WaitForSeconds(_delaySebelumDiproses);
 
         string laporan = _pendingSpeechText;
-        if (string.IsNullOrWhiteSpace(laporan))
-            laporan = AmbilLaporanFallback();
+        if (string.IsNullOrWhiteSpace(laporan) && _modeTanpaVoiceUntukTempatRame)
+            laporan = AmbilLaporanManualTanpaVoice();
 
         if (string.IsNullOrWhiteSpace(laporan))
         {
-            Log("VOICE", "Tidak ada laporan yang bisa diproses pada sesi HT ini.", "orange");
+            Log("VOICE", "Tidak ada frasa valid yang tertangkap. Mic masuk, tapi speech engine tidak mengubah ucapan menjadi teks.", "orange");
             _coroutineProsesLaporan = null;
             yield break;
         }
 
         _lastKeyword = laporan;
         OnKeywordTerdeteksi?.Invoke(laporan);
-        GameLevelManager.Instance?.OnVoiceKeywordTerdeteksi(laporan);
-        StartCoroutine(MainkanBalasanNPC());
+        bool laporanDiterima = GameLevelManager.Instance != null &&
+                               GameLevelManager.Instance.OnVoiceKeywordTerdeteksi(laporan);
+        if (laporanDiterima)
+            StartCoroutine(MainkanBalasanNPC());
+        else
+            Log("VOICE", $"Laporan HT tidak sesuai instruksi level aktif: '<b>{laporan}</b>'", "orange");
+
         _coroutineProsesLaporan = null;
+    }
+
+    private string AmbilLaporanManualTanpaVoice()
+    {
+        if (!_modeTanpaVoiceUntukTempatRame || GameLevelManager.Instance == null)
+            return string.Empty;
+
+        float durasiPtt = _waktuMulaiPtt < 0f ? 0f : Time.time - _waktuMulaiPtt;
+        if (durasiPtt < _minimumDurasiPttUntukFallback)
+            return string.Empty;
+
+        string laporan = GameLevelManager.Instance.GetLaporanVoiceDisplay(GameLevelManager.Instance.CurrentLevel);
+        if (string.IsNullOrWhiteSpace(laporan))
+            return string.Empty;
+
+        Log("MANUAL", $"Mode tanpa voice aktif. Mengirim laporan otomatis: '<b>{laporan}</b>'", "green");
+        return laporan;
     }
 
     private string AmbilLaporanFallback()
@@ -397,6 +449,71 @@ public class WalkieTalkieManager : MonoBehaviour
         _adaKeywordPadaSesiPtt = true;
         _lastKeyword = laporan;
         Log("FALLBACK", $"Frasa testing disiapkan: '<b>{laporan}</b>'", "cyan");
+    }
+
+    private void MulaiMicDebugMonitor()
+    {
+        _debugMicPeak = 0f;
+        _debugMicDevice = null;
+        _debugMicMonitoring = false;
+
+        if (Microphone.devices == null || Microphone.devices.Length == 0)
+        {
+            Log("MIC", "Tidak ada device microphone yang terdeteksi oleh Unity.", "red");
+            return;
+        }
+
+        _debugMicDevice = Microphone.devices[0];
+        _debugMicClip = Microphone.Start(_debugMicDevice, true, 5, _micSampleRate);
+        if (_debugMicClip == null)
+        {
+            Log("MIC", $"Gagal memulai monitor mic dari device '{_debugMicDevice}'.", "red");
+            return;
+        }
+
+        _debugMicMonitoring = true;
+        Log("MIC", $"Monitor mic aktif: '{_debugMicDevice}'. Silakan bicara saat tahan T.", "cyan");
+    }
+
+    private void HentikanMicDebugMonitor()
+    {
+        if (!_debugMicMonitoring)
+            return;
+
+        UpdateMicDebugLevel();
+        _debugMicMonitoring = false;
+        Microphone.End(_debugMicDevice);
+
+        bool micTerdengar = _debugMicPeak >= _ambangMicTerdengar;
+        Log("MIC",
+            micTerdengar
+                ? $"Mic terdeteksi. Peak={_debugMicPeak:F4}"
+                : $"Mic terlalu kecil / tidak masuk. Peak={_debugMicPeak:F4}",
+            micTerdengar ? "green" : "orange");
+    }
+
+    private void UpdateMicDebugLevel()
+    {
+        if (_debugMicClip == null || string.IsNullOrEmpty(_debugMicDevice))
+            return;
+
+        int micPos = Microphone.GetPosition(_debugMicDevice);
+        if (micPos <= 0 || _micWindowSize <= 0 || micPos < _micWindowSize)
+            return;
+
+        float[] samples = new float[_micWindowSize];
+        _debugMicClip.GetData(samples, micPos - _micWindowSize);
+
+        float peak = 0f;
+        for (int i = 0; i < samples.Length; i++)
+        {
+            float abs = Mathf.Abs(samples[i]);
+            if (abs > peak)
+                peak = abs;
+        }
+
+        if (peak > _debugMicPeak)
+            _debugMicPeak = peak;
     }
 
     private void Log(string label, string pesan, string warna = "white")

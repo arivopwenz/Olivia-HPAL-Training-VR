@@ -59,6 +59,9 @@ public class PlayerHUD : MonoBehaviour
     private bool _dcsDilihat;
     private bool _dcsTombolDitekan;
     private bool _voiceReportSelesai;
+    private bool _level3LaporanAwalSelesai;
+    private bool _level3OreSampaiSlurry;
+    private bool _level3Slurry25Tercapai;
 
     private RectTransform _questRect;
     private RectTransform _operasionalRect;
@@ -75,6 +78,8 @@ public class PlayerHUD : MonoBehaviour
         GameLevelManager.OnDCSButtonPressed += OnDcsButtonPressed;
         GameLevelManager.OnVoiceReportAccepted += OnVoiceReportAccepted;
         GameLevelManager.OnLevelTransitionRequested += OnLevelTransitionRequested;
+        GameLevelManager.OnLevel3PhaseChanged += OnLevel3PhaseChanged;
+        GameLevelManager.OnLevel3OreReachedSlurry += OnLevel3OreReachedSlurry;
         PhaseManager.OnApdItemWorn += OnSatuApdDipakai;
         PhaseManager.OnAPD7Lengkap += OnSemuaApdLengkap;
         WalkieTalkieManager.OnPTTDitekan += OnPTTPress;
@@ -95,6 +100,8 @@ public class PlayerHUD : MonoBehaviour
         GameLevelManager.OnDCSButtonPressed -= OnDcsButtonPressed;
         GameLevelManager.OnVoiceReportAccepted -= OnVoiceReportAccepted;
         GameLevelManager.OnLevelTransitionRequested -= OnLevelTransitionRequested;
+        GameLevelManager.OnLevel3PhaseChanged -= OnLevel3PhaseChanged;
+        GameLevelManager.OnLevel3OreReachedSlurry -= OnLevel3OreReachedSlurry;
         PhaseManager.OnApdItemWorn -= OnSatuApdDipakai;
         PhaseManager.OnAPD7Lengkap -= OnSemuaApdLengkap;
         WalkieTalkieManager.OnPTTDitekan -= OnPTTPress;
@@ -130,9 +137,14 @@ public class PlayerHUD : MonoBehaviour
         {
             _dcsDilihat = false;
             _dcsTombolDitekan = false;
-            _voiceReportSelesai = false;
+        _voiceReportSelesai = false;
+        _level3LaporanAwalSelesai = false;
+        _level3OreSampaiSlurry = false;
+        _level3Slurry25Tercapai = false;
             SetFase(level == GameLevelManager.GameLevel.Level2_DCSPrep ? FaseQuest.LihatDCS : FaseQuest.MulaiMesin);
             UpdateOperasionalChecklist(level);
+            if (level == GameLevelManager.GameLevel.Level3_OreSlurry)
+                RefreshLevel3Hud();
         }
 
         ShowNotif($"Level {idx} dimulai!", false);
@@ -216,6 +228,8 @@ public class PlayerHUD : MonoBehaviour
 
         _dcsTombolDitekan = true;
         SetFase(FaseQuest.LaporHT);
+        if (_levelAktif == GameLevelManager.GameLevel.Level3_OreSlurry)
+            RefreshLevel3Hud();
         UpdateOperasionalChecklist(_levelAktif);
     }
 
@@ -223,6 +237,13 @@ public class PlayerHUD : MonoBehaviour
     {
         if (_levelAktif <= GameLevelManager.GameLevel.Level1_APD)
             return;
+
+        if (_levelAktif == GameLevelManager.GameLevel.Level3_OreSlurry)
+        {
+            RefreshLevel3Hud();
+            UpdateOperasionalChecklist(_levelAktif);
+            return;
+        }
 
         _voiceReportSelesai = true;
         UpdateOperasionalChecklist(_levelAktif);
@@ -237,6 +258,31 @@ public class PlayerHUD : MonoBehaviour
             StopCoroutine(_transitionCoroutine);
 
         _transitionCoroutine = StartCoroutine(PlayTransitionFade(duration));
+    }
+
+    private void OnLevel3PhaseChanged(GameLevelManager.Level3Phase phase)
+    {
+        if (_levelAktif != GameLevelManager.GameLevel.Level3_OreSlurry)
+            return;
+
+        _level3LaporanAwalSelesai = phase >= GameLevelManager.Level3Phase.LaporanAwalDiterima;
+        if (phase < GameLevelManager.Level3Phase.ObservasiLapangan)
+            _level3OreSampaiSlurry = false;
+        _level3Slurry25Tercapai = phase >= GameLevelManager.Level3Phase.SiapLaporanAkhir;
+        _voiceReportSelesai = phase >= GameLevelManager.Level3Phase.Selesai;
+
+        RefreshLevel3Hud();
+        UpdateOperasionalChecklist(_levelAktif);
+    }
+
+    private void OnLevel3OreReachedSlurry()
+    {
+        if (_levelAktif != GameLevelManager.GameLevel.Level3_OreSlurry)
+            return;
+
+        _level3OreSampaiSlurry = true;
+        RefreshLevel3Hud();
+        UpdateOperasionalChecklist(_levelAktif);
     }
 
     private void SetFase(FaseQuest fase)
@@ -327,6 +373,53 @@ public class PlayerHUD : MonoBehaviour
         txtHintKataKunci.alignment = TextAlignmentOptions.TopLeft;
     }
 
+    private void RefreshLevel3Hud()
+    {
+        if (_levelAktif != GameLevelManager.GameLevel.Level3_OreSlurry || GameLevelManager.Instance == null)
+            return;
+
+        switch (GameLevelManager.Instance.CurrentLevel3Phase)
+        {
+            case GameLevelManager.Level3Phase.MenungguTombolDcs:
+                SetFase(FaseQuest.MulaiMesin);
+                SetQuestLabel("<b>MISI: Klik tombol DCS 3</b>\n<size=83%>Mulai alur awal ore ke slurry dari panel DCS.</size>");
+                break;
+
+            case GameLevelManager.Level3Phase.MenungguLaporanAwal:
+                SetFase(FaseQuest.LaporHT);
+                SetQuestLabel("<b>MISI: Kirim laporan HT awal</b>\n<size=83%>Setelah tombol 3 ditekan, kirim perintah radio untuk memulai alur ore ke slurry tank.</size>");
+                break;
+
+            case GameLevelManager.Level3Phase.LaporanAwalDiterima:
+                SetFase(FaseQuest.LaporHT);
+                if (panelWalkieTalkieHint != null)
+                    panelWalkieTalkieHint.SetActive(false);
+                SetQuestLabel("<b>MISI: Bersiap ke area crusher</b>\n<size=83%>Laporan awal diterima. Tunggu transisi ke area mesin.</size>");
+                break;
+
+            case GameLevelManager.Level3Phase.ObservasiLapangan:
+                SetFase(FaseQuest.MulaiMesin);
+                if (panelWalkieTalkieHint != null)
+                    panelWalkieTalkieHint.SetActive(false);
+                SetQuestLabel(_level3OreSampaiSlurry
+                    ? "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 25%.</size>"
+                    : "<b>MISI: Amati ore dan air masuk</b>\n<size=83%>Tunggu ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>");
+                break;
+
+            case GameLevelManager.Level3Phase.SiapLaporanAkhir:
+                SetFase(FaseQuest.LaporHT);
+                SetQuestLabel("<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 25%.</size>");
+                break;
+
+            case GameLevelManager.Level3Phase.Selesai:
+                SetFase(FaseQuest.LaporHT);
+                if (panelWalkieTalkieHint != null)
+                    panelWalkieTalkieHint.SetActive(false);
+                SetQuestLabel("<b>MISI: Kembali ke DCS</b>\n<size=83%>Laporan akhir diterima. Bersiap untuk transisi ke Level 4.</size>");
+                break;
+        }
+    }
+
     public void NotifyMasukPintu()
     {
         if (_faseSekarang == FaseQuest.MasukPintu)
@@ -338,6 +431,17 @@ public class PlayerHUD : MonoBehaviour
         ShowNotif(pesan, false);
     }
 
+    public void PlayManualFade(float totalDuration)
+    {
+        if (_transitionOverlay == null)
+            return;
+
+        if (_transitionCoroutine != null)
+            StopCoroutine(_transitionCoroutine);
+
+        _transitionCoroutine = StartCoroutine(PlayTransitionFade(totalDuration));
+    }
+
     private void UpdateOperasionalChecklist(GameLevelManager.GameLevel level)
     {
         if (txtParameterInfo == null || GameLevelManager.Instance == null)
@@ -347,6 +451,17 @@ public class PlayerHUD : MonoBehaviour
             return;
 
         var lines = new List<string>();
+        if (level == GameLevelManager.GameLevel.Level3_OreSlurry)
+        {
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 3");
+            lines.Add($"{Check(_level3LaporanAwalSelesai)} Lapor HT awal");
+            lines.Add($"{Check(_level3OreSampaiSlurry)} Ore/laterit sampai ke slurry tank");
+            lines.Add($"{Check(_level3Slurry25Tercapai)} Pastikan slurry 25%");
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT akhir");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
         if (level == GameLevelManager.GameLevel.Level2_DCSPrep)
             lines.Add($"{Check(_dcsDilihat)} Lihat mesin DCS");
 
