@@ -444,7 +444,12 @@ public class DCSMonitorUI : MonoBehaviour
                 _suhu = Mathf.MoveTowards(_suhu, 25f, 0.2f);
                 _tekanan = Mathf.MoveTowards(_tekanan, 1f, 0.05f);
                 _rpm = Mathf.MoveTowards(_rpm, 0f, 0.3f);
-                _flowRate = Mathf.MoveTowards(_flowRate, 0f, 1f);
+                // Saat Level 4, flow rate dikontrol DCSParameterControl — jangan decay
+                if (GameLevelManager.Instance == null ||
+                    GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level4_SlurryPump)
+                {
+                    _flowRate = Mathf.MoveTowards(_flowRate, 0f, 1f);
+                }
             }
 
             UpdateSemuaTampilan();
@@ -675,7 +680,9 @@ public class DCSMonitorUI : MonoBehaviour
         if (GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level4_SlurryPump)
             return;
 
-        GameLevelManager.Instance.SetFlowRate(_flowRate);
+        // Saat Level 4, DCSParameterControl yang mengontrol flow rate ke GLM.
+        // DCSMonitorUI hanya membaca dari GLM untuk display, TIDAK override.
+        _flowRate = GameLevelManager.Instance.FlowRate;
     }
 
     // ============================================================

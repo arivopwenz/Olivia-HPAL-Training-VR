@@ -221,12 +221,14 @@ public class DCSParameterControl : MonoBehaviour
     }
 
     /// <summary>Set nilai secara paksa dari luar (misal: reset setelah level baru).</summary>
+    /// <summary>Set nilai secara paksa dari luar (misal: reset setelah level baru).</summary>
     public void SetNilaiLangsung(float nilai)
     {
         _nilaiSaatIni = Mathf.Clamp(nilai, _nilaiMin, _nilaiMax);
         _targetTercapai = false;
         RefreshUI();
         KirimKeGameLevelManager();
+        CekTarget();
     }
 
     public float NilaiSaatIni => _nilaiSaatIni;

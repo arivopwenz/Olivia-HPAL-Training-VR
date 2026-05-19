@@ -42,6 +42,19 @@ public class GameLevelManager : MonoBehaviour
         Selesai = 6
     }
 
+    public enum Level4Phase
+    {
+        Idle = 0,
+        MenungguTombolDcs = 1,
+        AturFlowRate = 2,
+        MenungguLaporanFlow = 3,
+        ObservasiPump = 4,
+        MenungguLaporanAlir = 5,
+        ObservasiPreheater = 6,
+        KembaliKeDcs = 7,
+        Selesai = 8
+    }
+
     [Serializable]
     public class LevelData
     {
@@ -84,6 +97,7 @@ public class GameLevelManager : MonoBehaviour
     public static event Action<GameLevel, GameLevel, float> OnLevelTransitionRequested;
     public static event Action<Level3Phase> OnLevel3PhaseChanged;
     public static event Action OnLevel3OreReachedSlurry;
+    public static event Action<Level4Phase> OnLevel4PhaseChanged;
 
     [Header("=== Status Level ===")]
     [SerializeField] private GameLevel _currentLevel = GameLevel.Level0_Tutorial;
@@ -122,6 +136,7 @@ public class GameLevelManager : MonoBehaviour
     private bool _level3OreSudahMasukSlurry;
     private float _waktuMulaiLevel;
     [SerializeField] private Level3Phase _level3Phase = Level3Phase.Idle;
+    [SerializeField] private Level4Phase _level4Phase = Level4Phase.Idle;
 
     private void Awake()
     {
@@ -528,6 +543,34 @@ public class GameLevelManager : MonoBehaviour
         OnLevel3PhaseChanged?.Invoke(_level3Phase);
     }
 
+    private void SetLevel4Phase(Level4Phase phase)
+    {
+        if (_level4Phase == phase)
+            return;
+
+        _level4Phase = phase;
+        OnLevel4PhaseChanged?.Invoke(_level4Phase);
+        Log("LEVEL 4", $"Phase: {_level4Phase}", "cyan");
+    }
+
+    /// <summary>Untuk dipanggil oleh Level4SlurryPumpController dari luar.</summary>
+    public void NotifyLevel4PhaseAdvance(Level4Phase phase) => SetLevel4Phase(phase);
+
+    /// <summary>
+    /// Dipanggil Level4SlurryPumpController setelah seluruh sequence Level 4 selesai
+    /// (lapor flow → observasi pump → lapor alir → observasi preheater → kembali ke DCS).
+    /// </summary>
+    public void NotifyLevel4Selesai()
+    {
+        if (_currentLevel != GameLevel.Level4_SlurryPump)
+            return;
+
+        // Mark voice report sebagai sudah dilakukan supaya CekKondisiLevelSelesai pass.
+        _voiceReportSudahDilakukan = true;
+        SetLevel4Phase(Level4Phase.Selesai);
+        CekKondisiLevelSelesai();
+    }
+
     public void MulaiLevel(GameLevel level)
     {
         if (!_dataLevel.ContainsKey(level))
@@ -544,6 +587,7 @@ public class GameLevelManager : MonoBehaviour
         _level3OreSudahMasukSlurry = false;
         _waktuMulaiLevel = Time.time;
         SetLevel3Phase(level == GameLevel.Level3_OreSlurry ? Level3Phase.MenungguTombolDcs : Level3Phase.Idle);
+        SetLevel4Phase(level == GameLevel.Level4_SlurryPump ? Level4Phase.MenungguTombolDcs : Level4Phase.Idle);
 
         var data = _dataLevel[level];
         Log("LEVEL MULAI", $"<b>{data.namaLevel}</b>\nQuest: {data.deskripsiQuest}", "yellow");
@@ -637,10 +681,18 @@ public class GameLevelManager : MonoBehaviour
         _dcsTombolSudahDitekan = true;
         if (_currentLevel == GameLevel.Level3_OreSlurry)
             SetLevel3Phase(Level3Phase.MenungguLaporanAwal);
+        if (_currentLevel == GameLevel.Level4_SlurryPump &&
+            (_level4Phase == Level4Phase.Idle || _level4Phase == Level4Phase.MenungguTombolDcs))
+        {
+            SetLevel4Phase(Level4Phase.AturFlowRate);
+        }
 
         OnDCSButtonPressed?.Invoke(nomorTombol);
         Log("DCS", $"Tombol {nomorTombol} ditekan untuk level <b>{data.namaLevel}</b>.", "cyan");
-        CekKondisiLevelSelesai();
+
+        // Level 4 menggunakan flow multi-phase, jangan auto-selesaikan saat tombol ditekan.
+        if (_currentLevel != GameLevel.Level4_SlurryPump)
+            CekKondisiLevelSelesai();
         return true;
     }
 
@@ -652,6 +704,9 @@ public class GameLevelManager : MonoBehaviour
         var data = _dataLevel[_currentLevel];
         if (_currentLevel == GameLevel.Level3_OreSlurry)
             return HandleVoiceLevel3(data, keyword);
+
+        if (_currentLevel == GameLevel.Level4_SlurryPump)
+            return HandleVoiceLevel4(data, keyword);
 
         if (_currentLevel == GameLevel.Level2_DCSPrep && !_dcsSudahDilihat)
         {
@@ -714,6 +769,74 @@ public class GameLevelManager : MonoBehaviour
 
             default:
                 Log("VOICE", "Level 3 belum berada pada tahap yang menerima laporan HT.", "orange");
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Handler voice Level 4 — multi-step:
+    ///   Phase MenungguLaporanFlow  → "slurry pump aktif" / "flow set"  → ObservasiPump
+    ///   Phase MenungguLaporanAlir  → "slurry mengalirkan air"          → ObservasiPreheater
+    /// Tidak otomatis selesaikan level. Level 4 selesai setelah ObservasiPreheater
+    /// dan player kembali ke DCS (di-trigger oleh Level4SlurryPumpController).
+    /// </summary>
+    private bool HandleVoiceLevel4(LevelData data, string keyword)
+    {
+        // Validasi sequencing dasar: harus tekan tombol DCS 4 dulu.
+        if (data.nomorTombolDCS > 0 && !_dcsTombolSudahDitekan)
+        {
+            Log("VOICE", $"Urutan belum benar. Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        switch (_level4Phase)
+        {
+            case Level4Phase.MenungguLaporanFlow:
+                {
+                    // Frasa pertama: laporan flow rate sudah tercapai.
+                    string frasaUtama = data.laporanVoiceLengkap;
+                    string aliasPendek = string.IsNullOrEmpty(data.kataKunciVoice) ? "slurry pump aktif" : data.kataKunciVoice;
+                    if (!VoiceReportCocokDenganCadangan(data, keyword, frasaUtama, aliasPendek))
+                    {
+                        Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk laporan flow Level 4.", "orange");
+                        return false;
+                    }
+
+                    OnVoiceReportAccepted?.Invoke(keyword);
+                    Log("VOICE REPORT", $"Laporan FLOW Level 4 diterima: '<i>{keyword}</i>'", "cyan");
+                    SetLevel4Phase(Level4Phase.ObservasiPump);
+                    return true;
+                }
+
+            case Level4Phase.MenungguLaporanAlir:
+                {
+                    // Frasa kedua: konfirmasi air mengalir di tabung.
+                    string frasaKedua = "Field, slurry pump telah mengalirkan air ke pre-heater.";
+                    string aliasKedua = "slurry mengalirkan air";
+                    if (!VoiceReportCocokDenganCadangan(data, keyword, frasaKedua, aliasKedua))
+                    {
+                        Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk laporan air mengalir Level 4.", "orange");
+                        return false;
+                    }
+
+                    OnVoiceReportAccepted?.Invoke(keyword);
+                    Log("VOICE REPORT", $"Laporan AIR MENGALIR Level 4 diterima: '<i>{keyword}</i>'", "cyan");
+                    SetLevel4Phase(Level4Phase.ObservasiPreheater);
+                    return true;
+                }
+
+            case Level4Phase.MenungguTombolDcs:
+            case Level4Phase.AturFlowRate:
+                Log("VOICE", "Atur flow rate ke 450 m3/h dulu sebelum laporan HT.", "orange");
+                return false;
+
+            case Level4Phase.ObservasiPump:
+            case Level4Phase.ObservasiPreheater:
+            case Level4Phase.KembaliKeDcs:
+                Log("VOICE", "Sedang dalam observasi atau transisi. Tunggu instruksi HUD.", "orange");
+                return false;
+
+            default:
                 return false;
         }
     }
@@ -826,6 +949,7 @@ public class GameLevelManager : MonoBehaviour
     public GameLevel CurrentLevel => _currentLevel;
     public bool LevelAktif => _levelSedangBerjalan;
     public Level3Phase CurrentLevel3Phase => _level3Phase;
+    public Level4Phase CurrentLevel4Phase => _level4Phase;
     public bool Level3OreSudahMasukSlurry => _level3OreSudahMasukSlurry;
 
     private void CekParameterLevel4()
@@ -836,9 +960,16 @@ public class GameLevelManager : MonoBehaviour
         var data = _dataLevel[GameLevel.Level4_SlurryPump];
         if (Mathf.Abs(_flowRateSaatIni - data.targetFlowRate) <= 10f)
         {
-            Log("FLOW OK", $"Flow rate {_flowRateSaatIni} m3/h. Target {data.targetFlowRate} m3/h tercapai.", "green");
-            _dcsTombolSudahDitekan = true;
-            CekKondisiLevelSelesai();
+            // Flow tercapai. Hanya promote phase sekali.
+            if (_level4Phase == Level4Phase.MenungguTombolDcs ||
+                _level4Phase == Level4Phase.AturFlowRate)
+            {
+                Log("FLOW OK", $"Flow rate {_flowRateSaatIni} m3/h. Target {data.targetFlowRate} m3/h tercapai.", "green");
+                _dcsTombolSudahDitekan = true;
+                SetLevel4Phase(Level4Phase.MenungguLaporanFlow);
+            }
+            // CekKondisiLevelSelesai TIDAK dipanggil di sini. Level 4 selesai
+            // setelah multi-step (lapor flow → observasi pump → lapor alir → observasi preheater).
         }
     }
 
@@ -1134,6 +1265,69 @@ public class GameLevelManager : MonoBehaviour
     private void SetLevel3PhaseDebug(Level3Phase phase)
     {
         SetLevel3Phase(phase);
+    }
+#endif
+
+
+#if UNITY_EDITOR
+    [ContextMenu("DEBUG: Skip ke Level 4 (Flow Rate)")]
+    private void DebugSkipKeLevel4()
+    {
+        if (PhaseManager.Instance != null)
+        {
+            PhaseManager.Instance.OnHelmetWorn();
+            PhaseManager.Instance.OnVestWorn();
+            PhaseManager.Instance.OnGlassesWorn();
+            PhaseManager.Instance.OnBootsWorn();
+            PhaseManager.Instance.OnGlovesWorn();
+            PhaseManager.Instance.OnRespiratiorWorn();
+            PhaseManager.Instance.OnEarplugWorn();
+            PhaseManager.Instance.OnWalkieTalkieTaken();
+        }
+        MulaiLevel(GameLevel.Level4_SlurryPump);
+
+        // Auto-teleport player ke area DCS supaya bisa langsung tekan tombol [+]/[-] flow rate.
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl4", fallbackName: "SpawnPoint_DCS");
+
+        Log("DEBUG", "Skip ke Level 4. Tekan tombol DCS 4 lalu atur flow rate ke 450 m3/h.", "yellow");
+    }
+
+    /// <summary>
+    /// Helper teleport XR Origin ke spawn point berdasarkan nama. Cari fallback kalau primary tidak ada.
+    /// </summary>
+    private void TeleportPlayerKeSpawnPoint(string namaSpawn, string fallbackName = null)
+    {
+        var spawn = GameObject.Find(namaSpawn);
+        if (spawn == null && !string.IsNullOrEmpty(fallbackName))
+            spawn = GameObject.Find(fallbackName);
+
+        if (spawn == null)
+        {
+            Log("DEBUG", $"SpawnPoint '{namaSpawn}' tidak ditemukan. Skip teleport.", "yellow");
+            return;
+        }
+
+        var xrOrigin = GameObject.Find("XR Origin (XR Rig)")
+                    ?? GameObject.Find("XR Origin")
+                    ?? GameObject.Find("XR Rig")
+                    ?? GameObject.FindGameObjectWithTag("Player");
+
+        if (xrOrigin == null)
+        {
+            Log("DEBUG", "XR Origin tidak ditemukan untuk teleport.", "yellow");
+            return;
+        }
+
+        var cc = xrOrigin.GetComponent<CharacterController>();
+        bool ccEnabled = cc != null && cc.enabled;
+        if (ccEnabled) cc.enabled = false;
+
+        xrOrigin.transform.position = spawn.transform.position;
+        xrOrigin.transform.rotation = spawn.transform.rotation;
+
+        if (ccEnabled) cc.enabled = true;
+
+        Log("DEBUG", $"Player teleported ke '{spawn.name}' di {spawn.transform.position}.", "green");
     }
 #endif
 }

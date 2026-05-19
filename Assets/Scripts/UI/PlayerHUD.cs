@@ -127,6 +127,7 @@ public class PlayerHUD : MonoBehaviour
         GameLevelManager.OnLevelTransitionRequested += OnLevelTransitionRequested;
         GameLevelManager.OnLevel3PhaseChanged += OnLevel3PhaseChanged;
         GameLevelManager.OnLevel3OreReachedSlurry += OnLevel3OreReachedSlurry;
+        GameLevelManager.OnLevel4PhaseChanged += OnLevel4PhaseChanged;
         PhaseManager.OnApdItemWorn += OnSatuApdDipakai;
         PhaseManager.OnApdItemRemoved += OnSatuApdDilepas;
         PhaseManager.OnAPD7Lengkap += OnSemuaApdLengkap;
@@ -150,6 +151,7 @@ public class PlayerHUD : MonoBehaviour
         GameLevelManager.OnLevelTransitionRequested -= OnLevelTransitionRequested;
         GameLevelManager.OnLevel3PhaseChanged -= OnLevel3PhaseChanged;
         GameLevelManager.OnLevel3OreReachedSlurry -= OnLevel3OreReachedSlurry;
+        GameLevelManager.OnLevel4PhaseChanged -= OnLevel4PhaseChanged;
         PhaseManager.OnApdItemWorn -= OnSatuApdDipakai;
         PhaseManager.OnApdItemRemoved -= OnSatuApdDilepas;
         PhaseManager.OnAPD7Lengkap -= OnSemuaApdLengkap;
@@ -344,6 +346,59 @@ public class PlayerHUD : MonoBehaviour
         _level3OreSampaiSlurry = true;
         RefreshLevel3Hud();
         UpdateOperasionalChecklist(_levelAktif);
+    }
+
+    private void OnLevel4PhaseChanged(GameLevelManager.Level4Phase phase)
+    {
+        if (_levelAktif != GameLevelManager.GameLevel.Level4_SlurryPump)
+            return;
+
+        switch (phase)
+        {
+            case GameLevelManager.Level4Phase.MenungguTombolDcs:
+                SetFase(FaseQuest.MulaiMesin);
+                SetQuestLabel("<b>MISI: Klik tombol DCS 4</b>\n<size=83%>Tekan tombol DCS 4 yang menyala untuk menyalakan slurry pump.</size>");
+                break;
+
+            case GameLevelManager.Level4Phase.AturFlowRate:
+                SetFase(FaseQuest.MulaiMesin);
+                SetQuestLabel("<b>MISI: Atur flow rate 450 m³/h</b>\n<size=83%>Gunakan tombol [+] / [−] di panel Flow Rate untuk mencapai 450 m³/h.</size>");
+                ShowNotif("Slurry pump menyala. Atur flow rate ke 450 m³/h.", false);
+                break;
+
+            case GameLevelManager.Level4Phase.MenungguLaporanFlow:
+                SetFase(FaseQuest.LaporHT);
+                SetQuestLabel("<b>MISI: Lapor lewat HT</b>\n<size=83%>Tahan T, sampaikan: \"slurry pump aktif, flow rate 450\".</size>");
+                ShowNotif("Target flow tercapai! Lapor lewat HT.", true);
+                break;
+
+            case GameLevelManager.Level4Phase.ObservasiPump:
+                SetFase(FaseQuest.MulaiMesin);
+                SetQuestLabel("<b>MISI: Amati slurry pump</b>\n<size=83%>Pastikan air mengalir ke pipa menuju pre-heater.</size>");
+                ShowNotif("Pindah ke area pump untuk verifikasi aliran.", false);
+                break;
+
+            case GameLevelManager.Level4Phase.MenungguLaporanAlir:
+                SetFase(FaseQuest.LaporHT);
+                SetQuestLabel("<b>MISI: Lapor air mengalir</b>\n<size=83%>Tahan T dan ucapkan: \"slurry mengalirkan air\".</size>");
+                ShowNotif("Lapor: slurry pump telah mengalirkan air.", true);
+                break;
+
+            case GameLevelManager.Level4Phase.ObservasiPreheater:
+                SetFase(FaseQuest.MulaiMesin);
+                SetQuestLabel("<b>MISI: Amati pre-heater</b>\n<size=83%>Pastikan slurry masuk ke unit pre-heater dengan benar.</size>");
+                ShowNotif("Verifikasi pre-heater menerima aliran slurry.", false);
+                break;
+
+            case GameLevelManager.Level4Phase.KembaliKeDcs:
+                SetFase(FaseQuest.MulaiMesin);
+                SetQuestLabel("<b>MISI: Kembali ke DCS</b>\n<size=83%>Mantap. Kembali ke ruang DCS untuk operasi berikutnya.</size>");
+                break;
+
+            case GameLevelManager.Level4Phase.Selesai:
+                ShowNotif("Level 4 selesai! Slurry pump dan pre-heater operasional.", true);
+                break;
+        }
     }
 
     private void SetFase(FaseQuest fase)
