@@ -75,6 +75,10 @@ public class Level3OreSlurryController : MonoBehaviour
     [Header("=== FX Tambahan ===")]
     [Tooltip("Reference ke SlurryFXController (audio splash + bubble particle). Auto-add ke Slurry_Fill jika kosong.")]
     [SerializeField] private SlurryFXController _slurryFx;
+    [Tooltip("Reference ke SlurryAgitator (pengaduk slurry tank). Auto-find di scene jika kosong.")]
+    [SerializeField] private SlurryAgitator _slurryAgitator;
+    [Tooltip("Aktifkan agitator saat slurry mencapai 25% (siap laporan akhir).")]
+    [SerializeField] private bool _aktifkanAgitatorSaatSiapLapor = true;
     [Tooltip("Reference ke arrow indicator yang menunjuk ke slurry tank. Auto-create di runtime jika kosong.")]
     [SerializeField] private DirectionArrowIndicator _arrowIndicator;
     [Tooltip("Aktifkan arrow indicator saat sampai field menunggu APD + saat menuju observation point.")]
@@ -115,6 +119,7 @@ public class Level3OreSlurryController : MonoBehaviour
         GameLevelManager.OnLevelStarted += OnLevelStarted;
         GameLevelManager.OnVoiceReportAccepted += OnVoiceReportAccepted;
         GameLevelManager.OnLevelTransitionRequested += OnLevelTransitionRequested;
+        GameLevelManager.OnLevel3PhaseChanged += OnLevel3PhaseChanged;
         PhaseManager.OnApdItemWorn += OnApdItemWorn;
     }
 
@@ -123,6 +128,7 @@ public class Level3OreSlurryController : MonoBehaviour
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
         GameLevelManager.OnVoiceReportAccepted -= OnVoiceReportAccepted;
         GameLevelManager.OnLevelTransitionRequested -= OnLevelTransitionRequested;
+        GameLevelManager.OnLevel3PhaseChanged -= OnLevel3PhaseChanged;
         PhaseManager.OnApdItemWorn -= OnApdItemWorn;
     }
 
@@ -145,6 +151,7 @@ public class Level3OreSlurryController : MonoBehaviour
         _slurry25SudahTriggered = false;
         AktifkanGlowMaskerDiBaju(false);
         HideArrow();
+        HentikanAgitator();
         CacheColliders();
         SiapkanSafetyRuntime();
         ResetVisualState();
@@ -384,7 +391,6 @@ public class Level3OreSlurryController : MonoBehaviour
         if (_slurryFx != null)
         {
             _slurryFx.MulaiFx();
-            // Update posisi emitter bubble ke permukaan awal slurry
             _slurryFx.UpdatePosisiPermukaan(HitungWorldPosPermukaanSlurry());
         }
 
@@ -396,7 +402,6 @@ public class Level3OreSlurryController : MonoBehaviour
             _slurryFill.localScale = Vector3.Lerp(GetSlurryScaleAwal(), GetSlurryScaleTarget25(), slurryT);
             _slurryFill.localPosition = Vector3.Lerp(_slurryLocalPosAwal, _slurryLocalPosTarget25, slurryT);
 
-            // Update emitter bubble agar ikut naik bareng permukaan
             if (_slurryFx != null)
                 _slurryFx.UpdatePosisiPermukaan(HitungWorldPosPermukaanSlurry());
 
@@ -405,6 +410,7 @@ public class Level3OreSlurryController : MonoBehaviour
                 _slurry25SudahTriggered = true;
                 GameLevelManager.Instance?.NotifyLevel3SlurryReady(25f);
                 if (_slurryFx != null) _slurryFx.HentikanFx();
+                MulaiAgitatorJikaPerlu();
                 yield break;
             }
 
@@ -422,6 +428,9 @@ public class Level3OreSlurryController : MonoBehaviour
             _slurry25SudahTriggered = true;
             GameLevelManager.Instance?.NotifyLevel3SlurryReady(25f);
         }
+
+        // Setelah slurry mencapai 25%, mulai pengaduk supaya player bisa lihat mesin mengaduk sambil siap kirim laporan akhir.
+        MulaiAgitatorJikaPerlu();
     }
 
     private void TeleportPlayer(Transform target)
@@ -845,5 +854,57 @@ public class Level3OreSlurryController : MonoBehaviour
     {
         if (_arrowIndicator != null)
             _arrowIndicator.Hide();
+    }
+
+
+    /// <summary>
+    /// Cari + mulai pengaduk slurry. Auto-find di scene jika referensi belum di-assign.
+    /// </summary>
+    private void MulaiAgitatorJikaPerlu()
+    {
+        if (!_aktifkanAgitatorSaatSiapLapor)
+            return;
+
+        if (_slurryAgitator == null)
+            _slurryAgitator = UnityEngine.Object.FindFirstObjectByType<SlurryAgitator>();
+
+        if (_slurryAgitator == null)
+        {
+            Debug.LogWarning("[Level3OreSlurryController] SlurryAgitator tidak ditemukan di scene. Pengaduk tidak akan berputar.");
+            return;
+        }
+
+        _slurryAgitator.Mulai();
+
+        if (_hud != null)
+            _hud.ShowNotifPublic("Mesin pengaduk aktif. Lihat ke slurry tank dan kirim laporan akhir.");
+    }
+
+    /// <summary>
+    /// Hentikan pengaduk (dipanggil saat Level 3 reset / level lain mulai).
+    /// </summary>
+    private void HentikanAgitator()
+    {
+        if (_slurryAgitator != null)
+            _slurryAgitator.Hentikan();
+    }
+
+
+    /// <summary>
+    /// Saat slurry mencapai 25% (SiapLaporanAkhir): tampilkan arrow ke agitator + notif HUD.
+    /// </summary>
+    private void OnLevel3PhaseChanged(GameLevelManager.Level3Phase phase)
+    {
+        if (phase != GameLevelManager.Level3Phase.SiapLaporanAkhir)
+            return;
+
+        // Arrow nunjuk ke agitator supaya pemain wajib melihat mesin pengaduk.
+        if (_slurryAgitator != null)
+            ShowArrowKe(_slurryAgitator.transform);
+        else if (_slurryFill != null)
+            ShowArrowKe(_slurryFill);
+
+        if (_hud != null)
+            _hud.ShowNotifPublic("Slurry mencapai 25%. Lihat mesin pengaduk lalu kirim laporan HT akhir.");
     }
 }
