@@ -20,6 +20,7 @@ public class PhaseManager : MonoBehaviour
     public static PhaseManager Instance { get; private set; }
 
     public static event Action<string> OnApdItemWorn;
+    public static event Action<string> OnApdItemRemoved;
     public static event Action         OnAPD7Lengkap;
     public static event Action         OnAPDTidakLengkap;
 
@@ -40,6 +41,14 @@ public class PhaseManager : MonoBehaviour
     [SerializeField] private ApdItem _respirator   = new ApdItem("Respirator / Masker Gas");
     [SerializeField] private ApdItem _earplug      = new ApdItem("Ear Protection / Earplug");
     [SerializeField] private ApdItem _walkieTalkie = new ApdItem("Walkie Talkie / HT");
+
+    [Header("=== Auto Socket Respirator ===")]
+    [SerializeField] private bool _otomatisSimpanRespiratorSaatLevel2 = true;
+    [SerializeField] private Transform _respiratorObject;
+    [SerializeField] private Transform _socketRespiratorBaju;
+    [SerializeField] private Vector3 _posisiLokalRespiratorDiBaju = Vector3.zero;
+    [SerializeField] private Vector3 _rotasiLokalRespiratorDiBaju = Vector3.zero;
+    [SerializeField] private Vector3 _skalaDuniaRespiratorDiBaju = new Vector3(0.2f, 0.095f, 0.12f);
 
     public const int TOTAL_APD = 8;
 
@@ -65,6 +74,11 @@ public class PhaseManager : MonoBehaviour
         isEarplugWorn              &&
         isWalkieTalkieTaken;
 
+    public bool Level3FieldApdLengkap =>
+        isWalkieTalkieTaken &&
+        isGlassesWorn &&
+        isRespiratorWorn;
+
     public int JumlahAPDTerpasang
     {
         get
@@ -83,7 +97,13 @@ public class PhaseManager : MonoBehaviour
 
     private void Start()
     {
+        GameLevelManager.OnLevelStarted += OnLevelStarted;
         Log("APD SYSTEM", $"Siap! Pakai {TOTAL_APD} APD sebelum keluar loker.", "yellow");
+    }
+
+    private void OnDestroy()
+    {
+        GameLevelManager.OnLevelStarted -= OnLevelStarted;
     }
 
     public void OnHelmetWorn()        { PakaiApd(_helm);          }
@@ -92,6 +112,8 @@ public class PhaseManager : MonoBehaviour
     public void OnBootsWorn()         { PakaiApd(_sepatuBots);    }
     public void OnGlovesWorn()        { PakaiApd(_sarungTangan);  }
     public void OnRespiratiorWorn()   { PakaiApd(_respirator);    }
+    public void OnRespiratorRemoved() { LepasApd(_respirator);    }
+    public void OnRespiratorStored()  { LepasApd(_respirator);    }
     public void OnEarplugWorn()       { PakaiApd(_earplug);       }
     public void OnWalkieTalkieTaken() { PakaiApd(_walkieTalkie);  }
 
@@ -121,6 +143,15 @@ public class PhaseManager : MonoBehaviour
         return kurang;
     }
 
+    public string CaraApdLevel3FieldYangKurang()
+    {
+        var kurang = new List<string>();
+        if (!isWalkieTalkieTaken) kurang.Add(_walkieTalkie.namaApd);
+        if (!isGlassesWorn) kurang.Add(_kacamata.namaApd);
+        if (!isRespiratorWorn) kurang.Add(_respirator.namaApd);
+        return kurang.Count > 0 ? string.Join(", ", kurang) : "-";
+    }
+
     private void PakaiApd(ApdItem apd)
     {
         if (apd.sudahDipakai) return;
@@ -133,6 +164,81 @@ public class PhaseManager : MonoBehaviour
             Log("APD LENGKAP", $"Semua {TOTAL_APD} APD terpasang sempurna!", "green");
             OnAPD7Lengkap?.Invoke();
         }
+    }
+
+    private void LepasApd(ApdItem apd)
+    {
+        if (!apd.sudahDipakai) return;
+        apd.sudahDipakai = false;
+        OnApdItemRemoved?.Invoke(apd.namaApd);
+        Log("APD", $"<b>{apd.namaApd}</b> dilepas / disimpan.", "orange");
+    }
+
+    public void ResetKeAreaDcsSaja()
+    {
+        bool walkieTetapDibawa = _walkieTalkie.sudahDipakai;
+        foreach (var apd in SemuaAPD())
+            apd.sudahDipakai = false;
+
+        _walkieTalkie.sudahDipakai = walkieTetapDibawa;
+        Log("RESET AREA", "APD lapangan dilepas untuk area DCS. Walkie Talkie tetap dibawa.", "cyan");
+    }
+
+    private void OnLevelStarted(GameLevelManager.GameLevel level)
+    {
+        if (level == GameLevelManager.GameLevel.Level2_DCSPrep && _otomatisSimpanRespiratorSaatLevel2)
+            PindahkanRespiratorKeSocketBaju();
+    }
+
+    private void PindahkanRespiratorKeSocketBaju()
+    {
+        if (_respiratorObject == null)
+        {
+            GameObject respirator = GameObject.Find("RespiratorMask");
+            if (respirator != null)
+                _respiratorObject = respirator.transform;
+        }
+
+        if (_socketRespiratorBaju == null)
+        {
+            GameObject socketBaju = GameObject.Find("Socket_Respirator_Baju");
+            if (socketBaju != null)
+                _socketRespiratorBaju = socketBaju.transform;
+        }
+
+        if (_respiratorObject == null || _socketRespiratorBaju == null)
+        {
+            Log("RESPIRATOR AUTO", "RespiratorMask atau Socket_Respirator_Baju belum ditemukan.", "orange");
+            return;
+        }
+
+        Rigidbody rb = _respiratorObject.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+        }
+
+        _respiratorObject.SetParent(_socketRespiratorBaju, false);
+        _respiratorObject.localPosition = _posisiLokalRespiratorDiBaju;
+        _respiratorObject.localRotation = Quaternion.Euler(_rotasiLokalRespiratorDiBaju);
+        SetWorldScale(_respiratorObject, _skalaDuniaRespiratorDiBaju);
+
+        OnRespiratorStored();
+        Log("RESPIRATOR AUTO", "Level 2 dimulai: respirator dipindahkan ke socket baju agar bisa dilihat saat menunduk.", "cyan");
+    }
+
+    private void SetWorldScale(Transform target, Vector3 worldScale)
+    {
+        if (target == null || worldScale == Vector3.zero)
+            return;
+
+        Vector3 parentScale = target.parent != null ? target.parent.lossyScale : Vector3.one;
+        target.localScale = new Vector3(
+            parentScale.x == 0f ? worldScale.x : worldScale.x / parentScale.x,
+            parentScale.y == 0f ? worldScale.y : worldScale.y / parentScale.y,
+            parentScale.z == 0f ? worldScale.z : worldScale.z / parentScale.z
+        );
     }
 
     private IEnumerable<ApdItem> SemuaAPD()
@@ -174,4 +280,104 @@ public class PhaseManager : MonoBehaviour
             Log("KURANG", kurang, "orange");
     }
 #endif
+
+
+    /// <summary>
+    /// Lepaskan masker dari socket baju (atau parent manapun) dan tempatkan di posisi dunia tertentu
+    /// agar player bisa mengambilnya kembali dengan tangannya. Status APD respirator otomatis di-reset.
+    /// </summary>
+    /// <returns>True jika masker berhasil dilepas dan ditempatkan; false jika referensi masker belum ada.</returns>
+    /// <summary>
+    /// Pastikan masker secara fisik berada di socket baju (chest), tidak di tangan / world.
+    /// Dipakai saat masuk Level 3 field — supaya socket baju siap di-grab oleh player.
+    /// </summary>
+    /// <summary>
+    /// Pastikan masker secara fisik berada di socket baju (chest), tidak di tangan / face socket / world.
+    /// Force-deselect dari interactor manapun terlebih dahulu, lalu reparent + reset transform.
+    /// </summary>
+    public void PastikanMaskerAdaDiSocketBaju()
+    {
+        if (_respiratorObject == null)
+        {
+            GameObject respirator = GameObject.Find("RespiratorMask");
+            if (respirator == null)
+            {
+                foreach (var go in Resources.FindObjectsOfTypeAll<GameObject>())
+                    if (go.name == "RespiratorMask" && go.scene.IsValid()) { respirator = go; break; }
+            }
+            if (respirator != null)
+                _respiratorObject = respirator.transform;
+        }
+
+        if (_socketRespiratorBaju == null)
+        {
+            GameObject socketBaju = GameObject.Find("Socket_Respirator_Baju");
+            if (socketBaju == null)
+            {
+                foreach (var go in Resources.FindObjectsOfTypeAll<GameObject>())
+                    if (go.name == "Socket_Respirator_Baju" && go.scene.IsValid()) { socketBaju = go; break; }
+            }
+            if (socketBaju != null)
+                _socketRespiratorBaju = socketBaju.transform;
+        }
+
+        if (_respiratorObject == null || _socketRespiratorBaju == null)
+        {
+            Log("RESPIRATOR", "Tidak bisa memastikan masker di socket baju: referensi belum lengkap.", "orange");
+            return;
+        }
+
+        // 1. Force-deselect masker dari interactor / socket manapun (face socket, hand grab, dll).
+        var grab = _respiratorObject.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+        if (grab != null && grab.isSelected && grab.interactionManager != null)
+        {
+            // CancelInteractableSelection: force release dari semua interactor.
+            var selectingList = new System.Collections.Generic.List<UnityEngine.XR.Interaction.Toolkit.Interactors.IXRSelectInteractor>(grab.interactorsSelecting);
+            foreach (var interactor in selectingList)
+            {
+                grab.interactionManager.SelectExit(interactor, grab);
+            }
+        }
+
+        // 2. Stabilkan rigidbody supaya tidak terbang atau jatuh setelah deselect.
+        Rigidbody rb = _respiratorObject.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true; // sementara kinematic; XRGrabInteractable akan switch saat di-grab
+            rb.useGravity = false;
+        }
+
+        // 3. Reparent ke socket baju dengan worldPositionStays=false agar local transform reset ke 0/identitas otomatis.
+        _respiratorObject.SetParent(_socketRespiratorBaju, false);
+        _respiratorObject.localPosition = _posisiLokalRespiratorDiBaju;
+        _respiratorObject.localRotation = Quaternion.Euler(_rotasiLokalRespiratorDiBaju);
+        SetWorldScale(_respiratorObject, _skalaDuniaRespiratorDiBaju);
+
+        _respiratorObject.gameObject.SetActive(true);
+
+        // 4. Pastikan renderer & collider on supaya bisa di-grab.
+        Renderer mr = _respiratorObject.GetComponentInChildren<Renderer>(true);
+        if (mr != null) mr.enabled = true;
+        Collider col = _respiratorObject.GetComponent<Collider>();
+        if (col != null) col.enabled = true;
+
+        Log("RESPIRATOR", $"Masker dipastikan ada di socket baju di pos {_respiratorObject.position}, scale={_respiratorObject.lossyScale}, siap di-grab player.", "cyan");
+    }
+
+    /// <summary>
+    /// Akses renderer masker untuk efek glow / outline runtime.
+    /// </summary>
+    public Renderer GetRespiratorRenderer()
+    {
+        if (_respiratorObject == null)
+        {
+            GameObject respirator = GameObject.Find("RespiratorMask");
+            if (respirator != null)
+                _respiratorObject = respirator.transform;
+        }
+
+        return _respiratorObject != null ? _respiratorObject.GetComponentInChildren<Renderer>(true) : null;
+    }
 }

@@ -1138,7 +1138,9 @@ Transform:
   - {fileID: 1719032785}
   - {fileID: 770440822}
   - {fileID: 2058153886}
+  - {fileID: 1956022604}
   - {fileID: 2064710609}
+  - {fileID: 961532685}
   m_Father: {fileID: 421205335}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &92360727
@@ -3471,7 +3473,6 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 1937814913}
-  - {fileID: 961532685}
   - {fileID: 86764972}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -3774,7 +3775,7 @@ Transform:
   m_GameObject: {fileID: 430920856}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 69.17, y: 0.62, z: 17.69}
+  m_LocalPosition: {x: 65.26, y: -3.84, z: 25.06}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -5178,8 +5179,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 9.630437, y: 15.263807, z: 8.810369}
-  m_Center: {x: -0.021562725, y: -2.2620237, z: 3.888011}
+  m_Size: {x: 9.630437, y: 3.493017, z: 8.810369}
+  m_Center: {x: -0.021562725, y: -0.24114996, z: 3.888011}
 --- !u!1 &544799374
 GameObject:
   m_ObjectHideFlags: 0
@@ -6508,6 +6509,335 @@ MonoBehaviour:
   panelNotif: {fileID: 753046367}
   txtNotif: {fileID: 1551755238}
   bgNotif: {fileID: 753046368}
+  _gunakanTeksQuestDinamis: 1
+  _teksUmum:
+    tutorial: '<b>SELAMAT DATANG!</b>
+
+      <size=83%>- Gerak: WASD
+
+      - Ambil:
+      G
+
+      - Bicara: tahan T untuk HT</size>'
+    pakaiApd: '<b>MISI: Pakai APD!</b>
+
+      <size=83%>Lengkapi APD wajib sebelum
+      keluar area.</size>'
+    pakaiApdProgress: '<b>MISI: Pakai APD!</b>
+
+      <size=83%>Lengkapi semua APD
+      wajib sebelum keluar area.
+
+      <color=#FFCC00>Progress: {0}/{1} item terpasang</color></size>'
+    masukPintu: '<b>MISI: Keluar Loker!</b>
+
+      <size=83%>Sentuh pintu keluar
+      untuk lanjut ke area berikutnya.</size>'
+  _teksPerLevel:
+  - level: 0
+    labelLevel: LEVEL 0 - TUTORIAL
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 0</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 1
+    labelLevel: LEVEL 1 - APD SAFETY
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 1</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 2
+    labelLevel: LEVEL 2 - DCS PREPARATION
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 2</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 3
+    labelLevel: LEVEL 3 - ORE & SLURRY
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 3</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 4
+    labelLevel: LEVEL 4 - SLURRY PUMP
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 4</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 5
+    labelLevel: LEVEL 5 - STEAM VALVE
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 5</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 6
+    labelLevel: LEVEL 6 - ACID INJECTION
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 6</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 7
+    labelLevel: LEVEL 7 - AUTOCLAVE
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 7</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 8
+    labelLevel: LEVEL 8 - MONITORING DCS
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 8</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 9
+    labelLevel: LEVEL 9 - FLASH VESSEL
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 9</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 10
+    labelLevel: LEVEL 10 - CCD
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 10</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 11
+    labelLevel: LEVEL 11 - MHP SAMPLING
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 11</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 12
+    labelLevel: LEVEL 12 - TAILING DISCHARGE
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 12</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 13
+    labelLevel: LEVEL 13 - TAILING WASTE
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 13</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  - level: 14
+    labelLevel: LEVEL 14 - DARURAT K3
+    lihatDcs: '<b>MISI: Lihat mesin DCS</b>
+
+      <size=83%>Dekati area DCS untuk
+      memulai langkah berikutnya.</size>'
+    mulaiMesin: '<b>MISI: Klik tombol DCS 14</b>
+
+      <size=83%>Tekan tombol DCS
+      yang menyala untuk memulai operasi.</size>'
+    laporHt: '<b>MISI: Lapor lewat HT</b>
+
+      <size=83%>Tahan <b>T</b>, sampaikan
+      laporan lengkap, lalu lepas tombol untuk kirim.</size>'
+    gunakanWt: '<b>MISI: Kirim laporan HT</b>
+
+      <size=83%>Sampaikan laporan
+      lengkap seperti komunikasi radio asli.</size>'
+  _teksLevel3:
+    klikTombolDcs3: '<b>MISI: Klik tombol DCS 3</b>
+
+      <size=83%>Mulai alur awal
+      ore ke slurry dari panel DCS.</size>'
+    laporanAwal: '<b>MISI: Kirim laporan HT awal</b>
+
+      <size=83%>Setelah tombol
+      3 ditekan, kirim perintah radio untuk memulai alur ore ke slurry tank.</size>'
+    tungguTransisi: '<b>MISI: Bersiap ke area crusher</b>
+
+      <size=83%>Laporan
+      awal diterima. Tunggu transisi ke area mesin.</size>'
+    pakaiApdLapangan: '<b>MISI: Pakai APD lapangan</b>
+
+      <size=83%>Sebelum turun
+      ke crusher/slurry, pakai kacamata pelindung dan respirator. Walkie Talkie tetap
+      dibawa.</size>'
+    observasiOreAir: '<b>MISI: Amati ore dan air masuk</b>
+
+      <size=83%>Tunggu
+      ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>'
+    observasiSlurry: '<b>MISI: Amati slurry tank terisi</b>
+
+      <size=83%>Ore
+      sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 25%.</size>'
+    laporanAkhir: '<b>MISI: Kirim laporan HT akhir</b>
+
+      <size=83%>Laporkan
+      bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 25%.</size>'
+    kembaliKeDcs: '<b>MISI: Kembali ke DCS</b>
+
+      <size=83%>Laporan akhir diterima.
+      Bersiap untuk transisi ke Level 4.</size>'
 --- !u!114 &741079804
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -6733,7 +7063,7 @@ MonoBehaviour:
   _autoSilenceTimeout: 3
   _pakaiFallbackKeyboard: 1
   _izinkanMouseUntukPTT: 0
-  _modeTanpaVoiceUntukTempatRame: 1
+  _modeTanpaVoiceUntukTempatRame: 0
   _autoSubmitKeywordSaatSpeechGagal: 0
   _minimumDurasiPttUntukFallback: 0.25
   _debugMicInput: 1
@@ -6953,8 +7283,8 @@ Transform:
   m_GameObject: {fileID: 770440821}
   serializedVersion: 2
   m_LocalRotation: {x: -0.7071068, y: -0, z: -0, w: 0.70710677}
-  m_LocalPosition: {x: 68.11, y: -1.5500002, z: 53.690002}
-  m_LocalScale: {x: 0.79922956, y: 0.79922956, z: 0.79922956}
+  m_LocalPosition: {x: 68.11, y: -1.55, z: 47.3078}
+  m_LocalScale: {x: 0.79922956, y: 7.1811943, z: 0.79922956}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 86764972}
@@ -7037,6 +7367,121 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 770440821}
   m_Mesh: {fileID: 10208, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &777173344
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 777173345}
+  - component: {fileID: 777173347}
+  - component: {fileID: 777173346}
+  m_Layer: 0
+  m_Name: Socket_Respirator_Baju
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &777173345
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 777173344}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 1
+  m_Children:
+  - {fileID: 1526832219}
+  m_Father: {fileID: 903204427}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &777173346
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 777173344}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.3, y: 0.2, z: 0.3}
+  m_Center: {x: 0, y: 0, z: 0.1}
+--- !u!114 &777173347
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 777173344}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 60523e0647cc6ab43acc73cb266a32a7, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.XR.Interaction.Toolkit::UnityEngine.XR.Interaction.Toolkit.Interactors.XRSocketInteractor
+  m_InteractionManager: {fileID: 0}
+  m_InteractionLayers:
+    m_Bits: 134217728
+  m_Handedness: 0
+  m_AttachTransform: {fileID: 0}
+  m_KeepSelectedTargetValid: 1
+  m_DisableVisualsWhenBlockedInGroup: 1
+  m_StartingSelectedInteractable: {fileID: 0}
+  m_StartingTargetFilter: {fileID: 0}
+  m_AutoFindParentInteractableInHierarchy: 0
+  m_ParentInteractableObject: {fileID: 0}
+  m_HoverEntered:
+    m_PersistentCalls:
+      m_Calls: []
+  m_HoverExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_SelectEntered:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 2067615868}
+        m_TargetAssemblyTypeName: PhaseManager, Assembly-CSharp
+        m_MethodName: OnRespiratorStored
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  m_SelectExited:
+    m_PersistentCalls:
+      m_Calls: []
+  m_StartingHoverFilters: []
+  m_StartingSelectFilters: []
+  m_ShowInteractableHoverMeshes: 1
+  m_InteractableHoverMeshMaterial: {fileID: 0}
+  m_InteractableCantHoverMeshMaterial: {fileID: 0}
+  m_SocketActive: 1
+  m_InteractableHoverScale: 1
+  m_RecycleDelayTime: 1
+  m_HoverSocketSnapping: 0
+  m_SocketSnappingRadius: 0.1
+  m_SocketScaleMode: 0
+  m_FixedScale: {x: 1, y: 1, z: 1}
+  m_TargetBoundsSize: {x: 1, y: 1, z: 1}
 --- !u!1 &778631014
 GameObject:
   m_ObjectHideFlags: 0
@@ -7974,7 +8419,7 @@ Transform:
   m_GameObject: {fileID: 870951027}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 110.340004, y: -9.50421, z: 22.18}
+  m_LocalPosition: {x: 110.340004, y: -7.5042105, z: 22.18}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -8045,7 +8490,7 @@ Transform:
   m_GameObject: {fileID: 895621113}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: -0.006802045, y: 0.03529372, z: 0.009192982}
+  m_LocalPosition: {x: 0.41, y: -0.14, z: 0.009192982}
   m_LocalScale: {x: 1.6300905, y: 1.6300905, z: 1.6300905}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -8464,6 +8909,58 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 901011377}
   m_CullTransparentMesh: 1
+--- !u!1 &903204426
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 903204427}
+  - component: {fileID: 903204428}
+  m_Layer: 0
+  m_Name: TorsoAnchor
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &903204427
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 903204426}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children:
+  - {fileID: 777173345}
+  m_Father: {fileID: 1490715456}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &903204428
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 903204426}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1e9b0e26dab27b44499d0bf050e31ecf, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::TorsoChestAnchor
+  _camera: {fileID: 344898197}
+  _offsetY: -0.4
+  _offsetDepan: 0.18
+  _offsetSamping: 0
+  _ikutYawKamera: 1
+  _smoothPos: 0.08
+  _smoothRot: 0.12
 --- !u!1 &912334555
 GameObject:
   m_ObjectHideFlags: 0
@@ -8611,6 +9108,7 @@ GameObject:
   m_Component:
   - component: {fileID: 943108189}
   - component: {fileID: 943108190}
+  - component: {fileID: 943108191}
   m_Layer: 0
   m_Name: Level3OreRecquired
   m_TagString: Untagged
@@ -8633,7 +9131,28 @@ Transform:
   m_Children: []
   m_Father: {fileID: 2084242494}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &943108190
+--- !u!65 &943108190
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 943108188}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &943108191
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -8646,27 +9165,51 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Level3OreSlurryController
   _playerRigRoot: {fileID: 1490715456}
-  _playerCharacterController: {fileID: 0}
+  _playerCharacterController: {fileID: 1490715457}
   _teleportTargetField: {fileID: 870951028}
   _teleportTargetObservation: {fileID: 430920857}
   _teleportTargetDcs: {fileID: 961532685}
-  _oreMover: {fileID: 2058153886}
-  _oreStartPoint: {fileID: 1719032785}
+  _oreMover: {fileID: 1719032785}
+  _oreStartPoint: {fileID: 2058153886}
+  _oreMidPoint: {fileID: 1956022604}
   _oreEndPoint: {fileID: 2064710609}
   _waterFx: {fileID: 770440821}
   _aktifSaatObservasi: []
+  _sembunyikanOreSetelahMasukTank: 1
+  _wajibKacamataRespiratorSebelumKeLapangan: 1
   _slurryFill: {fileID: 1819536721}
-  _slurryBatas25: {fileID: 0}
-  _slurryLocalScaleAwal: {x: 1, y: 0.08, z: 1}
-  _slurryLocalScaleTarget25: {x: 1, y: 0.25, z: 1}
-  _slurryLocalPosAwal: {x: 0, y: -0.45, z: 0}
-  _slurryLocalPosTarget25: {x: 0, y: -0.18, z: 0}
+  _slurryBatas25: {fileID: 1623745557}
+  _slurryTrigger25: {fileID: 1623745558}
+  _slurryLocalScaleAwal: {x: 10.28, y: 0.05, z: 10.28}
+  _slurryLocalScaleTarget25: {x: 10.28, y: 0.91999996, z: 10.28}
+  _slurryLocalPosAwal: {x: 0, y: -3.02, z: 0}
+  _slurryLocalPosTarget25: {x: 0, y: -2.15, z: 0}
+  _aktifkanSlurryFillSaatMulaiIsi: 1
+  _pertahankanDiameterSlurryDariScene: 1
+  _validasiSlurry25PakaiBatasFisik: 0
   _jedaSetelahLaporanAwal: 2.2
-  _durasiFadeKeField: 3.1
-  _jedaSebelumOreJalan: 0.7
-  _durasiGerakOre: 4.8
-  _jedaSetelahOreMasuk: 0.5
-  _durasiIsiSlurry: 5.5
+  _durasiFadeKeField: 2.5
+  _jedaSebelumOreJalan: 2
+  _durasiGerakOre: 7
+  _jedaSetelahOreMasuk: 1
+  _durasiIsiSlurry: 6
+  _offsetAmanDiAtasLantai: 0.15
+  _jarakRaycastLantai: 40
+  _gunakanRaycastLantaiSaatTeleport: 1
+  _teleportKeTitikObservasi: 1
+  _buatPlatformObservasiOtomatis: 1
+  _ukuranPlatformObservasi: {x: 8, y: 0.5, z: 8}
+  _buatSafetyFloorOtomatis: 1
+  _ukuranSafetyFloor: {x: 24, y: 1, z: 24}
+  _socketMaskerBaju: {fileID: 777173345}
+  _maskerRendererUntukGlow: {fileID: 1091301855}
+  _warnaGlowMasker: {r: 1, g: 0.85, b: 0.2, a: 1}
+  _intensitasGlowMasker: 0.96
+  _pesanInstruksiMasker: Ambil masker di dadamu lalu arahkan ke wajah sebelum mendekati
+    slurry tank.
+  _slurryFx: {fileID: 1819536725}
+  _arrowIndicator: {fileID: 0}
+  _gunakanArrowIndicator: 1
 --- !u!1 &949518452
 GameObject:
   m_ObjectHideFlags: 0
@@ -8768,11 +9311,11 @@ Transform:
   m_GameObject: {fileID: 961532684}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0.000000014901159, z: -0, w: 1}
-  m_LocalPosition: {x: -8.03, y: 0, z: 2.69}
+  m_LocalPosition: {x: -8.03, y: -0.15, z: 2.22}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
-  m_Father: {fileID: 421205335}
+  m_Father: {fileID: 86764972}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &962952482
 GameObject:
@@ -8921,9 +9464,142 @@ MonoBehaviour:
   _skorTotal: 0
   _durasiTransisiDefault: 2.75
   _durasiTransisiLevel3: 4.5
-  _izinkanKeywordPendekSebagaiCadangan: 0
-  _phaseManager: {fileID: 0}
-  _level3Phase: 0
+  _izinkanKeywordPendekSebagaiCadangan: 1
+  _gunakanLaporanHtDinamis: 1
+  _laporanHtPerLevel:
+  - level: 0
+    kataKunciVoice: 
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: 
+    aliasTambahanPerBaris: 
+  - level: 1
+    kataKunciVoice: apd lengkap
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: DCS, APD lengkap. Operator siap masuk ke area proses.
+    aliasTambahanPerBaris: 'ppe complete
+
+      safety gear complete'
+  - level: 2
+    kataKunciVoice: prepare area
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: 'Control Ready, prepare area crusher Sekarang! '
+    aliasTambahanPerBaris: 'prepare area
+
+      Control ready'
+  - level: 3
+    kataKunciVoice: nikel masuk
+    kataKunciVoiceAwal: nikel start to slurry tank
+    laporanVoiceAwal: Field, nikel start to slurry tank. Operator DCS standby monitoring.
+    laporanVoiceLengkap: DCS, ore sudah masuk ke slurry tank. Level cairan dua puluh
+      lima persen dan proses aman.
+    aliasTambahanPerBaris: 'start ore flow
+
+      start ore line
+
+      ore ready
+
+      ore
+      in slurry tank'
+  - level: 4
+    kataKunciVoice: slurry pump active
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: Field, slurry pump aktif. Flow rate sudah diset empat ratus
+      lima puluh meter kubik per jam.
+    aliasTambahanPerBaris: 'slurry pump active
+
+      flow set'
+  - level: 5
+    kataKunciVoice: katup steam terbuka
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: DCS, katup steam terbuka. Suhu pre-heater sudah naik ke
+      rentang operasi.
+    aliasTambahanPerBaris: 'steam valve open
+
+      heater temperature up'
+  - level: 6
+    kataKunciVoice: acid aktif
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: Field, acid injection aktif. Rasio asam tiga ratus lima
+      puluh kilogram per ton dan pH turun ke satu koma nol.
+    aliasTambahanPerBaris: 'acid injection active
+
+      acid ratio set'
+  - level: 7
+    kataKunciVoice: suhu 250
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: DCS, suhu dua ratus lima puluh dua derajat, tekanan empat
+      puluh tujuh koma lima atmosfer, dan agitator enam puluh RPM.
+    aliasTambahanPerBaris: 'autoclave stable
+
+      temperature pressure rpm'
+  - level: 8
+    kataKunciVoice: parameter stabil
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: Field, parameter stabil. Koreksi selesai dan operasi kembali
+      dalam batas SOP.
+    aliasTambahanPerBaris: 'parameter stable
+
+      operation stable'
+  - level: 9
+    kataKunciVoice: flash vessel normal
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: DCS, flash vessel normal. Tekanan turun ke dua belas atmosfer
+      dan pelepasan uap dalam kondisi aman.
+    aliasTambahanPerBaris: pressure release safe
+  - level: 10
+    kataKunciVoice: ccd aktif
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: Field, sistem CCD aktif. Pemisahan padat dan cair sudah
+      dimulai.
+    aliasTambahanPerBaris: 'ccd active
+
+      separation started'
+  - level: 11
+    kataKunciVoice: mhp terbentuk
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: DCS, MHP terbentuk. Sampel presipitasi menunjukkan produk
+      utama dalam kondisi normal.
+    aliasTambahanPerBaris: 'mhp formed
+
+      precipitation normal'
+  - level: 12
+    kataKunciVoice: limbah dialirkan
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: Field, limbah tailing sudah dialirkan ke tangki netralisasi.
+      Sistem pembuangan aman.
+    aliasTambahanPerBaris: 'tailing discharge safe
+
+      waste transferred'
+  - level: 13
+    kataKunciVoice: tailing aman
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: DCS, tailing aman. pH delapan koma lima dan filter press
+      selesai sesuai prosedur lingkungan.
+    aliasTambahanPerBaris: filter press complete
+  - level: 14
+    kataKunciVoice: emergency
+    kataKunciVoiceAwal: 
+    laporanVoiceAwal: 
+    laporanVoiceLengkap: Emergency, emergency. Kebocoran terdeteksi di sektor proses.
+      Semua personel segera evakuasi.
+    aliasTambahanPerBaris: 'emergency evacuation
+
+      leak detected'
+  _phaseManager: {fileID: 2067615868}
+  _level3Phase: 3
 --- !u!4 &968390107
 Transform:
   m_ObjectHideFlags: 0
@@ -9959,10 +10635,10 @@ GameObject:
   - component: {fileID: 1091301850}
   - component: {fileID: 1091301856}
   - component: {fileID: 1091301855}
-  - component: {fileID: 1091301854}
   - component: {fileID: 1091301853}
   - component: {fileID: 1091301852}
   - component: {fileID: 1091301851}
+  - component: {fileID: 1091301857}
   m_Layer: 0
   m_Name: RespiratorMask
   m_TagString: Untagged
@@ -9978,9 +10654,9 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1091301849}
   serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0.096, y: -0.00056819734, z: -0.00873788}
-  m_LocalScale: {x: 0.47946474, y: 0.22461823, z: 0.28579465}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.1, y: 0, z: -0.01}
+  m_LocalScale: {x: 0.55, y: 0.32, z: 0.4}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 828363982}
@@ -10135,9 +10811,9 @@ Rigidbody:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1091301849}
   serializedVersion: 5
-  m_Mass: 1
-  m_LinearDamping: 0
-  m_AngularDamping: 0.05
+  m_Mass: 0.5
+  m_LinearDamping: 1
+  m_AngularDamping: 2
   m_CenterOfMass: {x: 0, y: 0, z: 0}
   m_InertiaTensor: {x: 1, y: 1, z: 1}
   m_InertiaRotation: {x: 0, y: 0, z: 0, w: 1}
@@ -10151,30 +10827,9 @@ Rigidbody:
   m_ImplicitTensor: 1
   m_UseGravity: 1
   m_IsKinematic: 0
-  m_Interpolate: 0
+  m_Interpolate: 1
   m_Constraints: 0
-  m_CollisionDetection: 0
---- !u!65 &1091301854
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1091301849}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 1}
-  m_Center: {x: 0, y: 0, z: 0}
+  m_CollisionDetection: 2
 --- !u!23 &1091301855
 MeshRenderer:
   m_ObjectHideFlags: 0
@@ -10200,7 +10855,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: eb18e9fea812e204db380c7e1757c6cc, type: 2}
+  - {fileID: 2100000, guid: 94b43a603c2dce84cb2b313bd82c848b, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -10232,6 +10887,27 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1091301849}
   m_Mesh: {fileID: 10207, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!135 &1091301857
+SphereCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1091301849}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Radius: 0.5
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &1094279103 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 4498236582800328376, guid: 72758ee64aae2094db2f80d4010a8ebd, type: 3}
@@ -10271,6 +10947,7 @@ Transform:
   - {fileID: 278121114}
   - {fileID: 1028279855}
   - {fileID: 1618534129}
+  - {fileID: 1650527234}
   - {fileID: 825361629}
   m_Father: {fileID: 553317931}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -11157,7 +11834,7 @@ Transform:
   m_GameObject: {fileID: 1243379536}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.28, y: -0.62, z: 0.475}
+  m_LocalPosition: {x: 0.28, y: -0.62, z: 0.347}
   m_LocalScale: {x: 0.0432304, y: 0.0432304, z: 0.0432304}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -11539,7 +12216,7 @@ Transform:
   m_Children:
   - {fileID: 2027206545}
   - {fileID: 1819536721}
-  - {fileID: 1734574594}
+  - {fileID: 1623745557}
   - {fileID: 515463190}
   m_Father: {fileID: 930859926}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
@@ -13612,7 +14289,7 @@ Transform:
   m_GameObject: {fileID: 1474557902}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.000001117587, z: -0, w: 1}
-  m_LocalPosition: {x: -6.431, y: -0.02, z: -18.19}
+  m_LocalPosition: {x: -6.4337544, y: -4.40551, z: -10.893732}
   m_LocalScale: {x: 27.907225, y: 1.6049193, z: 2.9333673}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -14026,6 +14703,9 @@ PrefabInstance:
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects:
+    - targetCorrespondingSourceObject: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 903204427}
     - targetCorrespondingSourceObject: {fileID: 1767192434, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1349952299}
@@ -14064,6 +14744,11 @@ PrefabInstance:
 --- !u!4 &1490715456 stripped
 Transform:
   m_CorrespondingSourceObject: {fileID: 1717954561962503726, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
+  m_PrefabInstance: {fileID: 1490715455}
+  m_PrefabAsset: {fileID: 0}
+--- !u!143 &1490715457 stripped
+CharacterController:
+  m_CorrespondingSourceObject: {fileID: 6232745470614056090, guid: f6336ac4ac8b4d34bc5072418cdc62a0, type: 3}
   m_PrefabInstance: {fileID: 1490715455}
   m_PrefabAsset: {fileID: 0}
 --- !u!1 &1499489459
@@ -14611,7 +15296,7 @@ GameObject:
   - component: {fileID: 1507403396}
   - component: {fileID: 1507403397}
   m_Layer: 0
-  m_Name: Tools
+  m_Name: APD Level 2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -14904,6 +15589,96 @@ MonoBehaviour:
   m_hasFontAssetChanged: 0
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
+--- !u!1 &1526832218
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1526832219}
+  - component: {fileID: 1526832221}
+  - component: {fileID: 1526832220}
+  m_Layer: 0
+  m_Name: Shadow
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1526832219
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1526832218}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0.004892869, y: 0.21003516, z: 0.0019631113}
+  m_LocalScale: {x: 0.24569699, y: 1, z: 0.082398586}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 777173345}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!23 &1526832220
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1526832218}
+  m_Enabled: 0
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: eb18e9fea812e204db380c7e1757c6cc, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &1526832221
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1526832218}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &1535999792
 GameObject:
   m_ObjectHideFlags: 0
@@ -16016,6 +16791,118 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1115178161}
   m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!1 &1623745556
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1623745557}
+  - component: {fileID: 1623745560}
+  - component: {fileID: 1623745559}
+  - component: {fileID: 1623745558}
+  m_Layer: 0
+  m_Name: Slurry_Fill_25%Marker (1)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1623745557
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1623745556}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
+  m_LocalPosition: {x: 0, y: -1.2342, z: 0}
+  m_LocalScale: {x: 10.405967, y: 0.07644414, z: 10.405967}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1270628977}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &1623745558
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1623745556}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 1
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 2.8963938, z: 1}
+  m_Center: {x: 0, y: 0.07774168, z: 0}
+--- !u!23 &1623745559
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1623745556}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: c7f19cb57c3be944f84f0b2423e0c4f0, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &1623745560
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1623745556}
+  m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &1630731507
 GameObject:
   m_ObjectHideFlags: 0
@@ -16230,6 +17117,118 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1641040485}
   m_CullTransparentMesh: 1
+--- !u!1 &1650527233
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1650527234}
+  - component: {fileID: 1650527237}
+  - component: {fileID: 1650527236}
+  - component: {fileID: 1650527235}
+  m_Layer: 0
+  m_Name: Loker (6)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1650527234
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1650527233}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: 0.70710576, z: -0, w: 0.7071079}
+  m_LocalPosition: {x: 0, y: -0.9, z: 0}
+  m_LocalScale: {x: 1.0114666, y: 0.041347098, z: 1.0036213}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 1115178161}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!65 &1650527235
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1650527233}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!23 &1650527236
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1650527233}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 2100000, guid: 31321ba15b8f8eb4c954353edc038b1d, type: 2}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!33 &1650527237
+MeshFilter:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1650527233}
+  m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &1669469502
 GameObject:
   m_ObjectHideFlags: 0
@@ -16336,7 +17335,7 @@ Transform:
   m_GameObject: {fileID: 1669469502}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0.22849421, w: 0.97354525}
-  m_LocalPosition: {x: 27.012756, y: -2.59449, z: -13.60627}
+  m_LocalPosition: {x: 27.01, y: -6.98, z: -6.31}
   m_LocalScale: {x: 23.716013, y: 1.6049194, z: 2.9333673}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -16844,7 +17843,7 @@ GameObject:
   - component: {fileID: 1719032787}
   - component: {fileID: 1719032786}
   m_Layer: 0
-  m_Name: SpawnOre_Start
+  m_Name: SpawnOre_Slurry
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -16948,118 +17947,6 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 3088048559109025330, guid: 72758ee64aae2094db2f80d4010a8ebd, type: 3}
   m_PrefabInstance: {fileID: 7580767468939136883}
   m_PrefabAsset: {fileID: 0}
---- !u!1 &1734574593
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 1734574594}
-  - component: {fileID: 1734574597}
-  - component: {fileID: 1734574596}
-  - component: {fileID: 1734574595}
-  m_Layer: 0
-  m_Name: Slurry_Fill_25%Marker
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1734574594
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1734574593}
-  serializedVersion: 2
-  m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: -1.2342, z: 0}
-  m_LocalScale: {x: 10.224985, y: 0.015190248, z: 10.224985}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 1270628977}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!65 &1734574595
-BoxCollider:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1734574593}
-  m_Material: {fileID: 0}
-  m_IncludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_ExcludeLayers:
-    serializedVersion: 2
-    m_Bits: 0
-  m_LayerOverridePriority: 0
-  m_IsTrigger: 0
-  m_ProvidesContacts: 0
-  m_Enabled: 1
-  serializedVersion: 3
-  m_Size: {x: 1, y: 1, z: 1}
-  m_Center: {x: 0, y: 0, z: 0}
---- !u!23 &1734574596
-MeshRenderer:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1734574593}
-  m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_DynamicOccludee: 1
-  m_StaticShadowCaster: 0
-  m_MotionVectors: 1
-  m_LightProbeUsage: 1
-  m_ReflectionProbeUsage: 1
-  m_RayTracingMode: 2
-  m_RayTraceProcedural: 0
-  m_RayTracingAccelStructBuildFlagsOverride: 0
-  m_RayTracingAccelStructBuildFlags: 1
-  m_SmallMeshCulling: 1
-  m_ForceMeshLod: -1
-  m_MeshLodSelectionBias: 0
-  m_RenderingLayerMask: 1
-  m_RendererPriority: 0
-  m_Materials:
-  - {fileID: 2100000, guid: 7b471e8ded8c0fd428ee2f1a88e3ef7d, type: 2}
-  m_StaticBatchInfo:
-    firstSubMesh: 0
-    subMeshCount: 0
-  m_StaticBatchRoot: {fileID: 0}
-  m_ProbeAnchor: {fileID: 0}
-  m_LightProbeVolumeOverride: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_ReceiveGI: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_StitchLightmapSeams: 1
-  m_SelectedEditorRenderState: 3
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_GlobalIlluminationMeshLod: 0
-  m_SortingLayerID: 0
-  m_SortingLayer: 0
-  m_SortingOrder: 0
-  m_MaskInteraction: 0
-  m_AdditionalVertexStreams: {fileID: 0}
---- !u!33 &1734574597
-MeshFilter:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1734574593}
-  m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
 --- !u!1 &1740796329
 GameObject:
   m_ObjectHideFlags: 0
@@ -17615,7 +18502,7 @@ Transform:
   m_GameObject: {fileID: 1806612603}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.1829239, z: -0, w: 0.9831271}
-  m_LocalPosition: {x: 0.26, y: -0.001, z: 0.4}
+  m_LocalPosition: {x: 0.315, y: -0.001, z: 0.544}
   m_LocalScale: {x: 0.08, y: 0.08, z: 0.08}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -17715,6 +18602,8 @@ GameObject:
   - component: {fileID: 1819536724}
   - component: {fileID: 1819536723}
   - component: {fileID: 1819536722}
+  - component: {fileID: 1819536726}
+  - component: {fileID: 1819536725}
   m_Layer: 0
   m_Name: Slurry_Fill
   m_TagString: Untagged
@@ -17731,8 +18620,8 @@ Transform:
   m_GameObject: {fileID: 1819536720}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: -2.4425, z: 0}
-  m_LocalScale: {x: 10.224985, y: 0.9993584, z: 10.224985}
+  m_LocalPosition: {x: 0, y: -3.02, z: 0}
+  m_LocalScale: {x: 10.28, y: 0.05, z: 10.28}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1270628977}
@@ -17815,6 +18704,123 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1819536720}
   m_Mesh: {fileID: 10206, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1819536725
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1819536720}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 94570b2b3866b0245822a5e9101f3037, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::SlurryFXController
+  _volumeSplashAwal: 0.65
+  _volumeBubbling: 0.3
+  _pitchBubbling: 0.85
+  _aktifkanBubble: 1
+  _warnaBubble: {r: 0.55, g: 0.4, b: 0.2, a: 0.6}
+  _emisiPerDetik: 35
+  _tinggiNaikBubble: 1.2
+  _radiusSpawn: 1.8
+--- !u!82 &1819536726
+AudioSource:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1819536720}
+  m_Enabled: 1
+  serializedVersion: 4
+  OutputAudioMixerGroup: {fileID: 0}
+  m_audioClip: {fileID: 0}
+  m_Resource: {fileID: 0}
+  m_PlayOnAwake: 1
+  m_Volume: 1
+  m_Pitch: 1
+  Loop: 0
+  Mute: 0
+  Spatialize: 0
+  SpatializePostEffects: 0
+  Priority: 128
+  DopplerLevel: 1
+  MinDistance: 1
+  MaxDistance: 500
+  Pan2D: 0
+  rolloffMode: 0
+  BypassEffects: 0
+  BypassListenerEffects: 0
+  BypassReverbZones: 0
+  rolloffCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  panLevelCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  spreadCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  reverbZoneMixCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
 --- !u!1 &1835047490
 GameObject:
   m_ObjectHideFlags: 0
@@ -18166,8 +19172,8 @@ Transform:
   m_GameObject: {fileID: 1878685376}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.006, y: -0.088, z: 0.08}
-  m_LocalScale: {x: 0.08, y: 0.08, z: 0.08}
+  m_LocalPosition: {x: 0, y: -0.05, z: 0.2}
+  m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 1
   m_Children:
   - {fileID: 763202001}
@@ -18192,8 +19198,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 7.5344915, y: 10.119705, z: 10.515248}
-  m_Center: {x: -0.3414698, y: -2.3115065, z: 4.740452}
+  m_Size: {x: 0.25, y: 0.2, z: 0.25}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &1878685379
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -18240,7 +19246,19 @@ MonoBehaviour:
         m_CallState: 2
   m_SelectExited:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 2067615868}
+        m_TargetAssemblyTypeName: PhaseManager, Assembly-CSharp
+        m_MethodName: OnRespiratorRemoved
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   m_StartingHoverFilters: []
   m_StartingSelectFilters: []
   m_ShowInteractableHoverMeshes: 1
@@ -19045,6 +20063,109 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!1 &1956022603
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1956022604}
+  - component: {fileID: 1956022606}
+  - component: {fileID: 1956022605}
+  m_Layer: 0
+  m_Name: SpawnOre_Mid
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1956022604
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1956022603}
+  serializedVersion: 2
+  m_LocalRotation: {x: -0, y: -0, z: -0.08862654, w: 0.99606496}
+  m_LocalPosition: {x: 84.05, y: -2.98, z: 35.62}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 86764972}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: -10.169}
+--- !u!23 &1956022605
+MeshRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1956022603}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_DynamicOccludee: 1
+  m_StaticShadowCaster: 0
+  m_MotionVectors: 1
+  m_LightProbeUsage: 1
+  m_ReflectionProbeUsage: 1
+  m_RayTracingMode: 2
+  m_RayTraceProcedural: 0
+  m_RayTracingAccelStructBuildFlagsOverride: 0
+  m_RayTracingAccelStructBuildFlags: 1
+  m_SmallMeshCulling: 1
+  m_ForceMeshLod: -1
+  m_MeshLodSelectionBias: 0
+  m_RenderingLayerMask: 1
+  m_RendererPriority: 0
+  m_Materials:
+  - {fileID: 0}
+  m_StaticBatchInfo:
+    firstSubMesh: 0
+    subMeshCount: 0
+  m_StaticBatchRoot: {fileID: 0}
+  m_ProbeAnchor: {fileID: 0}
+  m_LightProbeVolumeOverride: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_ReceiveGI: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_StitchLightmapSeams: 1
+  m_SelectedEditorRenderState: 3
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_GlobalIlluminationMeshLod: 0
+  m_SortingLayerID: 0
+  m_SortingLayer: 0
+  m_SortingOrder: 0
+  m_MaskInteraction: 0
+  m_AdditionalVertexStreams: {fileID: 0}
+--- !u!65 &1956022606
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1956022603}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1, y: 1, z: 1}
+  m_Center: {x: 0, y: 0, z: 0}
 --- !u!1 &1968513139
 GameObject:
   m_ObjectHideFlags: 0
@@ -19454,8 +20575,8 @@ Transform:
   m_GameObject: {fileID: 2027206541}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 10.346975, y: 8.031388, z: 10.346975}
+  m_LocalPosition: {x: 0, y: 2.449, z: 0}
+  m_LocalScale: {x: 10.346975, y: 5.582618, z: 10.346975}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1270628977}
@@ -19489,7 +20610,7 @@ BoxCollider:
   m_Material: {fileID: 0}
   m_IncludeLayers:
     serializedVersion: 2
-    m_Bits: 0
+    m_Bits: 4294967295
   m_ExcludeLayers:
     serializedVersion: 2
     m_Bits: 0
@@ -19791,7 +20912,7 @@ GameObject:
   - component: {fileID: 2058153888}
   - component: {fileID: 2058153887}
   m_Layer: 0
-  m_Name: SpawnOre_Slurry
+  m_Name: SpawnOre_Start
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -19907,7 +21028,7 @@ Transform:
   m_GameObject: {fileID: 2064710608}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 71.3, y: -1.8000002, z: 35.75}
+  m_LocalPosition: {x: 71.3, y: -1.15, z: 35.65}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -19967,6 +21088,12 @@ MonoBehaviour:
   _walkieTalkie:
     namaApd: Walkie Talkie / HT
     sudahDipakai: 0
+  _otomatisSimpanRespiratorSaatLevel2: 1
+  _respiratorObject: {fileID: 1091301850}
+  _socketRespiratorBaju: {fileID: 777173345}
+  _posisiLokalRespiratorDiBaju: {x: 0, y: 0, z: 0.1}
+  _rotasiLokalRespiratorDiBaju: {x: 20, y: 0, z: 0}
+  _skalaDuniaRespiratorDiBaju: {x: 0.2, y: 0.13, z: 0.18}
 --- !u!4 &2067615869
 Transform:
   m_ObjectHideFlags: 0
@@ -21009,6 +22136,18 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 1939002805}
     m_Modifications:
+    - target: {fileID: 3088048559109025330, guid: 72758ee64aae2094db2f80d4010a8ebd, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.15808271
+      objectReference: {fileID: 0}
+    - target: {fileID: 3088048559109025330, guid: 72758ee64aae2094db2f80d4010a8ebd, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.3713654
+      objectReference: {fileID: 0}
+    - target: {fileID: 3088048559109025330, guid: 72758ee64aae2094db2f80d4010a8ebd, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.059013482
+      objectReference: {fileID: 0}
     - target: {fileID: 3088048559109025330, guid: 72758ee64aae2094db2f80d4010a8ebd, type: 3}
       propertyPath: m_LocalPosition.x
       value: 0.077

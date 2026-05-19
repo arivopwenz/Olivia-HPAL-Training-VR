@@ -104,9 +104,8 @@ public class DCSTombolPanel : MonoBehaviour
 
     private void OnLevelBaru(GameLevelManager.GameLevel level)
     {
-        // Reset semua tombol ke normal saat level baru mulai
-        if (!_sedangHighlight && !_sudahDitekan)
-            AturMaterial(_materialNormal);
+        // Level baru berarti tombol bisa dipakai ulang sesuai tombol aktif level itu.
+        Reset();
     }
 
     // ============================================================
@@ -116,12 +115,17 @@ public class DCSTombolPanel : MonoBehaviour
     {
         if (_sudahDitekan) return;
 
-        // Flash singkat material "ditekan"
+        bool diterimaOlehLevel = GameLevelManager.Instance != null &&
+                                  GameLevelManager.Instance.TryOnDCSTombolDitekan(_nomorTombol);
+
+        if (!diterimaOlehLevel)
+        {
+            Debug.LogWarning($"[DCS TOMBOL {_nomorTombol}] '{_namaLabel}' ditekan, tapi belum diterima oleh level aktif. Tombol tidak dikunci.");
+            return;
+        }
+
+        // Flash singkat material "ditekan" hanya kalau level aktif menerima tombol ini.
         StartCoroutine(FlashDitekan());
-
-        // Laporan ke GameLevelManager
-        GameLevelManager.Instance?.OnDCSTombolDitekan(_nomorTombol);
-
         Debug.Log($"<color=cyan>[DCS TOMBOL {_nomorTombol}]</color> '{_namaLabel}' ditekan!");
     }
 

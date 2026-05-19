@@ -63,6 +63,17 @@ public class GameLevelManager : MonoBehaviour
         public float targetPH;
     }
 
+    [Serializable]
+    public class LaporanHtDinamis
+    {
+        public GameLevel level;
+        [TextArea(1, 2)] public string kataKunciVoice;
+        [TextArea(1, 2)] public string kataKunciVoiceAwal;
+        [TextArea(2, 5)] public string laporanVoiceAwal;
+        [TextArea(2, 5)] public string laporanVoiceLengkap;
+        [TextArea(2, 5)] public string aliasTambahanPerBaris;
+    }
+
     public static event Action<GameLevel> OnLevelStarted;
     public static event Action<GameLevel, int> OnLevelComplete;
     public static event Action<int> OnDCSButtonShouldHighlight;
@@ -97,6 +108,10 @@ public class GameLevelManager : MonoBehaviour
     [Header("=== Validasi Voice Report ===")]
     [SerializeField] private bool _izinkanKeywordPendekSebagaiCadangan = true;
 
+    [Header("=== Laporan HT Dinamis (Bisa Kamu Edit) ===")]
+    [SerializeField] private bool _gunakanLaporanHtDinamis = true;
+    [SerializeField] private List<LaporanHtDinamis> _laporanHtPerLevel = new List<LaporanHtDinamis>();
+
     [Header("=== Referensi Script ===")]
     [SerializeField] private PhaseManager _phaseManager;
 
@@ -120,7 +135,17 @@ public class GameLevelManager : MonoBehaviour
         if (transform.parent == null)
             DontDestroyOnLoad(gameObject);
 
+        if (_phaseManager == null)
+            _phaseManager = FindFirstObjectByType<PhaseManager>();
+
         InisialisasiDataLevel();
+        IsiLaporanHtDinamisJikaKosong();
+        TerapkanLaporanHtDinamis();
+    }
+
+    private void OnValidate()
+    {
+        IsiLaporanHtDinamisJikaKosong();
     }
 
     private void Start()
@@ -364,6 +389,136 @@ public class GameLevelManager : MonoBehaviour
         _dataLevel[data.level] = data;
     }
 
+    private void IsiLaporanHtDinamisJikaKosong()
+    {
+        if (_laporanHtPerLevel == null)
+            _laporanHtPerLevel = new List<LaporanHtDinamis>();
+
+        for (int i = 0; i <= 14; i++)
+        {
+            GameLevel level = (GameLevel)i;
+            bool sudahAda = false;
+            for (int j = 0; j < _laporanHtPerLevel.Count; j++)
+            {
+                if (_laporanHtPerLevel[j] != null && _laporanHtPerLevel[j].level == level)
+                {
+                    sudahAda = true;
+                    break;
+                }
+            }
+
+            if (!sudahAda)
+                _laporanHtPerLevel.Add(BuatLaporanHtDefault(level));
+        }
+    }
+
+    private LaporanHtDinamis BuatLaporanHtDefault(GameLevel level)
+    {
+        var data = new LaporanHtDinamis { level = level };
+        switch (level)
+        {
+            case GameLevel.Level1_APD:
+                data.kataKunciVoice = "apd lengkap";
+                data.laporanVoiceLengkap = "DCS, APD lengkap. Operator siap masuk ke area proses.";
+                data.aliasTambahanPerBaris = "ppe complete\nsafety gear complete";
+                break;
+            case GameLevel.Level2_DCSPrep:
+                data.kataKunciVoice = "siapkan area";
+                data.laporanVoiceLengkap = "Field, siapkan area crusher. Operator DCS standby memulai operasi.";
+                data.aliasTambahanPerBaris = "prepare area\ncrusher area ready";
+                break;
+            case GameLevel.Level3_OreSlurry:
+                data.kataKunciVoiceAwal = "jalankan alur ore";
+                data.kataKunciVoice = "ore masuk";
+                data.laporanVoiceAwal = "Field, jalankan alur ore ke slurry tank. Operator DCS standby monitoring.";
+                data.laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan dua puluh lima persen dan proses aman.";
+                data.aliasTambahanPerBaris = "start ore flow\nstart ore line\nore ready\nore in slurry tank";
+                break;
+            case GameLevel.Level4_SlurryPump:
+                data.kataKunciVoice = "slurry pump aktif";
+                data.laporanVoiceLengkap = "Field, slurry pump aktif. Flow rate sudah diset empat ratus lima puluh meter kubik per jam.";
+                data.aliasTambahanPerBaris = "slurry pump active\nflow set";
+                break;
+            case GameLevel.Level5_SteamValve:
+                data.kataKunciVoice = "katup steam terbuka";
+                data.laporanVoiceLengkap = "DCS, katup steam terbuka. Suhu pre-heater sudah naik ke rentang operasi.";
+                data.aliasTambahanPerBaris = "steam valve open\nheater temperature up";
+                break;
+            case GameLevel.Level6_AcidInjection:
+                data.kataKunciVoice = "acid aktif";
+                data.laporanVoiceLengkap = "Field, acid injection aktif. Rasio asam tiga ratus lima puluh kilogram per ton dan pH turun ke satu koma nol.";
+                data.aliasTambahanPerBaris = "acid injection active\nacid ratio set";
+                break;
+            case GameLevel.Level7_Autoclave:
+                data.kataKunciVoice = "suhu 250";
+                data.laporanVoiceLengkap = "DCS, suhu dua ratus lima puluh dua derajat, tekanan empat puluh tujuh koma lima atmosfer, dan agitator enam puluh RPM.";
+                data.aliasTambahanPerBaris = "autoclave stable\ntemperature pressure rpm";
+                break;
+            case GameLevel.Level8_Monitoring:
+                data.kataKunciVoice = "parameter stabil";
+                data.laporanVoiceLengkap = "Field, parameter stabil. Koreksi selesai dan operasi kembali dalam batas SOP.";
+                data.aliasTambahanPerBaris = "parameter stable\noperation stable";
+                break;
+            case GameLevel.Level9_FlashVessel:
+                data.kataKunciVoice = "flash vessel normal";
+                data.laporanVoiceLengkap = "DCS, flash vessel normal. Tekanan turun ke dua belas atmosfer dan pelepasan uap dalam kondisi aman.";
+                data.aliasTambahanPerBaris = "pressure release safe";
+                break;
+            case GameLevel.Level10_CCD:
+                data.kataKunciVoice = "ccd aktif";
+                data.laporanVoiceLengkap = "Field, sistem CCD aktif. Pemisahan padat dan cair sudah dimulai.";
+                data.aliasTambahanPerBaris = "ccd active\nseparation started";
+                break;
+            case GameLevel.Level11_MHP:
+                data.kataKunciVoice = "mhp terbentuk";
+                data.laporanVoiceLengkap = "DCS, MHP terbentuk. Sampel presipitasi menunjukkan produk utama dalam kondisi normal.";
+                data.aliasTambahanPerBaris = "mhp formed\nprecipitation normal";
+                break;
+            case GameLevel.Level12_TailingDischarge:
+                data.kataKunciVoice = "limbah dialirkan";
+                data.laporanVoiceLengkap = "Field, limbah tailing sudah dialirkan ke tangki netralisasi. Sistem pembuangan aman.";
+                data.aliasTambahanPerBaris = "tailing discharge safe\nwaste transferred";
+                break;
+            case GameLevel.Level13_TailingWaste:
+                data.kataKunciVoice = "tailing aman";
+                data.laporanVoiceLengkap = "DCS, tailing aman. pH delapan koma lima dan filter press selesai sesuai prosedur lingkungan.";
+                data.aliasTambahanPerBaris = "filter press complete";
+                break;
+            case GameLevel.Level14_Emergency:
+                data.kataKunciVoice = "emergency";
+                data.laporanVoiceLengkap = "Emergency, emergency. Kebocoran terdeteksi di sektor proses. Semua personel segera evakuasi.";
+                data.aliasTambahanPerBaris = "emergency evacuation\nleak detected";
+                break;
+        }
+
+        return data;
+    }
+
+    private void TerapkanLaporanHtDinamis()
+    {
+        if (!_gunakanLaporanHtDinamis || _laporanHtPerLevel == null)
+            return;
+
+        for (int i = 0; i < _laporanHtPerLevel.Count; i++)
+        {
+            LaporanHtDinamis laporan = _laporanHtPerLevel[i];
+            if (laporan == null || !_dataLevel.TryGetValue(laporan.level, out var data))
+                continue;
+
+            if (!string.IsNullOrWhiteSpace(laporan.kataKunciVoice))
+                data.kataKunciVoice = laporan.kataKunciVoice;
+
+            if (!string.IsNullOrWhiteSpace(laporan.kataKunciVoiceAwal))
+                data.kataKunciVoiceAwal = laporan.kataKunciVoiceAwal;
+
+            if (!string.IsNullOrWhiteSpace(laporan.laporanVoiceAwal))
+                data.laporanVoiceAwal = laporan.laporanVoiceAwal;
+
+            if (!string.IsNullOrWhiteSpace(laporan.laporanVoiceLengkap))
+                data.laporanVoiceLengkap = laporan.laporanVoiceLengkap;
+        }
+    }
+
     private void SetLevel3Phase(Level3Phase phase)
     {
         if (_level3Phase == phase)
@@ -393,10 +548,21 @@ public class GameLevelManager : MonoBehaviour
         var data = _dataLevel[level];
         Log("LEVEL MULAI", $"<b>{data.namaLevel}</b>\nQuest: {data.deskripsiQuest}", "yellow");
 
+        OnLevelStarted?.Invoke(level);
+
         if (data.nomorTombolDCS > 0)
             OnDCSButtonShouldHighlight?.Invoke(data.nomorTombolDCS);
+    }
 
-        OnLevelStarted?.Invoke(level);
+    private void ResetApdUntukAreaDcsJikaPerlu(GameLevel level)
+    {
+        if (level != GameLevel.Level2_DCSPrep && level != GameLevel.Level3_OreSlurry)
+            return;
+
+        if (_phaseManager == null)
+            _phaseManager = FindFirstObjectByType<PhaseManager>();
+
+        _phaseManager?.ResetKeAreaDcsSaja();
     }
 
     public void SelesaikanLevel(GameLevel level)
@@ -445,16 +611,27 @@ public class GameLevelManager : MonoBehaviour
 
     public void OnDCSTombolDitekan(int nomorTombol)
     {
+        TryOnDCSTombolDitekan(nomorTombol);
+    }
+
+    public bool TryOnDCSTombolDitekan(int nomorTombol)
+    {
         if (!_dataLevel.ContainsKey(_currentLevel))
-            return;
+            return false;
 
         var data = _dataLevel[_currentLevel];
+        if (_currentLevel == GameLevel.Level2_DCSPrep && !_dcsSudahDilihat)
+        {
+            Log("URUTAN", "Lihat area DCS dulu sebelum menekan tombol DCS 2.", "orange");
+            return false;
+        }
+
         if (data.nomorTombolDCS != nomorTombol)
         {
             Log("PERINGATAN",
                 $"Tombol {nomorTombol} bukan tombol aktif sekarang. Harusnya tekan tombol {data.nomorTombolDCS}.",
                 "orange");
-            return;
+            return false;
         }
 
         _dcsTombolSudahDitekan = true;
@@ -464,6 +641,7 @@ public class GameLevelManager : MonoBehaviour
         OnDCSButtonPressed?.Invoke(nomorTombol);
         Log("DCS", $"Tombol {nomorTombol} ditekan untuk level <b>{data.namaLevel}</b>.", "cyan");
         CekKondisiLevelSelesai();
+        return true;
     }
 
     public bool OnVoiceKeywordTerdeteksi(string keyword)
@@ -474,6 +652,18 @@ public class GameLevelManager : MonoBehaviour
         var data = _dataLevel[_currentLevel];
         if (_currentLevel == GameLevel.Level3_OreSlurry)
             return HandleVoiceLevel3(data, keyword);
+
+        if (_currentLevel == GameLevel.Level2_DCSPrep && !_dcsSudahDilihat)
+        {
+            Log("VOICE", "Urutan belum benar. Lihat area DCS dulu sebelum kirim laporan HT.", "orange");
+            return false;
+        }
+
+        if (data.nomorTombolDCS > 0 && !_dcsTombolSudahDitekan)
+        {
+            Log("VOICE", $"Urutan belum benar. Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
+            return false;
+        }
 
         if (!VoiceReportCocok(data, keyword))
         {
@@ -733,6 +923,12 @@ public class GameLevelManager : MonoBehaviour
 
     private bool VoiceReportCocokDenganAliasEnglish(LevelData data, string spoken, string laporanLengkap, string keywordPendek)
     {
+        foreach (string alias in GetVoiceAliasesDinamis(data.level))
+        {
+            if (TextVoiceCocok(spoken, alias))
+                return true;
+        }
+
         foreach (string alias in GetVoiceAliasesEnglish(data.level, laporanLengkap, keywordPendek))
         {
             if (TextVoiceCocok(spoken, alias))
@@ -740,6 +936,27 @@ public class GameLevelManager : MonoBehaviour
         }
 
         return false;
+    }
+
+    private IEnumerable<string> GetVoiceAliasesDinamis(GameLevel level)
+    {
+        if (!_gunakanLaporanHtDinamis || _laporanHtPerLevel == null)
+            yield break;
+
+        for (int i = 0; i < _laporanHtPerLevel.Count; i++)
+        {
+            LaporanHtDinamis laporan = _laporanHtPerLevel[i];
+            if (laporan == null || laporan.level != level || string.IsNullOrWhiteSpace(laporan.aliasTambahanPerBaris))
+                continue;
+
+            string[] aliases = laporan.aliasTambahanPerBaris.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+            for (int j = 0; j < aliases.Length; j++)
+            {
+                string alias = aliases[j].Trim();
+                if (!string.IsNullOrWhiteSpace(alias))
+                    yield return alias;
+            }
+        }
     }
 
     private IEnumerable<string> GetVoiceAliasesEnglish(GameLevel level, string laporanLengkap, string keywordPendek)
@@ -884,6 +1101,39 @@ public class GameLevelManager : MonoBehaviour
         int next = (int)_currentLevel + 1;
         if (next <= 14)
             MulaiLevel((GameLevel)next);
+    }
+#endif
+
+
+#if UNITY_EDITOR
+    [ContextMenu("DEBUG: Skip ke Level 3 (Auto-equip APD dasar)")]
+    private void DebugSkipKeLevel3()
+    {
+        if (PhaseManager.Instance != null)
+        {
+            PhaseManager.Instance.OnHelmetWorn();
+            PhaseManager.Instance.OnVestWorn();
+            PhaseManager.Instance.OnGlassesWorn();
+            PhaseManager.Instance.OnBootsWorn();
+            PhaseManager.Instance.OnGlovesWorn();
+            PhaseManager.Instance.OnRespiratiorWorn();
+            PhaseManager.Instance.OnEarplugWorn();
+            PhaseManager.Instance.OnWalkieTalkieTaken();
+            // Pastikan masker fisik pindah ke socket baju supaya saat Level 3 player bisa interaksi.
+            PhaseManager.Instance.PastikanMaskerAdaDiSocketBaju();
+            // Reset status respirator karena di Level 3 player wajib pakai ulang.
+            PhaseManager.Instance.OnRespiratorRemoved();
+        }
+        MulaiLevel(GameLevel.Level3_OreSlurry);
+        // Auto: tandai DCS sudah ditekan dan laporan awal sudah diterima supaya langsung fase teleport ke field.
+        TryOnDCSTombolDitekan(3);
+        SetLevel3PhaseDebug(Level3Phase.LaporanAwalDiterima);
+        OnVoiceReportAccepted?.Invoke("jalankan alur ore");
+    }
+
+    private void SetLevel3PhaseDebug(Level3Phase phase)
+    {
+        SetLevel3Phase(phase);
     }
 #endif
 }

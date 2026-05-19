@@ -1,6 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
+using System;
 using System.Collections;
 using System.Collections.Generic;
 
@@ -10,6 +11,39 @@ using System.Collections.Generic;
 /// </summary>
 public class PlayerHUD : MonoBehaviour
 {
+    [Serializable]
+    private class HudTextUmum
+    {
+        [TextArea(2, 4)] public string tutorial = "<b>SELAMAT DATANG!</b>\n<size=83%>- Gerak: WASD\n- Ambil: G\n- Bicara: tahan T untuk HT</size>";
+        [TextArea(2, 4)] public string pakaiApd = "<b>MISI: Pakai APD!</b>\n<size=83%>Lengkapi APD wajib sebelum keluar area.</size>";
+        [TextArea(2, 4)] public string pakaiApdProgress = "<b>MISI: Pakai APD!</b>\n<size=83%>Lengkapi semua APD wajib sebelum keluar area.\n<color=#FFCC00>Progress: {0}/{1} item terpasang</color></size>";
+        [TextArea(2, 4)] public string masukPintu = "<b>MISI: Keluar Loker!</b>\n<size=83%>Sentuh pintu keluar untuk lanjut ke area berikutnya.</size>";
+    }
+
+    [Serializable]
+    private class HudTextLevel
+    {
+        public GameLevelManager.GameLevel level;
+        public string labelLevel;
+        [TextArea(2, 4)] public string lihatDcs;
+        [TextArea(2, 4)] public string mulaiMesin;
+        [TextArea(2, 4)] public string laporHt;
+        [TextArea(2, 4)] public string gunakanWt;
+    }
+
+    [Serializable]
+    private class HudTextLevel3
+    {
+        [TextArea(2, 4)] public string klikTombolDcs3 = "<b>MISI: Klik tombol DCS 3</b>\n<size=83%>Mulai alur awal ore ke slurry dari panel DCS.</size>";
+        [TextArea(2, 4)] public string laporanAwal = "<b>MISI: Kirim laporan HT awal</b>\n<size=83%>Setelah tombol 3 ditekan, kirim perintah radio untuk memulai alur ore ke slurry tank.</size>";
+        [TextArea(2, 4)] public string tungguTransisi = "<b>MISI: Bersiap ke area crusher</b>\n<size=83%>Laporan awal diterima. Tunggu transisi ke area mesin.</size>";
+        [TextArea(2, 4)] public string pakaiApdLapangan = "<b>MISI: Pakai APD lapangan</b>\n<size=83%>Sebelum turun ke crusher/slurry, pakai kacamata pelindung dan respirator. Walkie Talkie tetap dibawa.</size>";
+        [TextArea(2, 4)] public string observasiOreAir = "<b>MISI: Amati ore dan air masuk</b>\n<size=83%>Tunggu ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>";
+        [TextArea(2, 4)] public string observasiSlurry = "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 25%.</size>";
+        [TextArea(2, 4)] public string laporanAkhir = "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 25%.</size>";
+        [TextArea(2, 4)] public string kembaliKeDcs = "<b>MISI: Kembali ke DCS</b>\n<size=83%>Laporan akhir diterima. Bersiap untuk transisi ke Level 4.</size>";
+    }
+
     [Header("=== Panel Header ===")]
     public TextMeshProUGUI txtLevelLabel;
     public TextMeshProUGUI txtQuestLabel;
@@ -37,6 +71,12 @@ public class PlayerHUD : MonoBehaviour
     public GameObject panelNotif;
     public TextMeshProUGUI txtNotif;
     public Image bgNotif;
+
+    [Header("=== Teks Quest Dinamis (Bisa Kamu Edit) ===")]
+    [SerializeField] private bool _gunakanTeksQuestDinamis = true;
+    [SerializeField] private HudTextUmum _teksUmum = new HudTextUmum();
+    [SerializeField] private List<HudTextLevel> _teksPerLevel = new List<HudTextLevel>();
+    [SerializeField] private HudTextLevel3 _teksLevel3 = new HudTextLevel3();
 
     private readonly Color _cDone = new Color(0.2f, 0.95f, 0.45f);
     private readonly Color _cBlue = new Color(0.3f, 0.85f, 1f);
@@ -70,8 +110,15 @@ public class PlayerHUD : MonoBehaviour
     private Image _transitionOverlay;
     private Coroutine _transitionCoroutine;
 
+    private void OnValidate()
+    {
+        IsiTeksPerLevelDefaultJikaKosong();
+    }
+
     private void Start()
     {
+        IsiTeksPerLevelDefaultJikaKosong();
+
         GameLevelManager.OnLevelStarted += OnLevelMulai;
         GameLevelManager.OnLevelComplete += OnLevelSelesai;
         GameLevelManager.OnDCSViewConfirmed += OnDcsViewed;
@@ -81,6 +128,7 @@ public class PlayerHUD : MonoBehaviour
         GameLevelManager.OnLevel3PhaseChanged += OnLevel3PhaseChanged;
         GameLevelManager.OnLevel3OreReachedSlurry += OnLevel3OreReachedSlurry;
         PhaseManager.OnApdItemWorn += OnSatuApdDipakai;
+        PhaseManager.OnApdItemRemoved += OnSatuApdDilepas;
         PhaseManager.OnAPD7Lengkap += OnSemuaApdLengkap;
         WalkieTalkieManager.OnPTTDitekan += OnPTTPress;
         WalkieTalkieManager.OnPTTDilepas += OnPTTRelease;
@@ -103,6 +151,7 @@ public class PlayerHUD : MonoBehaviour
         GameLevelManager.OnLevel3PhaseChanged -= OnLevel3PhaseChanged;
         GameLevelManager.OnLevel3OreReachedSlurry -= OnLevel3OreReachedSlurry;
         PhaseManager.OnApdItemWorn -= OnSatuApdDipakai;
+        PhaseManager.OnApdItemRemoved -= OnSatuApdDilepas;
         PhaseManager.OnAPD7Lengkap -= OnSemuaApdLengkap;
         WalkieTalkieManager.OnPTTDitekan -= OnPTTPress;
         WalkieTalkieManager.OnPTTDilepas -= OnPTTRelease;
@@ -112,18 +161,8 @@ public class PlayerHUD : MonoBehaviour
     {
         _levelAktif = level;
         int idx = (int)level;
-        string[] namaLevel =
-        {
-            "LEVEL 0 - TUTORIAL", "LEVEL 1 - APD SAFETY", "LEVEL 2 - DCS PREPARATION",
-            "LEVEL 3 - ORE & SLURRY", "LEVEL 4 - SLURRY PUMP", "LEVEL 5 - STEAM VALVE",
-            "LEVEL 6 - ACID INJECTION", "LEVEL 7 - AUTOCLAVE", "LEVEL 8 - MONITORING DCS",
-            "LEVEL 9 - FLASH VESSEL", "LEVEL 10 - CCD", "LEVEL 11 - MHP SAMPLING",
-            "LEVEL 12 - TAILING DISCHARGE", "LEVEL 13 - TAILING WASTE", "LEVEL 14 - DARURAT K3"
-        };
-
         Color warnaHeader = level == GameLevelManager.GameLevel.Level14_Emergency ? new Color(1f, 0.2f, 0.2f) : _cBlue;
-        if (idx < namaLevel.Length)
-            SetLevelLabel(namaLevel[idx], warnaHeader);
+        SetLevelLabel(GetLabelLevel(level), warnaHeader);
 
         if (level == GameLevelManager.GameLevel.Level0_Tutorial)
         {
@@ -137,10 +176,10 @@ public class PlayerHUD : MonoBehaviour
         {
             _dcsDilihat = false;
             _dcsTombolDitekan = false;
-        _voiceReportSelesai = false;
-        _level3LaporanAwalSelesai = false;
-        _level3OreSampaiSlurry = false;
-        _level3Slurry25Tercapai = false;
+            _voiceReportSelesai = false;
+            _level3LaporanAwalSelesai = false;
+            _level3OreSampaiSlurry = false;
+            _level3Slurry25Tercapai = false;
             SetFase(level == GameLevelManager.GameLevel.Level2_DCSPrep ? FaseQuest.LihatDCS : FaseQuest.MulaiMesin);
             UpdateOperasionalChecklist(level);
             if (level == GameLevelManager.GameLevel.Level3_OreSlurry)
@@ -171,7 +210,29 @@ public class PlayerHUD : MonoBehaviour
         ShowNotif($"{namaApd} terpasang! ({_apdTerpasang}/{TOTAL_APD})", false);
 
         if (_faseSekarang == FaseQuest.PakaiAPD)
-            SetQuestLabel($"<b>MISI: Pakai APD!</b>\n<size=83%>Lengkapi semua APD wajib sebelum keluar area.\n<color=#FFCC00>Progress: {_apdTerpasang}/{TOTAL_APD} item terpasang</color></size>");
+            SetQuestLabel(FormatQuest(Teks(_teksUmum.pakaiApdProgress, "<b>MISI: Pakai APD!</b>\n<size=83%>Lengkapi semua APD wajib sebelum keluar area.\n<color=#FFCC00>Progress: {0}/{1} item terpasang</color></size>"), _apdTerpasang, TOTAL_APD));
+
+        if (_levelAktif == GameLevelManager.GameLevel.Level3_OreSlurry)
+        {
+            RefreshLevel3Hud();
+            UpdateOperasionalChecklist(_levelAktif);
+        }
+    }
+
+    private void OnSatuApdDilepas(string namaApd)
+    {
+        string n = namaApd.ToLowerInvariant();
+        if (n.Contains("respirator"))
+            SetTaskPending(taskRespirator);
+
+        _apdTerpasang = Mathf.Clamp(_apdTerpasang - 1, 0, TOTAL_APD);
+        ShowNotif($"{namaApd} dilepas / disimpan.", false);
+
+        if (_levelAktif == GameLevelManager.GameLevel.Level3_OreSlurry)
+        {
+            RefreshLevel3Hud();
+            UpdateOperasionalChecklist(_levelAktif);
+        }
     }
 
     private void OnSemuaApdLengkap()
@@ -302,7 +363,7 @@ public class PlayerHUD : MonoBehaviour
                 SetQuestArea(98f, 110f);
                 SetApdLayout(false);
                 SetHintLayout();
-                SetQuestLabel("<b>SELAMAT DATANG!</b>\n<size=83%>- Gerak: WASD\n- Ambil: G\n- Bicara: tahan T untuk HT</size>");
+                SetQuestLabel(Teks(_teksUmum.tutorial, "<b>SELAMAT DATANG!</b>\n<size=83%>- Gerak: WASD\n- Ambil: G\n- Bicara: tahan T untuk HT</size>"));
                 break;
 
             case FaseQuest.PakaiAPD:
@@ -310,35 +371,35 @@ public class PlayerHUD : MonoBehaviour
                 SetQuestArea(98f, 96f);
                 SetApdLayout(true);
                 SetHintLayout();
-                SetQuestLabel("<b>MISI: Pakai APD!</b>\n<size=83%>Lengkapi APD wajib sebelum keluar area.</size>");
+                SetQuestLabel(Teks(_teksUmum.pakaiApd, "<b>MISI: Pakai APD!</b>\n<size=83%>Lengkapi APD wajib sebelum keluar area.</size>"));
                 break;
 
             case FaseQuest.MasukPintu:
                 SetQuestArea(98f, 96f);
                 SetApdLayout(false);
                 SetHintLayout();
-                SetQuestLabel("<b>MISI: Keluar Loker!</b>\n<size=83%>Sentuh pintu keluar untuk lanjut ke area berikutnya.</size>");
+                SetQuestLabel(Teks(_teksUmum.masukPintu, "<b>MISI: Keluar Loker!</b>\n<size=83%>Sentuh pintu keluar untuk lanjut ke area berikutnya.</size>"));
                 break;
 
             case FaseQuest.LihatDCS:
                 SetQuestArea(98f, 96f);
                 SetApdLayout(false);
                 SetHintLayout();
-                SetQuestLabel("<b>MISI: Lihat mesin DCS</b>\n<size=83%>Dekati area DCS untuk memulai langkah berikutnya.</size>");
+                SetQuestLabel(GetTeksFase(_levelAktif, fase, "<b>MISI: Lihat mesin DCS</b>\n<size=83%>Dekati area DCS untuk memulai langkah berikutnya.</size>"));
                 break;
 
             case FaseQuest.MulaiMesin:
                 SetQuestArea(98f, 96f);
                 SetApdLayout(false);
                 SetHintLayout();
-                SetQuestLabel("<b>MISI: Klik tombol DCS aktif</b>\n<size=83%>Tekan tombol DCS yang menyala untuk memulai operasi.</size>");
+                SetQuestLabel(GetTeksFase(_levelAktif, fase, "<b>MISI: Klik tombol DCS aktif</b>\n<size=83%>Tekan tombol DCS yang menyala untuk memulai operasi.</size>"));
                 break;
 
             case FaseQuest.LaporHT:
                 SetQuestArea(98f, 96f);
                 SetApdLayout(false);
                 SetHintLayout();
-                SetQuestLabel("<b>MISI: Lapor lewat HT</b>\n<size=83%>Tahan <b>T</b>, sampaikan laporan lengkap, lalu lepas tombol untuk kirim.</size>");
+                SetQuestLabel(GetTeksFase(_levelAktif, fase, "<b>MISI: Lapor lewat HT</b>\n<size=83%>Tahan <b>T</b>, sampaikan laporan lengkap, lalu lepas tombol untuk kirim.</size>"));
                 UpdateHintKataKunci(_levelAktif);
                 break;
 
@@ -346,7 +407,7 @@ public class PlayerHUD : MonoBehaviour
                 SetQuestArea(98f, 96f);
                 SetApdLayout(false);
                 SetHintLayout();
-                SetQuestLabel("<b>MISI: Kirim laporan HT</b>\n<size=83%>Sampaikan laporan lengkap seperti komunikasi radio asli.</size>");
+                SetQuestLabel(GetTeksFase(_levelAktif, fase, "<b>MISI: Kirim laporan HT</b>\n<size=83%>Sampaikan laporan lengkap seperti komunikasi radio asli.</size>"));
                 UpdateHintKataKunci(_levelAktif);
                 break;
         }
@@ -382,19 +443,22 @@ public class PlayerHUD : MonoBehaviour
         {
             case GameLevelManager.Level3Phase.MenungguTombolDcs:
                 SetFase(FaseQuest.MulaiMesin);
-                SetQuestLabel("<b>MISI: Klik tombol DCS 3</b>\n<size=83%>Mulai alur awal ore ke slurry dari panel DCS.</size>");
+                SetQuestLabel(Teks(_teksLevel3.klikTombolDcs3, "<b>MISI: Klik tombol DCS 3</b>\n<size=83%>Mulai alur awal ore ke slurry dari panel DCS.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.MenungguLaporanAwal:
                 SetFase(FaseQuest.LaporHT);
-                SetQuestLabel("<b>MISI: Kirim laporan HT awal</b>\n<size=83%>Setelah tombol 3 ditekan, kirim perintah radio untuk memulai alur ore ke slurry tank.</size>");
+                SetQuestLabel(Teks(_teksLevel3.laporanAwal, "<b>MISI: Kirim laporan HT awal</b>\n<size=83%>Setelah tombol 3 ditekan, kirim perintah radio untuk memulai alur ore ke slurry tank.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.LaporanAwalDiterima:
                 SetFase(FaseQuest.LaporHT);
                 if (panelWalkieTalkieHint != null)
                     panelWalkieTalkieHint.SetActive(false);
-                SetQuestLabel("<b>MISI: Bersiap ke area crusher</b>\n<size=83%>Laporan awal diterima. Tunggu transisi ke area mesin.</size>");
+                bool apdLapanganSiap = PhaseManager.Instance == null || PhaseManager.Instance.Level3FieldApdLengkap;
+                SetQuestLabel(apdLapanganSiap
+                    ? Teks(_teksLevel3.tungguTransisi, "<b>MISI: Bersiap ke area crusher</b>\n<size=83%>Laporan awal diterima. Tunggu transisi ke area mesin.</size>")
+                    : Teks(_teksLevel3.pakaiApdLapangan, "<b>MISI: Pakai APD lapangan</b>\n<size=83%>Sebelum turun ke crusher/slurry, pakai kacamata pelindung dan respirator. Walkie Talkie tetap dibawa.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.ObservasiLapangan:
@@ -402,20 +466,20 @@ public class PlayerHUD : MonoBehaviour
                 if (panelWalkieTalkieHint != null)
                     panelWalkieTalkieHint.SetActive(false);
                 SetQuestLabel(_level3OreSampaiSlurry
-                    ? "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 25%.</size>"
-                    : "<b>MISI: Amati ore dan air masuk</b>\n<size=83%>Tunggu ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>");
+                    ? Teks(_teksLevel3.observasiSlurry, "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 25%.</size>")
+                    : Teks(_teksLevel3.observasiOreAir, "<b>MISI: Amati ore dan air masuk</b>\n<size=83%>Tunggu ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.SiapLaporanAkhir:
                 SetFase(FaseQuest.LaporHT);
-                SetQuestLabel("<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 25%.</size>");
+                SetQuestLabel(Teks(_teksLevel3.laporanAkhir, "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 25%.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.Selesai:
                 SetFase(FaseQuest.LaporHT);
                 if (panelWalkieTalkieHint != null)
                     panelWalkieTalkieHint.SetActive(false);
-                SetQuestLabel("<b>MISI: Kembali ke DCS</b>\n<size=83%>Laporan akhir diterima. Bersiap untuk transisi ke Level 4.</size>");
+                SetQuestLabel(Teks(_teksLevel3.kembaliKeDcs, "<b>MISI: Kembali ke DCS</b>\n<size=83%>Laporan akhir diterima. Bersiap untuk transisi ke Level 4.</size>"));
                 break;
         }
     }
@@ -442,6 +506,111 @@ public class PlayerHUD : MonoBehaviour
         _transitionCoroutine = StartCoroutine(PlayTransitionFade(totalDuration));
     }
 
+    private void IsiTeksPerLevelDefaultJikaKosong()
+    {
+        if (_teksUmum == null)
+            _teksUmum = new HudTextUmum();
+
+        if (_teksLevel3 == null)
+            _teksLevel3 = new HudTextLevel3();
+
+        if (_teksPerLevel == null)
+            _teksPerLevel = new List<HudTextLevel>();
+
+        if (_teksPerLevel.Count > 0)
+            return;
+
+        for (int i = 0; i <= 14; i++)
+        {
+            var level = (GameLevelManager.GameLevel)i;
+            _teksPerLevel.Add(new HudTextLevel
+            {
+                level = level,
+                labelLevel = GetLabelLevelDefault(level),
+                lihatDcs = "<b>MISI: Lihat mesin DCS</b>\n<size=83%>Dekati area DCS untuk memulai langkah berikutnya.</size>",
+                mulaiMesin = $"<b>MISI: Klik tombol DCS {i}</b>\n<size=83%>Tekan tombol DCS yang menyala untuk memulai operasi.</size>",
+                laporHt = "<b>MISI: Lapor lewat HT</b>\n<size=83%>Tahan <b>T</b>, sampaikan laporan lengkap, lalu lepas tombol untuk kirim.</size>",
+                gunakanWt = "<b>MISI: Kirim laporan HT</b>\n<size=83%>Sampaikan laporan lengkap seperti komunikasi radio asli.</size>"
+            });
+        }
+    }
+
+    private string GetLabelLevel(GameLevelManager.GameLevel level)
+    {
+        HudTextLevel teksLevel = GetTeksLevel(level);
+        return Teks(teksLevel != null ? teksLevel.labelLevel : string.Empty, GetLabelLevelDefault(level));
+    }
+
+    private string GetLabelLevelDefault(GameLevelManager.GameLevel level)
+    {
+        string[] namaLevel =
+        {
+            "LEVEL 0 - TUTORIAL", "LEVEL 1 - APD SAFETY", "LEVEL 2 - DCS PREPARATION",
+            "LEVEL 3 - ORE & SLURRY", "LEVEL 4 - SLURRY PUMP", "LEVEL 5 - STEAM VALVE",
+            "LEVEL 6 - ACID INJECTION", "LEVEL 7 - AUTOCLAVE", "LEVEL 8 - MONITORING DCS",
+            "LEVEL 9 - FLASH VESSEL", "LEVEL 10 - CCD", "LEVEL 11 - MHP SAMPLING",
+            "LEVEL 12 - TAILING DISCHARGE", "LEVEL 13 - TAILING WASTE", "LEVEL 14 - DARURAT K3"
+        };
+
+        int idx = (int)level;
+        return idx >= 0 && idx < namaLevel.Length ? namaLevel[idx] : level.ToString();
+    }
+
+    private HudTextLevel GetTeksLevel(GameLevelManager.GameLevel level)
+    {
+        if (_teksPerLevel == null)
+            return null;
+
+        for (int i = 0; i < _teksPerLevel.Count; i++)
+        {
+            if (_teksPerLevel[i] != null && _teksPerLevel[i].level == level)
+                return _teksPerLevel[i];
+        }
+
+        return null;
+    }
+
+    private string GetTeksFase(GameLevelManager.GameLevel level, FaseQuest fase, string fallback)
+    {
+        HudTextLevel teksLevel = GetTeksLevel(level);
+        if (teksLevel == null)
+            return fallback;
+
+        switch (fase)
+        {
+            case FaseQuest.LihatDCS:
+                return Teks(teksLevel.lihatDcs, fallback);
+            case FaseQuest.MulaiMesin:
+                return Teks(teksLevel.mulaiMesin, fallback);
+            case FaseQuest.LaporHT:
+                return Teks(teksLevel.laporHt, fallback);
+            case FaseQuest.GunakanWT:
+                return Teks(teksLevel.gunakanWt, fallback);
+            default:
+                return fallback;
+        }
+    }
+
+    private string Teks(string teksInspector, string fallback)
+    {
+        if (!_gunakanTeksQuestDinamis || string.IsNullOrWhiteSpace(teksInspector))
+            return fallback;
+
+        return teksInspector;
+    }
+
+    private string FormatQuest(string format, params object[] args)
+    {
+        try
+        {
+            return string.Format(format, args);
+        }
+        catch (FormatException)
+        {
+            return format;
+        }
+    }
+
     private void UpdateOperasionalChecklist(GameLevelManager.GameLevel level)
     {
         if (txtParameterInfo == null || GameLevelManager.Instance == null)
@@ -453,8 +622,10 @@ public class PlayerHUD : MonoBehaviour
         var lines = new List<string>();
         if (level == GameLevelManager.GameLevel.Level3_OreSlurry)
         {
+            bool apdLapanganSiap = PhaseManager.Instance == null || PhaseManager.Instance.Level3FieldApdLengkap;
             lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 3");
             lines.Add($"{Check(_level3LaporanAwalSelesai)} Lapor HT awal");
+            lines.Add($"{Check(apdLapanganSiap)} Pakai kacamata + respirator");
             lines.Add($"{Check(_level3OreSampaiSlurry)} Ore/laterit sampai ke slurry tank");
             lines.Add($"{Check(_level3Slurry25Tercapai)} Pastikan slurry 25%");
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT akhir");
@@ -506,6 +677,18 @@ public class PlayerHUD : MonoBehaviour
             txt.text = "[OK]" + t.Substring(3);
 
         txt.color = _cDone;
+    }
+
+    private void SetTaskPending(TextMeshProUGUI txt)
+    {
+        if (txt == null)
+            return;
+
+        string t = txt.text;
+        if (t.StartsWith("[OK]"))
+            txt.text = "[ ]" + t.Substring(4);
+
+        txt.color = Color.white;
     }
 
     private void ShowNotif(string pesan, bool sukses)
