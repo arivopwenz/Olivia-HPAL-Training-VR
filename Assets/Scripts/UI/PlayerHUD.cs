@@ -239,6 +239,14 @@ public class PlayerHUD : MonoBehaviour
 
     private void OnSemuaApdLengkap()
     {
+        // Hanya jalan saat Level 1 (APD). Saat masker re-equip ke dada di Level 2+,
+        // callback ini bisa ter-trigger ulang dan menyebabkan HUD reset ke "Keluar Loker".
+        var glmLevel = GameLevelManager.Instance != null ? GameLevelManager.Instance.CurrentLevel : _levelAktif;
+        if (glmLevel != GameLevelManager.GameLevel.Level1_APD)
+            return;
+        if (_levelAktif != GameLevelManager.GameLevel.Level1_APD)
+            return;
+
         SetTaskDone(taskHelm);
         SetTaskDone(taskRompi);
         SetTaskDone(taskKacamata);

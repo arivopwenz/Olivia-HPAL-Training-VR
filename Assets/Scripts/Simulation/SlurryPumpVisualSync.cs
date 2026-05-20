@@ -42,8 +42,12 @@ public class SlurryPumpVisualSync : MonoBehaviour
     [SerializeField] private Transform _motorTransform;
     [Tooltip("Sumbu rotasi (default Y).")]
     [SerializeField] private Vector3 _sumbuRotasi = Vector3.up;
-    [Tooltip("RPM motor pada flow rate maksimum (visual). 240 RPM = 4 rotasi/detik, masih cepat tapi visible.")]
-    [SerializeField] private float _rpmMaksimum = 240f;
+    [Tooltip("RPM motor pada flow rate maksimum (visual). 60 RPM = 1 rotasi/detik, sangat pelan dan visible.")]
+    [SerializeField] private float _rpmMaksimum = 60f;
+    [Tooltip("Aktifkan rotasi HANYA saat Level 4 sudah lewat fase lapor HT (ramp-up pelan ke kenceng).")]
+    [SerializeField] private bool _rotasiHanyaSetelahLapor = true;
+    [Tooltip("Durasi ramp-up dari 0 ke RPM max (detik). Lebih lama = lebih dramatis.")]
+    [SerializeField] private float _durasiRampUpRotasi = 8.0f;
 
     [Header("=== Audio Pump ===")]
     [SerializeField] private AudioSource _pumpAudio;
@@ -72,6 +76,7 @@ public class SlurryPumpVisualSync : MonoBehaviour
 
     private Vector2 _scrollOffset;
     private float _currentRotation;
+    private float _rampRotasiT;
     private MaterialPropertyBlock _ledMpb;
     private bool _audioWasIdle = true;
 
@@ -150,11 +155,31 @@ public class SlurryPumpVisualSync : MonoBehaviour
         if (_motorTransform == null)
             return;
 
-        if (!aktif)
-            return;
+        // Cek apakah Level 4 sudah lewat fase MenungguLaporanFlow (artinya sudah lapor HT).
+        bool sudahLaporHt = false;
+        if (GameLevelManager.Instance != null &&
+            GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level4_SlurryPump)
+        {
+            var phase = GameLevelManager.Instance.CurrentLevel4Phase;
+            sudahLaporHt = phase == GameLevelManager.Level4Phase.KembaliKeDcs ||
+                           phase == GameLevelManager.Level4Phase.Selesai;
+        }
 
-        float rpm = Mathf.Lerp(0f, _rpmMaksimum, t);
-        // RPM -> degrees per second = rpm * 360 / 60 = rpm * 6
+        if (_rotasiHanyaSetelahLapor && !sudahLaporHt)
+        {
+            // Belum lapor HT → diam.
+            _rampRotasiT = 0f;
+            return;
+        }
+
+        if (!aktif) return;
+
+        // Ramp-up: saat baru di-trigger, mulai dari 0 dan naik perlahan ke RPM max.
+        _rampRotasiT = Mathf.Min(1f, _rampRotasiT + Time.deltaTime / Mathf.Max(0.1f, _durasiRampUpRotasi));
+        // Ease-in cubic supaya start very slow → kenceng natural.
+        float ramp = _rampRotasiT * _rampRotasiT * _rampRotasiT;
+        float rpm = Mathf.Lerp(0f, _rpmMaksimum, t) * ramp;
+        // RPM -> degrees per second = rpm * 6
         float degPerSec = rpm * 6f;
         _currentRotation += degPerSec * Time.deltaTime;
         _motorTransform.localRotation = Quaternion.AngleAxis(_currentRotation, _sumbuRotasi.normalized);

@@ -117,12 +117,12 @@ public class PhaseManager : MonoBehaviour
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
     }
 
-    public void OnHelmetWorn()        { PakaiApd(_helm);          }
+    public void OnHelmetWorn()        { PakaiApd(_helm); MulaiFadeApdSetelahDipakai("Helmet"); }
     public void OnVestWorn()          { PakaiApd(_rompi);         }
-    public void OnGlassesWorn()       { PakaiApd(_kacamata);      }
+    public void OnGlassesWorn()       { PakaiApd(_kacamata); MulaiFadeApdSetelahDipakai("Glassess"); }
     public void OnBootsWorn()         { PakaiApd(_sepatuBots);    }
     public void OnGlovesWorn()        { PakaiApd(_sarungTangan);  }
-    public void OnRespiratiorWorn()   { PakaiApd(_respirator); MulaiFadeMaskerSetelahDipakai(); }
+    public void OnRespiratiorWorn()   { PakaiApd(_respirator); MulaiFadeApdSetelahDipakai("RespiratorMask"); }
     public void OnRespiratorRemoved() { LepasApd(_respirator);    }
     public void OnRespiratorStored()  { LepasApd(_respirator);    }
     public void OnEarplugWorn()       { PakaiApd(_earplug);       }
@@ -170,11 +170,68 @@ public class PhaseManager : MonoBehaviour
         OnApdItemWorn?.Invoke(apd.namaApd);
         Log("APD", $"✓ <b>{apd.namaApd}</b> terpasang! ({JumlahAPDTerpasang}/{TOTAL_APD})", "green");
 
+        // Disable grab pada object APD ini supaya tidak bisa diambil ulang.
+        KuncIGrabAPD(apd.namaApd, true);
+
         if (APDLengkapSempurna)
         {
-            Log("APD LENGKAP", $"Semua {TOTAL_APD} APD terpasang sempurna!", "green");
-            OnAPD7Lengkap?.Invoke();
+            // Hanya invoke OnAPD7Lengkap saat Level 1 supaya tidak trigger ulang di level lain
+            // (misal saat masker re-equip ke dada di Level 2+ yang bisa memicu PakaiApd lagi).
+            bool diLevel1 = GameLevelManager.Instance != null &&
+                            GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level1_APD;
+            // Extra guard: kalau dipanggil pertama kali sebelum GLM siap, tetap allow.
+            // Tapi kalau sudah lewat Level 1 dan ini bukan first-time-trigger, skip.
+            if (diLevel1 && !_apd7LengkapSudahPernahTrigger)
+            {
+                _apd7LengkapSudahPernahTrigger = true;
+                Log("APD LENGKAP", $"Semua {TOTAL_APD} APD terpasang sempurna!", "green");
+                OnAPD7Lengkap?.Invoke();
+            }
         }
+    }
+
+    private bool _apd7LengkapSudahPernahTrigger = false;
+
+    /// <summary>
+    /// Lock atau unlock XRGrabInteractable pada semua child di socket APD bersangkutan.
+    /// Saat true: APD tidak bisa di-grab (sudah dipakai).
+    /// </summary>
+    private void KuncIGrabAPD(string namaApd, bool kunci)
+    {
+        // Map nama APD → socket name
+        string socketName = MapApdKeSocket(namaApd);
+        if (string.IsNullOrEmpty(socketName)) return;
+
+        // Cari semua socket dengan nama itu (Socket_Helmet, Socket_RespiratorMask, dll)
+        // dan disable grab pada item yang dipakai (yang sudah parent ke socket).
+        var sockets = UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var t in sockets)
+        {
+            if (t.name != socketName) continue;
+            foreach (var grab in t.GetComponentsInChildren<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>(true))
+            {
+                if (grab == null) continue;
+                grab.enabled = !kunci;
+                // Juga disable colliders supaya raycast tidak hit-able
+                foreach (var col in grab.GetComponentsInChildren<Collider>(true))
+                    col.enabled = !kunci;
+            }
+        }
+    }
+
+    private string MapApdKeSocket(string namaApd)
+    {
+        if (string.IsNullOrEmpty(namaApd)) return null;
+        string n = namaApd.ToLowerInvariant();
+        if (n.Contains("helm")) return "Socket_Helmet";
+        if (n.Contains("rompi") || n.Contains("vest")) return "Socket_Rompi";
+        if (n.Contains("kacamata") || n.Contains("glass")) return "Socket_Glasess";
+        if (n.Contains("sepatu") || n.Contains("boot")) return "Socket_Boots";
+        if (n.Contains("sarung tangan") || n.Contains("glove")) return "Socket_Gloves";
+        if (n.Contains("respirator") || n.Contains("masker")) return "Socket_RespiratorMask";
+        if (n.Contains("earplug") || n.Contains("ear protection")) return "Socket_EarPlug";
+        if (n.Contains("walkie") || n.Contains("ht")) return "Socket_WalkieTalkie";
+        return null;
     }
 
     private void LepasApd(ApdItem apd)
@@ -397,29 +454,20 @@ public class PhaseManager : MonoBehaviour
     // ============================================================
     private Coroutine _coroutineFadeMasker;
 
-    private void MulaiFadeMaskerSetelahDipakai()
+    private void MulaiFadeApdSetelahDipakai(string objectName)
     {
         if (!_maskerAutoTransparentSaatDipakai) return;
-        if (_coroutineFadeMasker != null)
-        {
-            StopCoroutine(_coroutineFadeMasker);
-            _coroutineFadeMasker = null;
-        }
-        _coroutineFadeMasker = StartCoroutine(FadeMaskerCoroutine());
+        StartCoroutine(FadeApdCoroutine(objectName));
     }
 
-    private IEnumerator FadeMaskerCoroutine()
+    private IEnumerator FadeApdCoroutine(string objectName)
     {
         yield return new WaitForSeconds(_delayMaskerFade);
 
-        var renderers = AmbilSemuaRendererMasker();
+        var renderers = AmbilRendererByName(objectName);
         if (renderers == null || renderers.Count == 0)
-        {
-            _coroutineFadeMasker = null;
             yield break;
-        }
 
-        // Sebelum fade, set semua material ke transparent mode (URP/Standard).
         foreach (var r in renderers)
             SetMaterialTransparent(r);
 
@@ -434,25 +482,33 @@ public class PhaseManager : MonoBehaviour
             yield return null;
         }
 
-        // Pastikan ke alpha final
         foreach (var r in renderers)
             SetRendererAlpha(r, _alphaMaskerSetelahFade);
-
-        Log("MASKER", $"Masker fade ke alpha {_alphaMaskerSetelahFade:F2} selesai.", "cyan");
-        _coroutineFadeMasker = null;
     }
 
-    private List<Renderer> AmbilSemuaRendererMasker()
+    private List<Renderer> AmbilRendererByName(string objectName)
     {
         var list = new List<Renderer>();
-        if (_respiratorObject == null)
+        var go = GameObject.Find(objectName);
+        if (go == null)
         {
-            GameObject respirator = GameObject.Find("RespiratorMask");
-            if (respirator != null) _respiratorObject = respirator.transform;
+            // Cari di child XR Origin (socket APD)
+            var allT = UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            foreach (var t in allT)
+            {
+                if (t.name == objectName || t.name.Contains(objectName))
+                {
+                    foreach (var r in t.GetComponentsInChildren<Renderer>(true))
+                        if (r != null && !list.Contains(r)) list.Add(r);
+                    break;
+                }
+            }
         }
-        if (_respiratorObject == null) return list;
-        foreach (var r in _respiratorObject.GetComponentsInChildren<Renderer>(true))
-            if (r != null) list.Add(r);
+        else
+        {
+            foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+                if (r != null) list.Add(r);
+        }
         return list;
     }
 

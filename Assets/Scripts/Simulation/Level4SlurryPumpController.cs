@@ -57,6 +57,8 @@ public class Level4SlurryPumpController : MonoBehaviour
     [SerializeField] private float _durasiObservasiPreheater = 6f;
     [Tooltip("Jeda setelah balik ke DCS sebelum level di-mark selesai.")]
     [SerializeField] private float _jedaSetelahKembaliDcs = 1.0f;
+    [Tooltip("Jeda observasi pengaduk pump muter (pelan→kenceng) sebelum fade ke DCS.")]
+    [SerializeField] private float _jedaObservasiPumpMuter = 8f;
 
     [Header("=== HUD Pesan ===")]
     [TextArea(2, 4)] [SerializeField] private string _pesanObservasiPump =
@@ -226,6 +228,19 @@ public class Level4SlurryPumpController : MonoBehaviour
     {
         SetHighlight(_preheaterHighlightRenderers, false, ref _highlightPreheaterAktif);
 
+        // Step 1: Fade & teleport balik ke pump supaya player lihat impeller muter.
+        if (_hud != null) _hud.PlayManualFade(_durasiFade);
+        yield return new WaitForSeconds(_durasiFade * 0.45f);
+
+        TeleportPlayer(EnsureTeleportTarget(ref _teleportTargetPump, _pumpReference, _offsetObservasiPump, "L4_ObservasiPump"));
+        SetHighlight(_pumpHighlightRenderers, true, ref _highlightPumpAktif);
+        if (_hud != null) _hud.ShowNotifPublic("Pengaduk pump mulai berputar! Cairan tersirkulasi.");
+
+        // Step 2: Tunggu pengaduk muter (pelan → kenceng) selama 5 detik.
+        yield return new WaitForSeconds(_jedaObservasiPumpMuter);
+
+        // Step 3: Fade → teleport DCS.
+        SetHighlight(_pumpHighlightRenderers, false, ref _highlightPumpAktif);
         if (_hud != null) _hud.PlayManualFade(_durasiFade);
         yield return new WaitForSeconds(_durasiFade * 0.45f);
 
@@ -237,7 +252,6 @@ public class Level4SlurryPumpController : MonoBehaviour
 
         yield return new WaitForSeconds(_jedaSetelahKembaliDcs);
 
-        // Mark Level 4 selesai → akan trigger transisi otomatis ke Level 5.
         GameLevelManager.Instance?.NotifyLevel4Selesai();
         _seqCoroutine = null;
     }

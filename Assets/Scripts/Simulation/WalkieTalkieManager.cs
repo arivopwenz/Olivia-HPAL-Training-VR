@@ -438,14 +438,48 @@ public class WalkieTalkieManager : MonoBehaviour
         if (_walkieTalkieInHand == null)
             return;
 
+        // Cek status WT: apakah sudah dipakai player (PhaseManager.isWalkieTalkieTaken)
+        bool sudahDipakai = PhaseManager.Instance != null && PhaseManager.Instance.isWalkieTalkieTaken;
+
         if (tampil)
         {
+            // Hanya manipulasi posisi/parent kalau WT memang sudah dipakai player.
+            // Kalau belum dipakai (masih di socket scanner / lantai), JANGAN lepas — biarin di tempatnya.
+            if (!sudahDipakai)
+            {
+                // Beep saja sebagai feedback, tidak rubah transform.
+                if (_walkieAnimator != null && !string.IsNullOrEmpty(_animShowTrigger))
+                    _walkieAnimator.SetTrigger(_animShowTrigger);
+                return;
+            }
+
+            // Disable XR socket interactors untuk sementara supaya WT tidak "ke-snap" ke socket lain
+            // saat menghadap depan (mis. socket dada/mouth menarik balik).
+            DisableSocketInteractors(_walkieTalkieInHand, true);
+
+            // Freeze rigidbody supaya tidak jatuh saat parent dilepas.
+            var rb = _walkieTalkieInHand.GetComponent<Rigidbody>();
+            if (rb != null)
+            {
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+                rb.isKinematic = true;
+            }
+
             if (_rightHandAnchor != null)
             {
                 _walkieTalkieInHand.transform.SetParent(_rightHandAnchor, false);
                 _walkieTalkieInHand.transform.localPosition = Vector3.zero;
                 _walkieTalkieInHand.transform.localRotation = Quaternion.identity;
             }
+
+            // Disable XRGrabInteractable supaya tidak "kesedot" socket lain
+            var grab = _walkieTalkieInHand.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+            if (grab != null && grab.interactionManager != null && grab.isSelected)
+            {
+                grab.interactionManager.CancelInteractableSelection((UnityEngine.XR.Interaction.Toolkit.Interactables.IXRSelectInteractable)grab);
+            }
+            if (grab != null) grab.enabled = false;
 
             _walkieTalkieInHand.SetActive(true);
             if (_walkieAnimator != null && !string.IsNullOrEmpty(_animShowTrigger))
@@ -455,8 +489,40 @@ public class WalkieTalkieManager : MonoBehaviour
         {
             if (_walkieAnimator != null && !string.IsNullOrEmpty(_animHideTrigger))
                 _walkieAnimator.SetTrigger(_animHideTrigger);
-            else
+            else if (sudahDipakai)
                 _walkieTalkieInHand.SetActive(false);
+
+            if (sudahDipakai)
+            {
+                // Re-enable grab + socket interactors saat HT disembunyikan.
+                var grab = _walkieTalkieInHand.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+                if (grab != null) grab.enabled = true;
+                DisableSocketInteractors(_walkieTalkieInHand, false);
+
+                // Restore rigidbody supaya bisa di-grab/lepas normal.
+                var rb = _walkieTalkieInHand.GetComponent<Rigidbody>();
+                if (rb != null) rb.isKinematic = false;
+            }
+        }
+    }
+
+    private void DisableSocketInteractors(GameObject target, bool disable)
+    {
+        if (target == null) return;
+
+        // Hindari socket interactor di scene "menarik" balik object yang sedang ditampilkan.
+        // Cari semua XRSocketInteractor yang nama-nya mengandung "WalkieTalkie", "Mouth", atau "WT"
+        // (socket yang biasanya men-snap walkie talkie di mouth/torso/dada).
+        var sockets = UnityEngine.Object.FindObjectsByType<UnityEngine.XR.Interaction.Toolkit.Interactors.XRSocketInteractor>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        foreach (var sock in sockets)
+        {
+            if (sock == null) continue;
+            string n = sock.gameObject.name.ToLowerInvariant();
+            if (n.Contains("walkietalkie") || n.Contains("walkie") || n.Contains("mouth") || n.Contains("ht_socket"))
+            {
+                sock.socketActive = !disable; // disable=true → socketActive=false
+                sock.enabled = !disable;
+            }
         }
     }
 

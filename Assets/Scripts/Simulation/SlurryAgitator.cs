@@ -16,11 +16,11 @@ public class SlurryAgitator : MonoBehaviour
 {
     [Header("=== Rotasi ===")]
     [Tooltip("Kecepatan putar (derajat per detik). Negatif = arah berlawanan.")]
-    [SerializeField] private float _rpmDeg = 90f;
+    [SerializeField] private float _rpmDeg = 45f;
     [Tooltip("Sumbu rotasi lokal. Default Y (vertikal).")]
     [SerializeField] private Vector3 _sumbuRotasi = Vector3.up;
-    [Tooltip("Akselerasi/deselerasi saat start/stop (deg/s²). 0 = instan.")]
-    [SerializeField] private float _akselerasi = 180f;
+    [Tooltip("Akselerasi/deselerasi saat start/stop (deg/s²). Pelan supaya ramp-up natural.")]
+    [SerializeField] private float _akselerasi = 8f;
 
     [Header("=== Audio Motor ===")]
     [Range(0f, 1f)] [SerializeField] private float _volume = 0.35f;

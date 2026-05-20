@@ -139,19 +139,19 @@ public class FlowRateControlPanel : MonoBehaviour
         hintRect.anchorMin = new Vector2(0.05f, 0.20f); hintRect.anchorMax = new Vector2(0.95f, 0.30f);
         hintRect.offsetMin = Vector2.zero; hintRect.offsetMax = Vector2.zero;
 
-        // Tombol [+] (di KANAN dari sudut pandang player saat panel face -Z)
-        // NOTE: panel di-rotate 180° supaya text bisa dibaca player. Anchor X di sini = X kiri canvas,
-        // tapi karena panel mirror Y axis, X kiri canvas → X kanan visual player.
-        var btnPlus = BuatTombol3D("Btn_Plus", canvasGo.transform, "+");
-        var bpRect = btnPlus.transform as RectTransform;
-        bpRect.anchorMin = new Vector2(0.08f, 0.03f); bpRect.anchorMax = new Vector2(0.40f, 0.18f);
-        bpRect.offsetMin = Vector2.zero; bpRect.offsetMax = Vector2.zero;
-
-        // Tombol [-] (di KIRI dari sudut pandang player)
+        // Tombol [-] di anchor X kecil (di-render kiri canvas; karena panel rotate Y=180,
+        // visual player akan kelihatan di KANAN). Logika: untuk player VR, swap visual:
+        // anchor 0.08-0.40 → after Y=180 rotation, terlihat di kanan player.
         var btnMinus = BuatTombol3D("Btn_Minus", canvasGo.transform, "−");
         var bmRect = btnMinus.transform as RectTransform;
-        bmRect.anchorMin = new Vector2(0.60f, 0.03f); bmRect.anchorMax = new Vector2(0.92f, 0.18f);
+        bmRect.anchorMin = new Vector2(0.08f, 0.03f); bmRect.anchorMax = new Vector2(0.40f, 0.18f);
         bmRect.offsetMin = Vector2.zero; bmRect.offsetMax = Vector2.zero;
+
+        // Tombol [+] di anchor X besar
+        var btnPlus = BuatTombol3D("Btn_Plus", canvasGo.transform, "+");
+        var bpRect = btnPlus.transform as RectTransform;
+        bpRect.anchorMin = new Vector2(0.60f, 0.03f); bpRect.anchorMax = new Vector2(0.92f, 0.18f);
+        bpRect.offsetMin = Vector2.zero; bpRect.offsetMax = Vector2.zero;
 
         // Buat XRSimpleInteractable di tombol agar XR ray bisa klik
         var simplePlus = btnPlus.gameObject.AddComponent<XRSimpleInteractable>();

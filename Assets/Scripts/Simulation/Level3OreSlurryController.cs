@@ -165,12 +165,22 @@ public class Level3OreSlurryController : MonoBehaviour
         if (GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level3_OreSlurry)
             return;
 
-        if (GameLevelManager.Instance.CurrentLevel3Phase != GameLevelManager.Level3Phase.LaporanAwalDiterima)
-            return;
+        var phase = GameLevelManager.Instance.CurrentLevel3Phase;
 
-        // Setelah laporan HT awal diterima, langsung jalankan teleport ke field.
-        // Cek APD masker dilakukan SETELAH player sampai di field, bukan sebelumnya.
-        CobaMulaiTeleportKeField();
+        if (phase == GameLevelManager.Level3Phase.LaporanAwalDiterima)
+        {
+            // Setelah laporan HT awal diterima, langsung jalankan teleport ke field.
+            CobaMulaiTeleportKeField();
+            return;
+        }
+
+        // Setelah laporan HT akhir diterima (slurry sudah 50%), MULAI mesin pengaduk
+        // dengan ramp-up pelan dari 0 → kencang (akselerasi 8 deg/s²).
+        if (phase == GameLevelManager.Level3Phase.SiapLaporanAkhir ||
+            phase == GameLevelManager.Level3Phase.Selesai)
+        {
+            MulaiAgitatorJikaPerlu();
+        }
     }
 
     private void OnApdItemWorn(string namaApd)
@@ -410,7 +420,8 @@ public class Level3OreSlurryController : MonoBehaviour
                 _slurry25SudahTriggered = true;
                 GameLevelManager.Instance?.NotifyLevel3SlurryReady(50f);
                 if (_slurryFx != null) _slurryFx.HentikanFx();
-                MulaiAgitatorJikaPerlu();
+                // NOTE: Agitator JANGAN dimulai di sini. Trigger di OnVoiceReportAccepted
+                // (setelah laporan HT akhir diterima) supaya alur: slurry penuh → lapor HT → mesin baru hidup.
                 yield break;
             }
 
@@ -429,8 +440,7 @@ public class Level3OreSlurryController : MonoBehaviour
             GameLevelManager.Instance?.NotifyLevel3SlurryReady(50f);
         }
 
-        // Setelah slurry mencapai 25%, mulai pengaduk supaya player bisa lihat mesin mengaduk sambil siap kirim laporan akhir.
-        MulaiAgitatorJikaPerlu();
+        // NOTE: Agitator akan dimulai di OnVoiceReportAccepted setelah player lapor HT akhir.
     }
 
     private void TeleportPlayer(Transform target)
