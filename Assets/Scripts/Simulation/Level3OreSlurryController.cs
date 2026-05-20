@@ -33,9 +33,9 @@ public class Level3OreSlurryController : MonoBehaviour
     [SerializeField] private Transform _slurryBatas25;
     [SerializeField] private Collider _slurryTrigger25;
     [SerializeField] private Vector3 _slurryLocalScaleAwal = new Vector3(1f, 0.08f, 1f);
-    [SerializeField] private Vector3 _slurryLocalScaleTarget25 = new Vector3(1f, 0.25f, 1f);
+    [SerializeField] private Vector3 _slurryLocalScaleTarget25 = new Vector3(1f, 0.50f, 1f);
     [SerializeField] private Vector3 _slurryLocalPosAwal = new Vector3(0f, -0.45f, 0f);
-    [SerializeField] private Vector3 _slurryLocalPosTarget25 = new Vector3(0f, -0.18f, 0f);
+    [SerializeField] private Vector3 _slurryLocalPosTarget25 = new Vector3(0f, 0.0f, 0f);
     [SerializeField] private bool _aktifkanSlurryFillSaatMulaiIsi = true;
     [SerializeField] private bool _pertahankanDiameterSlurryDariScene = true;
     [SerializeField] private bool _validasiSlurry25PakaiBatasFisik = false;
@@ -77,7 +77,7 @@ public class Level3OreSlurryController : MonoBehaviour
     [SerializeField] private SlurryFXController _slurryFx;
     [Tooltip("Reference ke SlurryAgitator (pengaduk slurry tank). Auto-find di scene jika kosong.")]
     [SerializeField] private SlurryAgitator _slurryAgitator;
-    [Tooltip("Aktifkan agitator saat slurry mencapai 25% (siap laporan akhir).")]
+    [Tooltip("Aktifkan agitator saat slurry mencapai 50% (siap laporan akhir).")]
     [SerializeField] private bool _aktifkanAgitatorSaatSiapLapor = true;
     [Tooltip("Reference ke arrow indicator yang menunjuk ke slurry tank. Auto-create di runtime jika kosong.")]
     [SerializeField] private DirectionArrowIndicator _arrowIndicator;
@@ -408,7 +408,7 @@ public class Level3OreSlurryController : MonoBehaviour
             if (_validasiSlurry25PakaiBatasFisik && !_slurry25SudahTriggered && SlurrySudahMencapaiBatas25())
             {
                 _slurry25SudahTriggered = true;
-                GameLevelManager.Instance?.NotifyLevel3SlurryReady(25f);
+                GameLevelManager.Instance?.NotifyLevel3SlurryReady(50f);
                 if (_slurryFx != null) _slurryFx.HentikanFx();
                 MulaiAgitatorJikaPerlu();
                 yield break;
@@ -426,7 +426,7 @@ public class Level3OreSlurryController : MonoBehaviour
         if (!_slurry25SudahTriggered && (!_validasiSlurry25PakaiBatasFisik || SlurrySudahMencapaiBatas25()))
         {
             _slurry25SudahTriggered = true;
-            GameLevelManager.Instance?.NotifyLevel3SlurryReady(25f);
+            GameLevelManager.Instance?.NotifyLevel3SlurryReady(50f);
         }
 
         // Setelah slurry mencapai 25%, mulai pengaduk supaya player bisa lihat mesin mengaduk sambil siap kirim laporan akhir.
@@ -891,7 +891,7 @@ public class Level3OreSlurryController : MonoBehaviour
 
 
     /// <summary>
-    /// Saat slurry mencapai 25% (SiapLaporanAkhir): tampilkan arrow ke agitator + notif HUD.
+    /// Saat slurry mencapai 50% (SiapLaporanAkhir): tampilkan arrow ke agitator + notif HUD.
     /// </summary>
     private void OnLevel3PhaseChanged(GameLevelManager.Level3Phase phase)
     {
@@ -905,6 +905,6 @@ public class Level3OreSlurryController : MonoBehaviour
             ShowArrowKe(_slurryFill);
 
         if (_hud != null)
-            _hud.ShowNotifPublic("Slurry mencapai 25%. Lihat mesin pengaduk lalu kirim laporan HT akhir.");
+            _hud.ShowNotifPublic("Slurry mencapai 50%. Lihat mesin pengaduk lalu kirim laporan HT akhir.");
     }
 }

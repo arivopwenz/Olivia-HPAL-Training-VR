@@ -336,6 +336,21 @@ public class WalkieTalkieManager : MonoBehaviour
         OnKeywordTerdeteksi?.Invoke(laporan);
         bool laporanDiterima = GameLevelManager.Instance != null &&
                                GameLevelManager.Instance.OnVoiceKeywordTerdeteksi(laporan);
+
+        // Fallback agresif: kalau mode tanpa voice aktif dan speech text ditolak,
+        // coba lagi dengan laporan manual dari GLM (frasa lengkap level aktif).
+        if (!laporanDiterima && _modeTanpaVoiceUntukTempatRame && GameLevelManager.Instance != null)
+        {
+            string laporanManual = AmbilLaporanManualTanpaVoice();
+            if (!string.IsNullOrWhiteSpace(laporanManual) && laporanManual != laporan)
+            {
+                Log("VOICE", $"Speech '<i>{laporan}</i>' ditolak. Retry dengan laporan manual: '<i>{laporanManual}</i>'", "orange");
+                laporan = laporanManual;
+                _lastKeyword = laporan;
+                laporanDiterima = GameLevelManager.Instance.OnVoiceKeywordTerdeteksi(laporan);
+            }
+        }
+
         if (laporanDiterima)
             StartCoroutine(MainkanBalasanNPC());
         else
@@ -347,15 +362,24 @@ public class WalkieTalkieManager : MonoBehaviour
     private string AmbilLaporanManualTanpaVoice()
     {
         if (!_modeTanpaVoiceUntukTempatRame || GameLevelManager.Instance == null)
+        {
+            Log("MANUAL", $"Skip: modeTanpaVoice={_modeTanpaVoiceUntukTempatRame} | GLM={(GameLevelManager.Instance != null)}", "orange");
             return string.Empty;
+        }
 
         float durasiPtt = _waktuMulaiPtt < 0f ? 0f : Time.time - _waktuMulaiPtt;
         if (durasiPtt < _minimumDurasiPttUntukFallback)
+        {
+            Log("MANUAL", $"Skip: durasi PTT terlalu pendek ({durasiPtt:F2}s < {_minimumDurasiPttUntukFallback:F2}s).", "orange");
             return string.Empty;
+        }
 
         string laporan = GameLevelManager.Instance.GetLaporanVoiceDisplay(GameLevelManager.Instance.CurrentLevel);
         if (string.IsNullOrWhiteSpace(laporan))
+        {
+            Log("MANUAL", $"Skip: laporan kosong dari GLM (level={GameLevelManager.Instance.CurrentLevel}).", "orange");
             return string.Empty;
+        }
 
         Log("MANUAL", $"Mode tanpa voice aktif. Mengirim laporan otomatis: '<b>{laporan}</b>'", "green");
         return laporan;

@@ -39,8 +39,8 @@ public class PlayerHUD : MonoBehaviour
         [TextArea(2, 4)] public string tungguTransisi = "<b>MISI: Bersiap ke area crusher</b>\n<size=83%>Laporan awal diterima. Tunggu transisi ke area mesin.</size>";
         [TextArea(2, 4)] public string pakaiApdLapangan = "<b>MISI: Pakai APD lapangan</b>\n<size=83%>Sebelum turun ke crusher/slurry, pakai kacamata pelindung dan respirator. Walkie Talkie tetap dibawa.</size>";
         [TextArea(2, 4)] public string observasiOreAir = "<b>MISI: Amati ore dan air masuk</b>\n<size=83%>Tunggu ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>";
-        [TextArea(2, 4)] public string observasiSlurry = "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 25%.</size>";
-        [TextArea(2, 4)] public string laporanAkhir = "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 25%.</size>";
+        [TextArea(2, 4)] public string observasiSlurry = "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 50%.</size>";
+        [TextArea(2, 4)] public string laporanAkhir = "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 50%.</size>";
         [TextArea(2, 4)] public string kembaliKeDcs = "<b>MISI: Kembali ke DCS</b>\n<size=83%>Laporan akhir diterima. Bersiap untuk transisi ke Level 4.</size>";
     }
 
@@ -362,32 +362,26 @@ public class PlayerHUD : MonoBehaviour
 
             case GameLevelManager.Level4Phase.AturFlowRate:
                 SetFase(FaseQuest.MulaiMesin);
-                SetQuestLabel("<b>MISI: Atur flow rate 450 m³/h</b>\n<size=83%>Gunakan tombol [+] / [−] di panel Flow Rate untuk mencapai 450 m³/h.</size>");
+                SetQuestLabel("<b>MISI: Atur flow rate 450 m³/h</b>\n<size=83%>Gunakan tombol [+] / [−] di panel Flow Rate sampai mencapai 450 m³/h.</size>");
                 ShowNotif("Slurry pump menyala. Atur flow rate ke 450 m³/h.", false);
-                break;
-
-            case GameLevelManager.Level4Phase.MenungguLaporanFlow:
-                SetFase(FaseQuest.LaporHT);
-                SetQuestLabel("<b>MISI: Lapor lewat HT</b>\n<size=83%>Tahan T, sampaikan: \"slurry pump aktif, flow rate 450\".</size>");
-                ShowNotif("Target flow tercapai! Lapor lewat HT.", true);
                 break;
 
             case GameLevelManager.Level4Phase.ObservasiPump:
                 SetFase(FaseQuest.MulaiMesin);
-                SetQuestLabel("<b>MISI: Amati slurry pump</b>\n<size=83%>Pastikan air mengalir ke pipa menuju pre-heater.</size>");
-                ShowNotif("Pindah ke area pump untuk verifikasi aliran.", false);
-                break;
-
-            case GameLevelManager.Level4Phase.MenungguLaporanAlir:
-                SetFase(FaseQuest.LaporHT);
-                SetQuestLabel("<b>MISI: Lapor air mengalir</b>\n<size=83%>Tahan T dan ucapkan: \"slurry mengalirkan air\".</size>");
-                ShowNotif("Lapor: slurry pump telah mengalirkan air.", true);
+                SetQuestLabel("<b>MISI: Amati slurry pump</b>\n<size=83%>Lihat slurry pump bekerja mengalirkan air ke pipa.</size>");
+                ShowNotif("Flow tercapai! Pindah ke area pump.", true);
                 break;
 
             case GameLevelManager.Level4Phase.ObservasiPreheater:
                 SetFase(FaseQuest.MulaiMesin);
-                SetQuestLabel("<b>MISI: Amati pre-heater</b>\n<size=83%>Pastikan slurry masuk ke unit pre-heater dengan benar.</size>");
-                ShowNotif("Verifikasi pre-heater menerima aliran slurry.", false);
+                SetQuestLabel("<b>MISI: Amati pre-heater</b>\n<size=83%>Pastikan slurry mengalir masuk ke unit pre-heater.</size>");
+                ShowNotif("Pindah ke pre-heater. Verifikasi aliran masuk.", false);
+                break;
+
+            case GameLevelManager.Level4Phase.MenungguLaporanFlow:
+                SetFase(FaseQuest.LaporHT);
+                SetQuestLabel("<b>MISI: Lapor lewat HT</b>\n<size=83%>Cairan sudah masuk pre-heater. Tahan T dan ucapkan: \"slurry pump aktif\".</size>");
+                ShowNotif("Cairan masuk pre-heater! Lapor lewat HT.", true);
                 break;
 
             case GameLevelManager.Level4Phase.KembaliKeDcs:
@@ -521,13 +515,13 @@ public class PlayerHUD : MonoBehaviour
                 if (panelWalkieTalkieHint != null)
                     panelWalkieTalkieHint.SetActive(false);
                 SetQuestLabel(_level3OreSampaiSlurry
-                    ? Teks(_teksLevel3.observasiSlurry, "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 25%.</size>")
+                    ? Teks(_teksLevel3.observasiSlurry, "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 50%.</size>")
                     : Teks(_teksLevel3.observasiOreAir, "<b>MISI: Amati ore dan air masuk</b>\n<size=83%>Tunggu ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.SiapLaporanAkhir:
                 SetFase(FaseQuest.LaporHT);
-                SetQuestLabel(Teks(_teksLevel3.laporanAkhir, "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 25%.</size>"));
+                SetQuestLabel(Teks(_teksLevel3.laporanAkhir, "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 50%.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.Selesai:
@@ -682,7 +676,7 @@ public class PlayerHUD : MonoBehaviour
             lines.Add($"{Check(_level3LaporanAwalSelesai)} Lapor HT awal");
             lines.Add($"{Check(apdLapanganSiap)} Pakai kacamata + respirator");
             lines.Add($"{Check(_level3OreSampaiSlurry)} Ore/laterit sampai ke slurry tank");
-            lines.Add($"{Check(_level3Slurry25Tercapai)} Pastikan slurry 25%");
+            lines.Add($"{Check(_level3Slurry25Tercapai)} Pastikan slurry 50%");
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT akhir");
             txtParameterInfo.text = string.Join("\n", lines);
             return;

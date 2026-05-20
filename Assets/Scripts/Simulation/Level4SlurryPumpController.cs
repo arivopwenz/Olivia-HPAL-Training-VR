@@ -60,11 +60,24 @@ public class Level4SlurryPumpController : MonoBehaviour
 
     [Header("=== HUD Pesan ===")]
     [TextArea(2, 4)] [SerializeField] private string _pesanObservasiPump =
-        "Lihat slurry pump mengalirkan air ke pipa. Lapor: \"slurry mengalirkan air\".";
+        "Lihat slurry pump mengalirkan air ke pipa.";
     [TextArea(2, 4)] [SerializeField] private string _pesanObservasiPreheater =
         "Pindah pandangan ke pre-heater. Pastikan slurry masuk ke unit pemanas.";
+    [TextArea(2, 4)] [SerializeField] private string _pesanLaporanHT =
+        "Cairan sudah masuk pre-heater. Tahan T dan kirim laporan HT.";
     [TextArea(2, 4)] [SerializeField] private string _pesanKembaliDcs =
         "Mantap. Kembali ke DCS untuk operasi berikutnya.";
+
+    [Header("=== Audio Notification ===")]
+    [Tooltip("Bell/ding saat masuk fase observasi pump.")]
+    [SerializeField] private AudioClip _bellEnterPump;
+    [Tooltip("Bell/ding saat masuk fase observasi preheater.")]
+    [SerializeField] private AudioClip _bellEnterPreheater;
+    [Tooltip("Bell saat cairan sudah masuk preheater dan player diminta lapor HT.")]
+    [SerializeField] private AudioClip _bellLaporanReady;
+    [Tooltip("Bell saat berhasil kembali ke DCS.")]
+    [SerializeField] private AudioClip _bellKembaliDcs;
+    [Range(0f, 1f)] [SerializeField] private float _volumeBell = 0.7f;
 
     [Header("=== Visual Indicator ===")]
     [Tooltip("Highlight pump saat fase ObservasiPump (toggle emission).")]
@@ -79,6 +92,7 @@ public class Level4SlurryPumpController : MonoBehaviour
     private MaterialPropertyBlock _mpb;
     private bool _highlightPumpAktif;
     private bool _highlightPreheaterAktif;
+    private AudioSource _audioSource;
 
     private void Awake()
     {
@@ -86,6 +100,19 @@ public class Level4SlurryPumpController : MonoBehaviour
         AutoFindPlayerRig();
         AutoFindReferences();
         _mpb = new MaterialPropertyBlock();
+
+        // Setup audio source untuk bell notif
+        _audioSource = GetComponent<AudioSource>();
+        if (_audioSource == null) _audioSource = gameObject.AddComponent<AudioSource>();
+        _audioSource.spatialBlend = 0f; // 2D supaya kedengaran jelas
+        _audioSource.playOnAwake = false;
+        _audioSource.volume = _volumeBell;
+
+        // Generate bell clips kalau kosong (bell tone pendek + chime preheater + success ding)
+        if (_bellEnterPump == null)        _bellEnterPump = BuatClipBell(440f, 880f, 0.45f, sampleRate: 22050);
+        if (_bellEnterPreheater == null)   _bellEnterPreheater = BuatClipBell(523f, 784f, 0.65f, sampleRate: 22050); // C5 + G5 (chime)
+        if (_bellLaporanReady == null)     _bellLaporanReady = BuatClipBell(700f, 1050f, 0.7f, sampleRate: 22050); // higher chime, attention
+        if (_bellKembaliDcs == null)       _bellKembaliDcs = BuatClipBell(660f, 990f, 0.5f, sampleRate: 22050);
     }
 
     private void OnEnable()
@@ -126,27 +153,24 @@ public class Level4SlurryPumpController : MonoBehaviour
 
         switch (phase)
         {
-            case GameLevelManager.Level4Phase.MenungguLaporanFlow:
-                // Player masih di DCS. HUD sudah handle quest update via OnLevel4PhaseChanged.
-                break;
-
             case GameLevelManager.Level4Phase.ObservasiPump:
-                // Voice flow diterima. Auto-teleport ke depan pump.
+                // Flow tercapai. Auto-teleport ke depan pump.
                 StartSequence(SeqObservasiPump());
                 break;
 
-            case GameLevelManager.Level4Phase.MenungguLaporanAlir:
-                // Player sudah di pump, tinggal voice "slurry mengalirkan air".
-                if (_hud != null) _hud.ShowNotifPublic(_pesanObservasiPump);
-                break;
-
             case GameLevelManager.Level4Phase.ObservasiPreheater:
-                // Voice diterima. Auto-teleport ke preheater.
+                // Setelah pump → auto-teleport ke preheater.
                 StartSequence(SeqObservasiPreheater());
                 break;
 
+            case GameLevelManager.Level4Phase.MenungguLaporanFlow:
+                // Cairan sudah masuk preheater. Player tinggal lapor HT.
+                if (_hud != null) _hud.ShowNotifPublic(_pesanLaporanHT);
+                PlayBell(_bellLaporanReady);
+                break;
+
             case GameLevelManager.Level4Phase.KembaliKeDcs:
-                // Auto-balik ke DCS dan tutup level.
+                // Lapor diterima. Auto-balik ke DCS.
                 StartSequence(SeqKembaliKeDcs());
                 break;
         }
@@ -169,12 +193,12 @@ public class Level4SlurryPumpController : MonoBehaviour
 
         SetHighlight(_pumpHighlightRenderers, true, ref _highlightPumpAktif);
         if (_hud != null) _hud.ShowNotifPublic(_pesanObservasiPump);
+        PlayBell(_bellEnterPump);
 
-        // Tunggu durasi observasi sebelum minta laporan kedua.
+        // Tunggu durasi observasi sebelum auto-pindah ke preheater.
         yield return new WaitForSeconds(_durasiObservasiPump);
 
-        // Promote phase ke MenungguLaporanAlir agar voice handler bisa accept.
-        GameLevelManager.Instance?.NotifyLevel4PhaseAdvance(GameLevelManager.Level4Phase.MenungguLaporanAlir);
+        GameLevelManager.Instance?.NotifyLevel4PhaseAdvance(GameLevelManager.Level4Phase.ObservasiPreheater);
         _seqCoroutine = null;
     }
 
@@ -189,11 +213,12 @@ public class Level4SlurryPumpController : MonoBehaviour
 
         SetHighlight(_preheaterHighlightRenderers, true, ref _highlightPreheaterAktif);
         if (_hud != null) _hud.ShowNotifPublic(_pesanObservasiPreheater);
+        PlayBell(_bellEnterPreheater);
 
         yield return new WaitForSeconds(_durasiObservasiPreheater);
 
-        // Auto-promote ke KembaliKeDcs.
-        GameLevelManager.Instance?.NotifyLevel4PhaseAdvance(GameLevelManager.Level4Phase.KembaliKeDcs);
+        // Cairan sudah masuk preheater. Promote ke MenungguLaporanFlow → player diminta lapor HT.
+        GameLevelManager.Instance?.NotifyLevel4PhaseAdvance(GameLevelManager.Level4Phase.MenungguLaporanFlow);
         _seqCoroutine = null;
     }
 
@@ -208,12 +233,44 @@ public class Level4SlurryPumpController : MonoBehaviour
         TeleportPlayer(dcsTarget);
 
         if (_hud != null) _hud.ShowNotifPublic(_pesanKembaliDcs);
+        PlayBell(_bellKembaliDcs);
 
         yield return new WaitForSeconds(_jedaSetelahKembaliDcs);
 
         // Mark Level 4 selesai → akan trigger transisi otomatis ke Level 5.
         GameLevelManager.Instance?.NotifyLevel4Selesai();
         _seqCoroutine = null;
+    }
+
+    private void PlayBell(AudioClip clip)
+    {
+        if (clip == null || _audioSource == null) return;
+        _audioSource.PlayOneShot(clip, _volumeBell);
+    }
+
+    /// <summary>
+    /// Generate procedural bell tone — 2 sine harmonik dengan attack cepat + exponential decay.
+    /// fundamentalHz dan harmonicHz menentukan karakter "ding" / "chime".
+    /// </summary>
+    private AudioClip BuatClipBell(float fundamentalHz, float harmonicHz, float durasi, int sampleRate)
+    {
+        int total = Mathf.CeilToInt(durasi * sampleRate);
+        float[] data = new float[total];
+        for (int i = 0; i < total; i++)
+        {
+            float t = (float)i / sampleRate;
+            // Exponential decay envelope (cepat di awal, halus turun)
+            float env = Mathf.Exp(-t * 4.5f);
+            // Two harmonics
+            float fundamental = Mathf.Sin(2f * Mathf.PI * fundamentalHz * t);
+            float harmonic = Mathf.Sin(2f * Mathf.PI * harmonicHz * t) * 0.55f;
+            // Slight detune di harmonic kedua biar lebih bell-like (frequency modulation kecil)
+            float detune = Mathf.Sin(2f * Mathf.PI * (harmonicHz * 1.012f) * t) * 0.25f;
+            data[i] = (fundamental * 0.7f + harmonic + detune) * env * 0.45f;
+        }
+        var clip = AudioClip.Create("ProcBell", total, 1, sampleRate, false);
+        clip.SetData(data, 0);
+        return clip;
     }
 
     // ============================================================

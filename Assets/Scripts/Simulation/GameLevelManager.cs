@@ -47,12 +47,11 @@ public class GameLevelManager : MonoBehaviour
         Idle = 0,
         MenungguTombolDcs = 1,
         AturFlowRate = 2,
-        MenungguLaporanFlow = 3,
-        ObservasiPump = 4,
-        MenungguLaporanAlir = 5,
-        ObservasiPreheater = 6,
-        KembaliKeDcs = 7,
-        Selesai = 8
+        ObservasiPump = 3,
+        ObservasiPreheater = 4,
+        MenungguLaporanFlow = 5,
+        KembaliKeDcs = 6,
+        Selesai = 7
     }
 
     [Serializable]
@@ -226,7 +225,7 @@ public class GameLevelManager : MonoBehaviour
             kataKunciVoice = "ore masuk",
             kataKunciVoiceAwal = "jalankan alur ore",
             laporanVoiceAwal = "Field, jalankan alur ore ke slurry tank. Operator DCS standby monitoring.",
-            laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan dua puluh lima persen dan proses aman.",
+            laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan lima puluh persen dan proses aman.",
             audioBalasanNPC = "audio_level3_balasan"
         });
 
@@ -446,7 +445,7 @@ public class GameLevelManager : MonoBehaviour
                 data.kataKunciVoiceAwal = "jalankan alur ore";
                 data.kataKunciVoice = "ore masuk";
                 data.laporanVoiceAwal = "Field, jalankan alur ore ke slurry tank. Operator DCS standby monitoring.";
-                data.laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan dua puluh lima persen dan proses aman.";
+                data.laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan lima puluh persen dan proses aman.";
                 data.aliasTambahanPerBaris = "start ore flow\nstart ore line\nore ready\nore in slurry tank";
                 break;
             case GameLevel.Level4_SlurryPump:
@@ -774,66 +773,59 @@ public class GameLevelManager : MonoBehaviour
     }
 
     /// <summary>
-    /// Handler voice Level 4 — multi-step:
-    ///   Phase MenungguLaporanFlow  → "slurry pump aktif" / "flow set"  → ObservasiPump
-    ///   Phase MenungguLaporanAlir  → "slurry mengalirkan air"          → ObservasiPreheater
-    /// Tidak otomatis selesaikan level. Level 4 selesai setelah ObservasiPreheater
-    /// dan player kembali ke DCS (di-trigger oleh Level4SlurryPumpController).
+    /// Handler voice Level 4 — single laporan setelah cairan masuk preheater.
+    ///   Phase MenungguLaporanFlow → "slurry pump aktif" → KembaliKeDcs
+    ///   Phase lain → reject (player harus selesaikan langkah dulu).
     /// </summary>
     private bool HandleVoiceLevel4(LevelData data, string keyword)
     {
-        // Validasi sequencing dasar: harus tekan tombol DCS 4 dulu.
+        // Validasi sequencing dasar.
         if (data.nomorTombolDCS > 0 && !_dcsTombolSudahDitekan)
         {
-            Log("VOICE", $"Urutan belum benar. Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
+            Log("VOICE", $"Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
             return false;
         }
 
         switch (_level4Phase)
         {
-            case Level4Phase.MenungguLaporanFlow:
-                {
-                    // Frasa pertama: laporan flow rate sudah tercapai.
-                    string frasaUtama = data.laporanVoiceLengkap;
-                    string aliasPendek = string.IsNullOrEmpty(data.kataKunciVoice) ? "slurry pump aktif" : data.kataKunciVoice;
-                    if (!VoiceReportCocokDenganCadangan(data, keyword, frasaUtama, aliasPendek))
-                    {
-                        Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk laporan flow Level 4.", "orange");
-                        return false;
-                    }
-
-                    OnVoiceReportAccepted?.Invoke(keyword);
-                    Log("VOICE REPORT", $"Laporan FLOW Level 4 diterima: '<i>{keyword}</i>'", "cyan");
-                    SetLevel4Phase(Level4Phase.ObservasiPump);
-                    return true;
-                }
-
-            case Level4Phase.MenungguLaporanAlir:
-                {
-                    // Frasa kedua: konfirmasi air mengalir di tabung.
-                    string frasaKedua = "Field, slurry pump telah mengalirkan air ke pre-heater.";
-                    string aliasKedua = "slurry mengalirkan air";
-                    if (!VoiceReportCocokDenganCadangan(data, keyword, frasaKedua, aliasKedua))
-                    {
-                        Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk laporan air mengalir Level 4.", "orange");
-                        return false;
-                    }
-
-                    OnVoiceReportAccepted?.Invoke(keyword);
-                    Log("VOICE REPORT", $"Laporan AIR MENGALIR Level 4 diterima: '<i>{keyword}</i>'", "cyan");
-                    SetLevel4Phase(Level4Phase.ObservasiPreheater);
-                    return true;
-                }
-
             case Level4Phase.MenungguTombolDcs:
             case Level4Phase.AturFlowRate:
-                Log("VOICE", "Atur flow rate ke 450 m3/h dulu sebelum laporan HT.", "orange");
+                Log("VOICE", "Atur flow rate ke 450 m3/h dulu, lalu tunggu observasi sebelum lapor HT.", "orange");
                 return false;
 
             case Level4Phase.ObservasiPump:
             case Level4Phase.ObservasiPreheater:
+                Log("VOICE", "Sedang observasi mesin. Tunggu sampai cairan masuk pre-heater sebelum lapor HT.", "orange");
+                return false;
+
+            case Level4Phase.MenungguLaporanFlow:
+                {
+                    // Frasa diperluas: terima "slurry pump aktif" / "flow set" / "slurry mengalirkan air"
+                    string frasaUtama = data.laporanVoiceLengkap;
+                    string aliasPendek = string.IsNullOrEmpty(data.kataKunciVoice) ? "slurry pump aktif" : data.kataKunciVoice;
+                    bool match = VoiceReportCocokDenganCadangan(data, keyword, frasaUtama, aliasPendek);
+                    if (!match)
+                    {
+                        // Coba frasa alternatif (player bilang "slurry mengalirkan air" juga OK)
+                        match = VoiceReportCocokDenganCadangan(data, keyword,
+                            "Field, slurry pump aktif dan air sudah mengalir ke pre-heater.",
+                            "slurry mengalirkan air");
+                    }
+                    if (!match)
+                    {
+                        Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk laporan Level 4.", "orange");
+                        return false;
+                    }
+
+                    OnVoiceReportAccepted?.Invoke(keyword);
+                    Log("VOICE REPORT", $"Laporan Level 4 diterima: '<i>{keyword}</i>'", "cyan");
+                    SetLevel4Phase(Level4Phase.KembaliKeDcs);
+                    return true;
+                }
+
             case Level4Phase.KembaliKeDcs:
-                Log("VOICE", "Sedang dalam observasi atau transisi. Tunggu instruksi HUD.", "orange");
+            case Level4Phase.Selesai:
+                Log("VOICE", "Sedang transisi.", "orange");
                 return false;
 
             default:
@@ -920,6 +912,12 @@ public class GameLevelManager : MonoBehaviour
                 return data.laporanVoiceLengkap;
         }
 
+        if (level == GameLevel.Level4_SlurryPump)
+        {
+            if (_level4Phase == Level4Phase.MenungguLaporanFlow)
+                return data.laporanVoiceLengkap; // "Field, slurry pump aktif. Flow rate..."
+        }
+
         return string.IsNullOrWhiteSpace(data.laporanVoiceLengkap) ? data.kataKunciVoice : data.laporanVoiceLengkap;
     }
 
@@ -966,10 +964,10 @@ public class GameLevelManager : MonoBehaviour
             {
                 Log("FLOW OK", $"Flow rate {_flowRateSaatIni} m3/h. Target {data.targetFlowRate} m3/h tercapai.", "green");
                 _dcsTombolSudahDitekan = true;
-                SetLevel4Phase(Level4Phase.MenungguLaporanFlow);
+                // Langsung lompat ke ObservasiPump — Level4SlurryPumpController akan handle
+                // teleport otomatis ke pump → preheater → minta laporan HT.
+                SetLevel4Phase(Level4Phase.ObservasiPump);
             }
-            // CekKondisiLevelSelesai TIDAK dipanggil di sini. Level 4 selesai
-            // setelah multi-step (lapor flow → observasi pump → lapor alir → observasi preheater).
         }
     }
 
@@ -1183,7 +1181,37 @@ public class GameLevelManager : MonoBehaviour
         if (string.IsNullOrWhiteSpace(normalizedTarget))
             return false;
 
-        return spoken == normalizedTarget;
+        // Exact match dulu (cepat).
+        if (spoken == normalizedTarget)
+            return true;
+
+        // Fuzzy: spoken mengandung target (player bicara lebih banyak)
+        if (spoken.Contains(normalizedTarget))
+            return true;
+
+        // Fuzzy: target mengandung spoken (player bicara substring penting dari target)
+        // Hanya kalau spoken cukup panjang (≥ 2 kata) dan ≥ 30% panjang target.
+        if (normalizedTarget.Contains(spoken) && spoken.Length >= 6
+            && spoken.Split(' ').Length >= 2
+            && spoken.Length >= normalizedTarget.Length * 0.3f)
+            return true;
+
+        // Token overlap: ≥ 60% kata target ada di spoken (atau sebaliknya).
+        var targetTokens = normalizedTarget.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+        var spokenTokens = spoken.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+        if (targetTokens.Length >= 2 && spokenTokens.Length >= 2)
+        {
+            var spokenSet = new HashSet<string>(spokenTokens);
+            int overlap = 0;
+            foreach (var t in targetTokens)
+                if (spokenSet.Contains(t)) overlap++;
+            float overlapRatioOfTarget = (float)overlap / targetTokens.Length;
+            float overlapRatioOfSpoken = (float)overlap / spokenTokens.Length;
+            if (overlapRatioOfTarget >= 0.6f || overlapRatioOfSpoken >= 0.7f)
+                return true;
+        }
+
+        return false;
     }
 
     private string NormalizeVoiceText(string value)

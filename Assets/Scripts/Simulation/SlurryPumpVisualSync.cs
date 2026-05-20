@@ -42,8 +42,8 @@ public class SlurryPumpVisualSync : MonoBehaviour
     [SerializeField] private Transform _motorTransform;
     [Tooltip("Sumbu rotasi (default Y).")]
     [SerializeField] private Vector3 _sumbuRotasi = Vector3.up;
-    [Tooltip("RPM motor pada flow rate maksimum.")]
-    [SerializeField] private float _rpmMaksimum = 1200f;
+    [Tooltip("RPM motor pada flow rate maksimum (visual). 240 RPM = 4 rotasi/detik, masih cepat tapi visible.")]
+    [SerializeField] private float _rpmMaksimum = 240f;
 
     [Header("=== Audio Pump ===")]
     [SerializeField] private AudioSource _pumpAudio;
@@ -239,7 +239,8 @@ public class SlurryPumpVisualSync : MonoBehaviour
     }
 
     /// <summary>
-    /// Generate AudioClip motor pump prosedural. Mid-low frequency rumble + harmonics.
+    /// Generate AudioClip motor pump prosedural. Mid-low frequency rumble + harmonics + pulse pump rhythm.
+    /// Pulse rhythm = beat tiap ~0.55s yang naik amplitudo (efek "pumping").
     /// </summary>
     private AudioClip BuatClipMotorPump(float durasi, int sampleRate)
     {
@@ -250,9 +251,13 @@ public class SlurryPumpVisualSync : MonoBehaviour
         float phase1 = 0f, phase2 = 0f, phase3 = 0f;
         float lpPrev = 0f;
 
+        // Pump pulse: setiap 0.55 detik (≈ 110 BPM) ada "chuk" yang naik volumenya.
+        float beatHz = 1.8f;            // 1.8 beat per second (≈ 108 BPM, mirip pompa industrial)
+        float pulsePhase = 0f;
+
         for (int i = 0; i < totalSamples; i++)
         {
-            // Tiga sine berlapis: fundamental + 2 harmonik
+            // Tiga sine berlapis: fundamental + 2 harmonik (motor)
             phase1 += 2f * Mathf.PI * 90f / sampleRate;
             phase2 += 2f * Mathf.PI * 180f / sampleRate;
             phase3 += 2f * Mathf.PI * 270f / sampleRate;
@@ -261,12 +266,20 @@ public class SlurryPumpVisualSync : MonoBehaviour
                        + Mathf.Sin(phase2) * 0.25f
                        + Mathf.Sin(phase3) * 0.12f;
 
+            // Pulse pump (setiap beat, amplitudo membesar)
+            pulsePhase += 2f * Mathf.PI * beatHz / sampleRate;
+            float pulseRaw = Mathf.Sin(pulsePhase);
+            // Map sine ke "kick" envelope (asimetris: spike cepat → decay)
+            float pulseEnv = Mathf.Pow(Mathf.Max(0f, pulseRaw), 4f); // 0..1, asimetris
+            // Sub-low "thump" 60 Hz dimodulasi pulse env
+            float thump = Mathf.Sin(2f * Mathf.PI * 60f * i / sampleRate) * pulseEnv * 0.8f;
+
             // Slight noise untuk turbulensi mekanik
             float noise = ((float)rnd.NextDouble() - 0.5f) * 0.2f;
             // Low pass
             lpPrev = lpPrev + 0.15f * (noise - lpPrev);
 
-            data[i] = (sine * 0.7f + lpPrev * 0.5f) * 0.4f;
+            data[i] = (sine * 0.55f + lpPrev * 0.4f + thump * 0.55f) * 0.42f;
         }
 
         // Crossfade endpoints untuk seamless loop

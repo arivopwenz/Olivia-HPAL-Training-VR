@@ -1,5 +1,6 @@
 using UnityEngine;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 
 /// <summary>
@@ -49,6 +50,16 @@ public class PhaseManager : MonoBehaviour
     [SerializeField] private Vector3 _posisiLokalRespiratorDiBaju = Vector3.zero;
     [SerializeField] private Vector3 _rotasiLokalRespiratorDiBaju = Vector3.zero;
     [SerializeField] private Vector3 _skalaDuniaRespiratorDiBaju = new Vector3(0.2f, 0.095f, 0.12f);
+
+    [Header("=== Masker Auto-Transparent ===")]
+    [Tooltip("Setelah masker dipakai, fade material ke transparent supaya tidak menutupi pandangan.")]
+    [SerializeField] private bool _maskerAutoTransparentSaatDipakai = true;
+    [Tooltip("Jeda detik setelah masker dipakai sebelum mulai fade.")]
+    [SerializeField] private float _delayMaskerFade = 2f;
+    [Tooltip("Durasi fade dari opaque ke alpha target.")]
+    [SerializeField] private float _durasiMaskerFade = 1.0f;
+    [Tooltip("Alpha akhir masker setelah fade. 0 = invisible, 1 = solid.")]
+    [Range(0.05f, 1f)] [SerializeField] private float _alphaMaskerSetelahFade = 0.30f;
 
     public const int TOTAL_APD = 8;
 
@@ -111,7 +122,7 @@ public class PhaseManager : MonoBehaviour
     public void OnGlassesWorn()       { PakaiApd(_kacamata);      }
     public void OnBootsWorn()         { PakaiApd(_sepatuBots);    }
     public void OnGlovesWorn()        { PakaiApd(_sarungTangan);  }
-    public void OnRespiratiorWorn()   { PakaiApd(_respirator);    }
+    public void OnRespiratiorWorn()   { PakaiApd(_respirator); MulaiFadeMaskerSetelahDipakai(); }
     public void OnRespiratorRemoved() { LepasApd(_respirator);    }
     public void OnRespiratorStored()  { LepasApd(_respirator);    }
     public void OnEarplugWorn()       { PakaiApd(_earplug);       }
@@ -379,5 +390,129 @@ public class PhaseManager : MonoBehaviour
         }
 
         return _respiratorObject != null ? _respiratorObject.GetComponentInChildren<Renderer>(true) : null;
+    }
+
+    // ============================================================
+    //  MASKER AUTO TRANSPARENT
+    // ============================================================
+    private Coroutine _coroutineFadeMasker;
+
+    private void MulaiFadeMaskerSetelahDipakai()
+    {
+        if (!_maskerAutoTransparentSaatDipakai) return;
+        if (_coroutineFadeMasker != null)
+        {
+            StopCoroutine(_coroutineFadeMasker);
+            _coroutineFadeMasker = null;
+        }
+        _coroutineFadeMasker = StartCoroutine(FadeMaskerCoroutine());
+    }
+
+    private IEnumerator FadeMaskerCoroutine()
+    {
+        yield return new WaitForSeconds(_delayMaskerFade);
+
+        var renderers = AmbilSemuaRendererMasker();
+        if (renderers == null || renderers.Count == 0)
+        {
+            _coroutineFadeMasker = null;
+            yield break;
+        }
+
+        // Sebelum fade, set semua material ke transparent mode (URP/Standard).
+        foreach (var r in renderers)
+            SetMaterialTransparent(r);
+
+        float elapsed = 0f;
+        while (elapsed < _durasiMaskerFade)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / _durasiMaskerFade);
+            float alpha = Mathf.Lerp(1f, _alphaMaskerSetelahFade, t);
+            foreach (var r in renderers)
+                SetRendererAlpha(r, alpha);
+            yield return null;
+        }
+
+        // Pastikan ke alpha final
+        foreach (var r in renderers)
+            SetRendererAlpha(r, _alphaMaskerSetelahFade);
+
+        Log("MASKER", $"Masker fade ke alpha {_alphaMaskerSetelahFade:F2} selesai.", "cyan");
+        _coroutineFadeMasker = null;
+    }
+
+    private List<Renderer> AmbilSemuaRendererMasker()
+    {
+        var list = new List<Renderer>();
+        if (_respiratorObject == null)
+        {
+            GameObject respirator = GameObject.Find("RespiratorMask");
+            if (respirator != null) _respiratorObject = respirator.transform;
+        }
+        if (_respiratorObject == null) return list;
+        foreach (var r in _respiratorObject.GetComponentsInChildren<Renderer>(true))
+            if (r != null) list.Add(r);
+        return list;
+    }
+
+    private void SetMaterialTransparent(Renderer r)
+    {
+        if (r == null) return;
+        // Use instance materials supaya tidak modify shared
+        var mats = r.materials;
+        for (int i = 0; i < mats.Length; i++)
+        {
+            var m = mats[i];
+            if (m == null) continue;
+
+            if (m.HasProperty("_Surface"))
+            {
+                m.SetFloat("_Surface", 1f); // URP Lit Transparent
+                m.SetFloat("_Blend", 0f);
+                m.SetFloat("_ZWrite", 0f);
+                m.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                m.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                m.SetOverrideTag("RenderType", "Transparent");
+                m.renderQueue = 3000;
+                m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            }
+            else
+            {
+                // Standard shader
+                m.SetFloat("_Mode", 3f); // Transparent
+                m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+                m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+                m.SetInt("_ZWrite", 0);
+                m.DisableKeyword("_ALPHATEST_ON");
+                m.EnableKeyword("_ALPHABLEND_ON");
+                m.DisableKeyword("_ALPHAPREMULTIPLY_ON");
+                m.renderQueue = 3000;
+            }
+        }
+        r.materials = mats;
+    }
+
+    private void SetRendererAlpha(Renderer r, float alpha)
+    {
+        if (r == null) return;
+        var mats = r.materials;
+        for (int i = 0; i < mats.Length; i++)
+        {
+            var m = mats[i];
+            if (m == null) continue;
+            if (m.HasProperty("_BaseColor"))
+            {
+                Color c = m.GetColor("_BaseColor");
+                c.a = alpha;
+                m.SetColor("_BaseColor", c);
+            }
+            if (m.HasProperty("_Color"))
+            {
+                Color c = m.GetColor("_Color");
+                c.a = alpha;
+                m.SetColor("_Color", c);
+            }
+        }
     }
 }
