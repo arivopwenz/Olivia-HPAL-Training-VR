@@ -84,7 +84,11 @@ public class Level3OreSlurryController : MonoBehaviour
     [Tooltip("Aktifkan arrow indicator saat sampai field menunggu APD + saat menuju observation point.")]
     [SerializeField] private bool _gunakanArrowIndicator = true;
 
-    private PlayerHUD _hud;
+    [Header("=== Panel Pilihan Transisi ===")]
+    [Tooltip("Panel pilihan 'Lanjut' / 'Lihat Proses'. Auto-create di runtime jika kosong.")]
+    [SerializeField] private LevelTransitionChoicePanel _choicePanel;
+    [Tooltip("Durasi fade out saat player pilih 'Lanjut' (detik).")]
+    [SerializeField] private float _durasiFadeLanjut = 3.5f;    private PlayerHUD _hud;
     private Coroutine _sequenceCoroutine;
     private Coroutine _returnCoroutine;
     private bool _sequenceSudahDimulai;
@@ -118,6 +122,7 @@ public class Level3OreSlurryController : MonoBehaviour
     {
         GameLevelManager.OnLevelStarted += OnLevelStarted;
         GameLevelManager.OnVoiceReportAccepted += OnVoiceReportAccepted;
+        GameLevelManager.OnLevel3LaporanAkhirDiterima += OnLevel3LaporanAkhirDiterima;
         GameLevelManager.OnLevelTransitionRequested += OnLevelTransitionRequested;
         GameLevelManager.OnLevel3PhaseChanged += OnLevel3PhaseChanged;
         PhaseManager.OnApdItemWorn += OnApdItemWorn;
@@ -129,6 +134,7 @@ public class Level3OreSlurryController : MonoBehaviour
         GameLevelManager.OnVoiceReportAccepted -= OnVoiceReportAccepted;
         GameLevelManager.OnLevelTransitionRequested -= OnLevelTransitionRequested;
         GameLevelManager.OnLevel3PhaseChanged -= OnLevel3PhaseChanged;
+        GameLevelManager.OnLevel3LaporanAkhirDiterima -= OnLevel3LaporanAkhirDiterima;
         PhaseManager.OnApdItemWorn -= OnApdItemWorn;
     }
 
@@ -371,7 +377,17 @@ public class Level3OreSlurryController : MonoBehaviour
     private IEnumerator TeleportKeDcsSaatTransisi(float duration)
     {
         yield return new WaitForSeconds(HitungWaktuTeleport(duration));
-        TeleportPlayer(_teleportTargetDcs);
+
+        // Gunakan SpawnPoint_Lvl4 / SpawnPoint_DCS sebagai target teleport akhir Level 3,
+        // supaya posisi konsisten dengan spawn awal Level 4 (di depan DCS, bukan di atap).
+        Transform target = _teleportTargetDcs;
+        var spawnGo = GameObject.Find("SpawnPoint_Lvl4") ?? GameObject.Find("SpawnPoint_DCS");
+        if (spawnGo != null)
+            target = spawnGo.transform;
+
+        if (target != null)
+            TeleportPlayer(target);
+
         _returnCoroutine = null;
     }
 
@@ -916,5 +932,83 @@ public class Level3OreSlurryController : MonoBehaviour
 
         if (_hud != null)
             _hud.ShowNotifPublic("Slurry mencapai 50%. Lihat mesin pengaduk lalu kirim laporan HT akhir.");
+    }
+
+
+    /// <summary>
+    /// Dipanggil saat laporan HT akhir Level 3 diterima.
+    /// Tunda transisi otomatis dan tampilkan panel pilihan.
+    /// </summary>
+    private void OnLevel3LaporanAkhirDiterima()
+    {
+        if (GameLevelManager.Instance == null) return;
+        if (GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level3_OreSlurry) return;
+
+        // Tunda transisi otomatis
+        GameLevelManager.Instance.TundaTransisiLevel3(true);
+
+        // Tampilkan panel pilihan
+        EnsureChoicePanel();
+        if (_choicePanel != null)
+        {
+            _choicePanel.Show(
+                onLanjut: OnPilihLanjut,
+                onLihat: OnPilihLihat
+            );
+        }
+    }
+
+    private void OnPilihLanjut()
+    {
+        // Player pilih lanjut: fade out pelan, lalu lanjutkan transisi ke Level 4
+        if (_hud != null)
+            _hud.PlayManualFade(_durasiFadeLanjut);
+
+        // Lanjutkan transisi yang ditunda
+        GameLevelManager.Instance?.LanjutkanTransisiLevel3();
+    }
+
+    private void OnPilihLihat()
+    {
+        // Player pilih lihat proses: biarkan di area slurry, transisi tetap ditunda.
+        // Player bisa explore sesuka hati. Nanti kalau mau lanjut, bisa PTT lagi
+        // atau kita bisa show panel lagi setelah beberapa detik.
+        if (_hud != null)
+            _hud.ShowNotifPublic("Amati proses slurry. Tekan T (PTT) lagi saat siap lanjut.");
+
+        // Subscribe ke PTT release berikutnya untuk show panel lagi
+        StartCoroutine(TungguPttUntukLanjut());
+    }
+
+    private System.Collections.IEnumerator TungguPttUntukLanjut()
+    {
+        // Tunggu 3 detik dulu biar player sempat lihat-lihat
+        yield return new WaitForSeconds(3f);
+
+        // Tunggu sampai player tekan PTT lagi
+        bool pttDitekan = false;
+        System.Action onPtt = () => pttDitekan = true;
+        WalkieTalkieManager.OnPTTDilepas += onPtt;
+
+        while (!pttDitekan)
+            yield return null;
+
+        WalkieTalkieManager.OnPTTDilepas -= onPtt;
+
+        // Show panel lagi
+        EnsureChoicePanel();
+        _choicePanel?.Show(onLanjut: OnPilihLanjut, onLihat: OnPilihLihat);
+    }
+
+    private void EnsureChoicePanel()
+    {
+        if (_choicePanel != null) return;
+
+        _choicePanel = UnityEngine.Object.FindFirstObjectByType<LevelTransitionChoicePanel>();
+        if (_choicePanel != null) return;
+
+        // Auto-create
+        var go = new GameObject("Level3_ChoicePanel_Auto");
+        _choicePanel = go.AddComponent<LevelTransitionChoicePanel>();
     }
 }

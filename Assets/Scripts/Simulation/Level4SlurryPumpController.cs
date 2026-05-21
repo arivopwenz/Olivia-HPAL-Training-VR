@@ -145,6 +145,10 @@ public class Level4SlurryPumpController : MonoBehaviour
         }
         SetHighlight(_pumpHighlightRenderers, false, ref _highlightPumpAktif);
         SetHighlight(_preheaterHighlightRenderers, false, ref _highlightPreheaterAktif);
+
+        // CATATAN: Spawn awal Level 4 ke SpawnPoint_DCS sudah dihandle LevelSpawnTeleporter
+        // (universal teleporter). Controller ini hanya menangani teleport per-phase
+        // (ObservasiPump, ObservasiPreheater, KembaliKeDcs) lewat OnLevel4PhaseChanged.
     }
 
     private void OnLevel4PhaseChanged(GameLevelManager.Level4Phase phase)

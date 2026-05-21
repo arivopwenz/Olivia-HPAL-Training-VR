@@ -69,6 +69,7 @@ public class WalkieTalkieManager : MonoBehaviour
     private string _pendingHypothesisText = string.Empty;
     private bool _adaKeywordPadaSesiPtt;
     private Coroutine _coroutineProsesLaporan;
+    private Coroutine _coroutineSmoothShow;
     private AudioClip _debugMicClip;
     private string _debugMicDevice;
     private bool _debugMicMonitoring;
@@ -469,8 +470,10 @@ public class WalkieTalkieManager : MonoBehaviour
             if (_rightHandAnchor != null)
             {
                 _walkieTalkieInHand.transform.SetParent(_rightHandAnchor, false);
-                _walkieTalkieInHand.transform.localPosition = Vector3.zero;
-                _walkieTalkieInHand.transform.localRotation = Quaternion.identity;
+                // Smooth lerp ke posisi tangan (bukan instan)
+                if (_coroutineSmoothShow != null)
+                    StopCoroutine(_coroutineSmoothShow);
+                _coroutineSmoothShow = StartCoroutine(SmoothMoveHTKeTarget());
             }
 
             // Disable XRGrabInteractable supaya tidak "kesedot" socket lain
@@ -524,6 +527,33 @@ public class WalkieTalkieManager : MonoBehaviour
                 sock.enabled = !disable;
             }
         }
+    }
+
+    /// <summary>
+    /// Smooth lerp walkie talkie ke posisi tangan (0.25 detik) supaya tidak instan.
+    /// </summary>
+    private IEnumerator SmoothMoveHTKeTarget()
+    {
+        if (_walkieTalkieInHand == null) yield break;
+
+        Transform t = _walkieTalkieInHand.transform;
+        Vector3 startPos = t.localPosition;
+        Quaternion startRot = t.localRotation;
+        float duration = 0.25f;
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float progress = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration));
+            t.localPosition = Vector3.Lerp(startPos, Vector3.zero, progress);
+            t.localRotation = Quaternion.Slerp(startRot, Quaternion.identity, progress);
+            yield return null;
+        }
+
+        t.localPosition = Vector3.zero;
+        t.localRotation = Quaternion.identity;
+        _coroutineSmoothShow = null;
     }
 
     private void SimulasikanKeywordLevelAktif()

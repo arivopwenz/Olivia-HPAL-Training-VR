@@ -19,7 +19,13 @@
         "manage_material",
         "create_script",
         "manage_editor",
-        "manage_camera"
+        "manage_camera",
+        "manage_gameobject",
+        "batch_execute",
+        "manage_components",
+        "unity_reflect",
+        "execute_menu_item",
+        "execute_custom_tool"
       ]
     }
   }

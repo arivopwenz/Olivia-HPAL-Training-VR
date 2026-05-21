@@ -97,6 +97,7 @@ public class GameLevelManager : MonoBehaviour
     public static event Action<Level3Phase> OnLevel3PhaseChanged;
     public static event Action OnLevel3OreReachedSlurry;
     public static event Action<Level4Phase> OnLevel4PhaseChanged;
+    public static event Action OnLevel3LaporanAkhirDiterima;
 
     [Header("=== Status Level ===")]
     [SerializeField] private GameLevel _currentLevel = GameLevel.Level0_Tutorial;
@@ -116,7 +117,7 @@ public class GameLevelManager : MonoBehaviour
 
     [Header("=== Durasi Transisi ===")]
     [SerializeField] private float _durasiTransisiDefault = 2.75f;
-    [SerializeField] private float _durasiTransisiLevel3 = 4.5f;
+    [SerializeField] private float _durasiTransisiLevel3 = 9.5f;
 
     [Header("=== Validasi Voice Report ===")]
     [SerializeField] private bool _izinkanKeywordPendekSebagaiCadangan = true;
@@ -133,6 +134,7 @@ public class GameLevelManager : MonoBehaviour
     private bool _dcsTombolSudahDitekan;
     private bool _dcsSudahDilihat;
     private bool _level3OreSudahMasukSlurry;
+    private bool _tundaTransisiLevel3;
     private float _waktuMulaiLevel;
     [SerializeField] private Level3Phase _level3Phase = Level3Phase.Idle;
     [SerializeField] private Level4Phase _level4Phase = Level4Phase.Idle;
@@ -585,13 +587,17 @@ public class GameLevelManager : MonoBehaviour
         _dcsSudahDilihat = false;
         _level3OreSudahMasukSlurry = false;
         _waktuMulaiLevel = Time.time;
-        SetLevel3Phase(level == GameLevel.Level3_OreSlurry ? Level3Phase.MenungguTombolDcs : Level3Phase.Idle);
-        SetLevel4Phase(level == GameLevel.Level4_SlurryPump ? Level4Phase.MenungguTombolDcs : Level4Phase.Idle);
 
         var data = _dataLevel[level];
         Log("LEVEL MULAI", $"<b>{data.namaLevel}</b>\nQuest: {data.deskripsiQuest}", "yellow");
 
+        // PENTING: fire OnLevelStarted DULU sebelum SetLevel3Phase/SetLevel4Phase.
+        // Subscriber (PlayerHUD, dll) menyetel _levelAktif di sini. Kalau phase event
+        // fire duluan, subscriber masih anggap level sebelumnya → quest text tidak update.
         OnLevelStarted?.Invoke(level);
+
+        SetLevel3Phase(level == GameLevel.Level3_OreSlurry ? Level3Phase.MenungguTombolDcs : Level3Phase.Idle);
+        SetLevel4Phase(level == GameLevel.Level4_SlurryPump ? Level4Phase.MenungguTombolDcs : Level4Phase.Idle);
 
         if (data.nomorTombolDCS > 0)
             OnDCSButtonShouldHighlight?.Invoke(data.nomorTombolDCS);
@@ -758,7 +764,11 @@ public class GameLevelManager : MonoBehaviour
                 _voiceReportSudahDilakukan = true;
                 OnVoiceReportAccepted?.Invoke(keyword);
                 Log("VOICE REPORT", $"Laporan akhir Level 3 diterima: '<i>{keyword}</i>'", "cyan");
-                CekKondisiLevelSelesai();
+                // Fire event supaya panel pilihan bisa muncul SEBELUM transisi otomatis.
+                OnLevel3LaporanAkhirDiterima?.Invoke();
+                // Hanya selesaikan otomatis kalau tidak ada handler yang menahan transisi.
+                if (!_tundaTransisiLevel3)
+                    CekKondisiLevelSelesai();
                 return true;
 
             case Level3Phase.ObservasiLapangan:
@@ -947,6 +957,22 @@ public class GameLevelManager : MonoBehaviour
     public GameLevel CurrentLevel => _currentLevel;
     public bool LevelAktif => _levelSedangBerjalan;
     public Level3Phase CurrentLevel3Phase => _level3Phase;
+
+    /// <summary>
+    /// Set true untuk menahan transisi otomatis Level 3 → 4 setelah laporan akhir diterima.
+    /// Panel pilihan akan memanggil ini sebelum show, lalu LanjutkanTransisiLevel3() saat player pilih "Lanjut".
+    /// </summary>
+    public void TundaTransisiLevel3(bool tunda) { _tundaTransisiLevel3 = tunda; }
+
+    /// <summary>
+    /// Dipanggil oleh panel pilihan saat player memilih "Lanjut ke tahap berikutnya".
+    /// Melanjutkan transisi yang ditunda.
+    /// </summary>
+    public void LanjutkanTransisiLevel3()
+    {
+        _tundaTransisiLevel3 = false;
+        CekKondisiLevelSelesai();
+    }
     public Level4Phase CurrentLevel4Phase => _level4Phase;
     public bool Level3OreSudahMasukSlurry => _level3OreSudahMasukSlurry;
 

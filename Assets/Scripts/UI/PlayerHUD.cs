@@ -696,6 +696,14 @@ public class PlayerHUD : MonoBehaviour
         if (data.nomorTombolDCS > 0)
             lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS {data.nomorTombolDCS}");
 
+        // Level 4 punya step ekstra: atur flow rate ke 450 m³/h sebelum lapor HT.
+        if (level == GameLevelManager.GameLevel.Level4_SlurryPump)
+        {
+            bool flowRateSudahTerset = GameLevelManager.Instance != null &&
+                GameLevelManager.Instance.CurrentLevel4Phase >= GameLevelManager.Level4Phase.ObservasiPump;
+            lines.Add($"{Check(flowRateSudahTerset)} Atur flow rate 450 m³/h");
+        }
+
         if (data.butuhVoiceReport)
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT lengkap");
 

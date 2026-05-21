@@ -85,13 +85,19 @@ public class LevelLoader : MonoBehaviour
 
     void OnEnable()
     {
-        // Subscribe ke event GameLevelManager
-        GameLevelManager.OnLevelStarted += OnGameLevelBerubah;
+        // CATATAN: Game ini single-scene (semua level dalam Level1.unity).
+        // Subscription ke OnLevelStarted SENGAJA dilucuti — kalau ikut subscribe,
+        // LevelLoader akan coba load scene "Level_2_DCSPrep" dst. yang TIDAK ADA,
+        // dan menyebabkan tabrakan teleport / posisi reset saat level berubah.
+        //
+        // Aktifkan kembali HANYA jika project di-migrate ke multi-scene
+        // (tiap level punya .unity sendiri di Build Settings).
+        // GameLevelManager.OnLevelStarted += OnGameLevelBerubah;
     }
 
     void OnDisable()
     {
-        GameLevelManager.OnLevelStarted -= OnGameLevelBerubah;
+        // GameLevelManager.OnLevelStarted -= OnGameLevelBerubah;
     }
 
     // ============================================================
