@@ -361,6 +361,9 @@ public class PlayerHUD : MonoBehaviour
         if (_levelAktif != GameLevelManager.GameLevel.Level4_SlurryPump)
             return;
 
+        // Refresh checklist setiap phase change supaya item ke-centang
+        UpdateOperasionalChecklist(_levelAktif);
+
         switch (phase)
         {
             case GameLevelManager.Level4Phase.MenungguTombolDcs:
@@ -374,27 +377,36 @@ public class PlayerHUD : MonoBehaviour
                 ShowNotif("Slurry pump menyala. Atur flow rate ke 450 m³/h.", false);
                 break;
 
+            // Setelah flow=450 tercapai → minta lapor HT AWAL di DCS
+            case GameLevelManager.Level4Phase.MenungguLaporanFlow:
+                SetFase(FaseQuest.LaporHT);
+                SetQuestLabel("<b>MISI: Lapor HT awal</b>\n<size=83%>Flow rate 450 m³/h tercapai. Tahan T dan ucapkan: \"slurry pump aktif\".</size>");
+                ShowNotif("Flow tercapai! Lapor HT 'slurry pump aktif'.", true);
+                break;
+
+            // Lapor awal diterima → teleport ke field, animasi liquid mengalir
             case GameLevelManager.Level4Phase.ObservasiPump:
                 SetFase(FaseQuest.MulaiMesin);
-                SetQuestLabel("<b>MISI: Amati slurry pump</b>\n<size=83%>Lihat slurry pump bekerja mengalirkan air ke pipa.</size>");
-                ShowNotif("Flow tercapai! Pindah ke area pump.", true);
+                SetQuestLabel("<b>MISI: Amati aliran slurry</b>\n<size=83%>Lihat slurry mengalir dari Slurry Tank menuju Pre-Heater.</size>");
+                ShowNotif("Memantau aliran slurry...", false);
                 break;
 
             case GameLevelManager.Level4Phase.ObservasiPreheater:
                 SetFase(FaseQuest.MulaiMesin);
-                SetQuestLabel("<b>MISI: Amati pre-heater</b>\n<size=83%>Pastikan slurry mengalir masuk ke unit pre-heater.</size>");
-                ShowNotif("Pindah ke pre-heater. Verifikasi aliran masuk.", false);
+                SetQuestLabel("<b>MISI: Slurry sampai Pre-Heater</b>\n<size=83%>Cairan telah mencapai unit pre-heater. Tunggu prompt untuk lapor HT akhir.</size>");
                 break;
 
-            case GameLevelManager.Level4Phase.MenungguLaporanFlow:
+            // Liquid sudah sampai preheater → minta lapor HT AKHIR
+            case GameLevelManager.Level4Phase.MenungguLaporanAkhir:
                 SetFase(FaseQuest.LaporHT);
-                SetQuestLabel("<b>MISI: Lapor lewat HT</b>\n<size=83%>Cairan sudah masuk pre-heater. Tahan T dan ucapkan: \"slurry pump aktif\".</size>");
-                ShowNotif("Cairan masuk pre-heater! Lapor lewat HT.", true);
+                SetQuestLabel("<b>MISI: Lapor HT akhir</b>\n<size=83%>Slurry telah mencapai pre-heater. Tahan T dan ucapkan: \"cairan sudah di preheater\".</size>");
+                ShowNotif("Slurry sampai Pre-Heater! Lapor HT akhir.", true);
                 break;
 
             case GameLevelManager.Level4Phase.KembaliKeDcs:
                 SetFase(FaseQuest.MulaiMesin);
-                SetQuestLabel("<b>MISI: Kembali ke DCS</b>\n<size=83%>Mantap. Kembali ke ruang DCS untuk operasi berikutnya.</size>");
+                SetQuestLabel("<b>MISI: Kembali ke DCS</b>\n<size=83%>Lapor diterima. Kembali ke ruang DCS untuk Level 5: Autoclave.</size>");
+                ShowNotif("Mantap. Kembali ke DCS untuk Level 5.", true);
                 break;
 
             case GameLevelManager.Level4Phase.Selesai:
@@ -699,9 +711,41 @@ public class PlayerHUD : MonoBehaviour
         // Level 4 punya step ekstra: atur flow rate ke 450 m³/h sebelum lapor HT.
         if (level == GameLevelManager.GameLevel.Level4_SlurryPump)
         {
-            bool flowRateSudahTerset = GameLevelManager.Instance != null &&
-                GameLevelManager.Instance.CurrentLevel4Phase >= GameLevelManager.Level4Phase.ObservasiPump;
+            var p4 = GameLevelManager.Instance != null
+                ? GameLevelManager.Instance.CurrentLevel4Phase
+                : GameLevelManager.Level4Phase.Idle;
+
+            // Flow tercapai = phase sudah ke MenungguLaporanFlow atau lebih lanjut
+            bool flowRateSudahTerset = p4 == GameLevelManager.Level4Phase.MenungguLaporanFlow
+                                    || p4 == GameLevelManager.Level4Phase.ObservasiPump
+                                    || p4 == GameLevelManager.Level4Phase.ObservasiPreheater
+                                    || p4 == GameLevelManager.Level4Phase.MenungguLaporanAkhir
+                                    || p4 == GameLevelManager.Level4Phase.KembaliKeDcs
+                                    || p4 == GameLevelManager.Level4Phase.Selesai;
             lines.Add($"{Check(flowRateSudahTerset)} Atur flow rate 450 m³/h");
+
+            // Lapor HT awal
+            bool laporAwalSelesai = p4 == GameLevelManager.Level4Phase.ObservasiPump
+                                 || p4 == GameLevelManager.Level4Phase.ObservasiPreheater
+                                 || p4 == GameLevelManager.Level4Phase.MenungguLaporanAkhir
+                                 || p4 == GameLevelManager.Level4Phase.KembaliKeDcs
+                                 || p4 == GameLevelManager.Level4Phase.Selesai;
+            lines.Add($"{Check(laporAwalSelesai)} Lapor HT awal: 'slurry pump aktif'");
+
+            // Slurry sampai preheater
+            bool slurrySampaiPreheater = p4 == GameLevelManager.Level4Phase.ObservasiPreheater
+                                      || p4 == GameLevelManager.Level4Phase.MenungguLaporanAkhir
+                                      || p4 == GameLevelManager.Level4Phase.KembaliKeDcs
+                                      || p4 == GameLevelManager.Level4Phase.Selesai;
+            lines.Add($"{Check(slurrySampaiPreheater)} Slurry mencapai Pre-Heater");
+
+            // Lapor HT akhir
+            bool laporAkhirSelesai = p4 == GameLevelManager.Level4Phase.KembaliKeDcs
+                                  || p4 == GameLevelManager.Level4Phase.Selesai;
+            lines.Add($"{Check(laporAkhirSelesai)} Lapor HT akhir: 'cairan sudah di preheater'");
+
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
         }
 
         if (data.butuhVoiceReport)

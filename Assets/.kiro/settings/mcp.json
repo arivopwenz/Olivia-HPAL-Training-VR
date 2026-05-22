@@ -26,7 +26,8 @@
         "unity_reflect",
         "execute_menu_item",
         "execute_custom_tool"
-      ]
+      ],
+      "disabledTools": []
     }
   }
 }

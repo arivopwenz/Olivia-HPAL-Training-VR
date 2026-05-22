@@ -184,17 +184,17 @@ public class DCSParameterControl : MonoBehaviour
 
             if (dalamTarget)
             {
-                _statusText.text = "✓ TARGET SOP";
+                _statusText.text = "[OK] TARGET SOP";
                 _statusText.color = _warnaTargetOK;
             }
             else if (_nilaiSaatIni < _nilaiTarget - _toleransiTarget)
             {
-                _statusText.text = $"▲ Tambah {_namaParameter}";
+                _statusText.text = $"+ Tambah {_namaParameter}";
                 _statusText.color = _warnaWarning;
             }
             else
             {
-                _statusText.text = $"▼ Kurangi {_namaParameter}";
+                _statusText.text = $"- Kurangi {_namaParameter}";
                 _statusText.color = _warnaBahaya;
             }
         }
