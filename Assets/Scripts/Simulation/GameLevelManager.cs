@@ -139,6 +139,10 @@ public class GameLevelManager : MonoBehaviour
     private bool _level3OreSudahMasukSlurry;
     private bool _tundaTransisiLevel3;
     private bool _flowRateLevel4Dikonfirmasi;
+    private bool _level10CcdComplete;
+    private bool _level11MhpComplete;
+    private bool _level12TailingFilterComplete;
+    private bool _level13DryStackComplete;
     private float _waktuMulaiLevel;
     [SerializeField] private Level3Phase _level3Phase = Level3Phase.Idle;
     [SerializeField] private Level4Phase _level4Phase = Level4Phase.Idle;
@@ -302,13 +306,13 @@ public class GameLevelManager : MonoBehaviour
         {
             level = GameLevel.Level8_Monitoring,
             namaLevel = "Level 8 - Monitoring Ketat",
-            deskripsiQuest = "Pantau parameter dan laporkan kondisi stabil setelah koreksi selesai.",
+            deskripsiQuest = "Stabilkan suhu, tekanan, dan RPM autoclave dari DCS, lalu laporkan kondisi aman.",
             nomorTombolDCS = 8,
             butuhVoiceReport = true,
             kataKunciVoice = "parameter stabil",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
-            laporanVoiceLengkap = "Field, parameter stabil. Koreksi selesai dan operasi kembali dalam batas SOP.",
+            laporanVoiceLengkap = "DCS, parameter stabil. Suhu, tekanan, dan RPM kembali dalam batas SOP.",
             audioBalasanNPC = "audio_level8_balasan",
             targetSuhu = 252f,
             targetTekanan = 47.5f,
@@ -319,13 +323,13 @@ public class GameLevelManager : MonoBehaviour
         {
             level = GameLevel.Level9_FlashVessel,
             namaLevel = "Level 9 - Flash Vessel",
-            deskripsiQuest = "Pastikan pelepasan tekanan berjalan normal, lalu kirim laporan aman.",
+            deskripsiQuest = "Buka letdown valve, amati flash vessel, dan pastikan tekanan turun stabil.",
             nomorTombolDCS = 9,
             butuhVoiceReport = true,
             kataKunciVoice = "flash vessel normal",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
-            laporanVoiceLengkap = "DCS, flash vessel normal. Tekanan turun ke dua belas atmosfer dan pelepasan uap dalam kondisi aman.",
+            laporanVoiceLengkap = "DCS, flash vessel normal. Tekanan turun ke dua belas atmosfer dan pelepasan uap aman.",
             audioBalasanNPC = "audio_level9_balasan",
             targetTekanan = 12f
         });
@@ -334,55 +338,57 @@ public class GameLevelManager : MonoBehaviour
         {
             level = GameLevel.Level10_CCD,
             namaLevel = "Level 10 - CCD Activation",
-            deskripsiQuest = "Aktifkan CCD dan laporkan proses separasi padat-cair dimulai.",
+            deskripsiQuest = "Aktifkan rangkaian CCD, amati pemisahan padat-cair, lalu laporkan.",
             nomorTombolDCS = 10,
             butuhVoiceReport = true,
             kataKunciVoice = "ccd aktif",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
-            laporanVoiceLengkap = "Field, sistem CCD aktif. Pemisahan padat dan cair sudah dimulai.",
+            laporanVoiceLengkap = "DCS, sistem CCD aktif. Pemisahan padat dan cair berjalan stabil.",
             audioBalasanNPC = "audio_level10_balasan"
         });
 
         TambahLevel(new LevelData
         {
             level = GameLevel.Level11_MHP,
-            namaLevel = "Level 11 - MHP Sampling",
-            deskripsiQuest = "Ambil sampel MHP dan kirim laporan hasil presipitasi.",
+            namaLevel = "Level 11 - Neutralization & MHP Sampling",
+            deskripsiQuest = "Netralisasi larutan hasil CCD, bentuk MHP, lalu ambil sampel produk.",
             nomorTombolDCS = 11,
             butuhVoiceReport = true,
             kataKunciVoice = "mhp terbentuk",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
-            laporanVoiceLengkap = "DCS, MHP terbentuk. Sampel presipitasi menunjukkan produk utama dalam kondisi normal.",
-            audioBalasanNPC = "audio_level11_balasan"
+            laporanVoiceLengkap = "DCS, MHP terbentuk. pH netralisasi stabil dan sampel produk siap.",
+            audioBalasanNPC = "audio_level11_balasan",
+            targetPH = 5.5f
         });
 
         TambahLevel(new LevelData
         {
             level = GameLevel.Level12_TailingDischarge,
-            namaLevel = "Level 12 - Tailing Discharge",
-            deskripsiQuest = "Alirkan tailing ke sistem netralisasi dan laporkan status pembuangan.",
+            namaLevel = "Level 12 - Tailing Neutralization & Filter Press",
+            deskripsiQuest = "Netralisasi tailing, jalankan filter press, dan pastikan cake siap dikirim ke dry stack.",
             nomorTombolDCS = 12,
             butuhVoiceReport = true,
             kataKunciVoice = "limbah dialirkan",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
-            laporanVoiceLengkap = "Field, limbah tailing sudah dialirkan ke tangki netralisasi. Sistem pembuangan aman.",
-            audioBalasanNPC = "audio_level12_balasan"
+            laporanVoiceLengkap = "DCS, limbah tailing sudah dinetralkan. Filter press selesai dan cake siap ke dry stack.",
+            audioBalasanNPC = "audio_level12_balasan",
+            targetPH = 7.5f
         });
 
         TambahLevel(new LevelData
         {
             level = GameLevel.Level13_TailingWaste,
-            namaLevel = "Level 13 - Tailing Waste Management",
-            deskripsiQuest = "Naikkan pH tailing, jalankan filter press, lalu kirim laporan akhir.",
+            namaLevel = "Level 13 - Dry Stack Tailing",
+            deskripsiQuest = "Polishing pH tailing ke 8.5, tekan cake sampai moisture di bawah 25%, lalu amankan ke dry stack.",
             nomorTombolDCS = 13,
             butuhVoiceReport = true,
             kataKunciVoice = "tailing aman",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
-            laporanVoiceLengkap = "DCS, tailing aman. pH delapan koma lima dan filter press selesai sesuai prosedur lingkungan.",
+            laporanVoiceLengkap = "DCS, netralisasi berhasil. pH delapan koma lima dan tailing aman di dry stack.",
             audioBalasanNPC = "audio_level13_balasan",
             targetPH = 8.5f
         });
@@ -476,33 +482,33 @@ public class GameLevelManager : MonoBehaviour
                 break;
             case GameLevel.Level8_Monitoring:
                 data.kataKunciVoice = "parameter stabil";
-                data.laporanVoiceLengkap = "Field, parameter stabil. Koreksi selesai dan operasi kembali dalam batas SOP.";
+                data.laporanVoiceLengkap = "DCS, parameter stabil. Suhu, tekanan, dan RPM kembali dalam batas SOP.";
                 data.aliasTambahanPerBaris = "parameter stable\noperation stable";
                 break;
             case GameLevel.Level9_FlashVessel:
                 data.kataKunciVoice = "flash vessel normal";
-                data.laporanVoiceLengkap = "DCS, flash vessel normal. Tekanan turun ke dua belas atmosfer dan pelepasan uap dalam kondisi aman.";
-                data.aliasTambahanPerBaris = "pressure release safe";
+                data.laporanVoiceLengkap = "DCS, flash vessel normal. Tekanan turun ke dua belas atmosfer dan pelepasan uap aman.";
+                data.aliasTambahanPerBaris = "flash vessel normal\npressure release safe";
                 break;
             case GameLevel.Level10_CCD:
                 data.kataKunciVoice = "ccd aktif";
-                data.laporanVoiceLengkap = "Field, sistem CCD aktif. Pemisahan padat dan cair sudah dimulai.";
+                data.laporanVoiceLengkap = "DCS, sistem CCD aktif. Pemisahan padat dan cair berjalan stabil.";
                 data.aliasTambahanPerBaris = "ccd active\nseparation started";
                 break;
             case GameLevel.Level11_MHP:
                 data.kataKunciVoice = "mhp terbentuk";
-                data.laporanVoiceLengkap = "DCS, MHP terbentuk. Sampel presipitasi menunjukkan produk utama dalam kondisi normal.";
-                data.aliasTambahanPerBaris = "mhp formed\nprecipitation normal";
+                data.laporanVoiceLengkap = "DCS, MHP terbentuk. pH netralisasi stabil dan sampel produk siap.";
+                data.aliasTambahanPerBaris = "mhp formed\nprecipitation normal\nmhp sample ready";
                 break;
             case GameLevel.Level12_TailingDischarge:
                 data.kataKunciVoice = "limbah dialirkan";
-                data.laporanVoiceLengkap = "Field, limbah tailing sudah dialirkan ke tangki netralisasi. Sistem pembuangan aman.";
-                data.aliasTambahanPerBaris = "tailing discharge safe\nwaste transferred";
+                data.laporanVoiceLengkap = "DCS, limbah tailing sudah dinetralkan. Filter press selesai dan cake siap ke dry stack.";
+                data.aliasTambahanPerBaris = "tailing discharge safe\nwaste transferred\nfilter press complete";
                 break;
             case GameLevel.Level13_TailingWaste:
                 data.kataKunciVoice = "tailing aman";
-                data.laporanVoiceLengkap = "DCS, tailing aman. pH delapan koma lima dan filter press selesai sesuai prosedur lingkungan.";
-                data.aliasTambahanPerBaris = "filter press complete";
+                data.laporanVoiceLengkap = "DCS, netralisasi berhasil. pH delapan koma lima dan tailing aman di dry stack.";
+                data.aliasTambahanPerBaris = "tailing safe\npH 8.5\ndry stack aman\ndry stack safe";
                 break;
             case GameLevel.Level14_Emergency:
                 data.kataKunciVoice = "emergency";
@@ -591,6 +597,10 @@ public class GameLevelManager : MonoBehaviour
         _dcsSudahDilihat = false;
         _level3OreSudahMasukSlurry = false;
         _flowRateLevel4Dikonfirmasi = false;
+        _level10CcdComplete = false;
+        _level11MhpComplete = false;
+        _level12TailingFilterComplete = false;
+        _level13DryStackComplete = false;
         _tundaTransisiLevel3 = false;
         _waktuMulaiLevel = Time.time;
 
@@ -728,6 +738,43 @@ public class GameLevelManager : MonoBehaviour
         if (data.nomorTombolDCS > 0 && !_dcsTombolSudahDitekan)
         {
             Log("VOICE", $"Urutan belum benar. Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level8_Monitoring && !ParameterAutoklaveSesuaiSOP())
+        {
+            Log("VOICE", "Parameter belum stabil. Koreksi suhu, tekanan, dan RPM sampai masuk batas SOP dulu.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level9_FlashVessel &&
+            Mathf.Abs(_tekananSaatIni - data.targetTekanan) > 1.5f)
+        {
+            Log("VOICE", "Flash vessel belum stabil. Tunggu tekanan turun ke 12 atm dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level10_CCD && !_level10CcdComplete)
+        {
+            Log("VOICE", "CCD belum stabil. Tunggu pemisahan padat-cair selesai dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level11_MHP && !_level11MhpComplete)
+        {
+            Log("VOICE", "MHP belum siap. Tunggu neutralization dan sampling selesai dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level12_TailingDischarge && !_level12TailingFilterComplete)
+        {
+            Log("VOICE", "Tailing treatment belum selesai. Tunggu netralisasi dan filter press selesai dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level13_TailingWaste && !_level13DryStackComplete)
+        {
+            Log("VOICE", "Dry stack belum aman. Tunggu pH 8.5, moisture cake <25%, dan penyimpanan dry stack selesai dulu.", "orange");
             return false;
         }
 
@@ -1001,6 +1048,42 @@ public class GameLevelManager : MonoBehaviour
     public Level4Phase CurrentLevel4Phase => _level4Phase;
     public bool Level3OreSudahMasukSlurry => _level3OreSudahMasukSlurry;
 
+    public void NotifyLevel10CCDComplete()
+    {
+        if (_currentLevel != GameLevel.Level10_CCD)
+            return;
+
+        _level10CcdComplete = true;
+        Log("LEVEL 10", "CCD separation stable. Final HT report is now allowed.", "green");
+    }
+
+    public void NotifyLevel11MHPComplete()
+    {
+        if (_currentLevel != GameLevel.Level11_MHP)
+            return;
+
+        _level11MhpComplete = true;
+        Log("LEVEL 11", "MHP sample ready. Final HT report is now allowed.", "green");
+    }
+
+    public void NotifyLevel12TailingFilterComplete()
+    {
+        if (_currentLevel != GameLevel.Level12_TailingDischarge)
+            return;
+
+        _level12TailingFilterComplete = true;
+        Log("LEVEL 12", "Tailing neutralization and filter press complete. Final HT report is now allowed.", "green");
+    }
+
+    public void NotifyLevel13DryStackComplete()
+    {
+        if (_currentLevel != GameLevel.Level13_TailingWaste)
+            return;
+
+        _level13DryStackComplete = true;
+        Log("LEVEL 13", "Dry stack tailing secured. Final HT report is now allowed.", "green");
+    }
+
     private void CekParameterLevel4()
     {
         if (_currentLevel != GameLevel.Level4_SlurryPump)
@@ -1214,11 +1297,15 @@ public class GameLevelManager : MonoBehaviour
             case GameLevel.Level12_TailingDischarge:
                 yield return "tailing discharge safe";
                 yield return "waste transferred";
+                yield return "filter press complete";
                 break;
 
             case GameLevel.Level13_TailingWaste:
                 yield return "tailing safe";
+                yield return "pH 8.5";
                 yield return "filter press complete";
+                yield return "dry stack aman";
+                yield return "dry stack safe";
                 break;
 
             case GameLevel.Level14_Emergency:

@@ -145,7 +145,8 @@ public class DCSMonitorUI : MonoBehaviour
     private int _flowCurrentStep = 0;
     private readonly string[] _flowStepNames = {
         "IDLE", "Crusher", "Slurry Tank", "Pre-heater",
-        "Acid Injection", "AUTOCLAVE", "Flash Vessel", "CCD Separator", "MHP Tank"
+        "Acid Injection", "AUTOCLAVE", "Flash Vessel", "CCD Separator",
+        "MHP Tank", "Tailing Neutralization", "Filter Press", "Dry Stack"
     };
 
     // ============================================================
@@ -228,6 +229,8 @@ public class DCSMonitorUI : MonoBehaviour
     {
         if (txtStatusFase == null) return;
 
+        _flowCurrentStep = Mathf.Clamp((int)level, 0, _flowStepNames.Length - 1);
+
         // 1. Update teks status sesuai level
         switch (level)
         {
@@ -293,24 +296,48 @@ public class DCSMonitorUI : MonoBehaviour
             case GameLevelManager.GameLevel.Level9_FlashVessel:
                 txtStatusFase.text = "STATUS: FLASH VESSEL";
                 txtStatusFase.color = warnaBlue;
+                _targetTekanan = 12f;
+                _targetFlow = 430f;
+                _flowCurrentStep = 6;
                 SetValve(ref _valveLetdown, true);
                 SetValve(ref _valveFlash, true);
+                TriggerAlarm("LETDOWN VALVE TERBUKA - TEKANAN MENUJU FLASH VESSEL", false);
                 break;
 
             case GameLevelManager.GameLevel.Level10_CCD:
                 txtStatusFase.text = "STATUS: SEPARASI CCD";
                 txtStatusFase.color = warnaBlue;
+                _flowCurrentStep = 7;
+                _targetFlow = 420f;
+                _targetRPM = 4f;
+                TriggerAlarm("CCD AKTIF - PEMISAHAN PADAT-CAIR DIMULAI", false);
                 break;
 
             case GameLevelManager.GameLevel.Level11_MHP:
-                txtStatusFase.text = "STATUS: PRESIPITASI MHP";
+                txtStatusFase.text = "STATUS: NETRALISASI & MHP";
                 txtStatusFase.color = warnaHijau;
+                _flowCurrentStep = 8;
+                _targetRPM = 35f;
+                TriggerAlarm("MHP TRAIN AKTIF - NETRALISASI DAN PRESIPITASI BERJALAN", false);
                 break;
 
             case GameLevelManager.GameLevel.Level12_TailingDischarge:
-            case GameLevelManager.GameLevel.Level13_TailingWaste:
-                txtStatusFase.text = "STATUS: DISPOSAL TAILING";
+                txtStatusFase.text = "STATUS: TAILING FILTER PRESS";
                 txtStatusFase.color = warnaKuning;
+                _flowCurrentStep = 10;
+                _targetFlow = 360f;
+                _targetRPM = 28f;
+                TriggerAlarm("TAILING TREATMENT AKTIF - NETRALISASI DAN FILTER PRESS", false);
+                break;
+
+            case GameLevelManager.GameLevel.Level13_TailingWaste:
+                txtStatusFase.text = "STATUS: DRY STACK TAILING";
+                txtStatusFase.color = warnaKuning;
+                _flowCurrentStep = 11;
+                _targetFlow = 260f;
+                _targetRPM = 0f;
+                _pH = 7.5f;
+                TriggerAlarm("DRY STACK AKTIF - CEK pH 8.5 DAN MOISTURE CAKE", false);
                 break;
 
             case GameLevelManager.GameLevel.Level14_Emergency:
@@ -321,7 +348,7 @@ public class DCSMonitorUI : MonoBehaviour
         }
 
         // 2. Update flow step berdasarkan level
-        _flowCurrentStep = Mathf.Clamp((int)level, 0, 8);
+        _flowCurrentStep = Mathf.Clamp(_flowCurrentStep, 0, _flowStepNames.Length - 1);
         UpdateFlowTracker();
     }
 
@@ -413,7 +440,17 @@ public class DCSMonitorUI : MonoBehaviour
                 {
                     _flowRate = Mathf.Clamp(_flowRate + Random.Range(-2f, 2f), _targetFlow - 20f, _targetFlow + 20f);
                 }
-                _pH = Mathf.Clamp(_pH + Random.Range(-0.02f, 0.02f), 0.7f, 1.3f);
+                if (GameLevelManager.Instance != null &&
+                    (GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level11_MHP ||
+                     GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level12_TailingDischarge ||
+                     GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level13_TailingWaste))
+                {
+                    _pH = Mathf.MoveTowards(_pH, GameLevelManager.Instance.PH, 0.35f);
+                }
+                else
+                {
+                    _pH = Mathf.Clamp(_pH + Random.Range(-0.02f, 0.02f), 0.7f, 1.3f);
+                }
                 _scaleLevel = Mathf.Clamp(_scaleLevel + Random.Range(-0.05f, 0.1f), 10f, 40f);
 
                 _nikel = Mathf.Clamp(_nikel + Random.Range(-0.2f, 0.3f), 83f, 95f);
@@ -606,7 +643,25 @@ public class DCSMonitorUI : MonoBehaviour
             txtFlowCurrentStep.text = $"CAIRAN DI: {(_flowCurrentStep < _flowStepNames.Length ? _flowStepNames[_flowCurrentStep] : "—")}";
 
         if (txtFlowProgress != null)
-            txtFlowProgress.text = $"PROGRESS: {_flowCurrentStep}/8 Titik";
+            txtFlowProgress.text = $"PROGRESS: {_flowCurrentStep}/{_flowStepNames.Length - 1} Titik";
+    }
+
+    private Color GetPHDisplayColor()
+    {
+        if (GameLevelManager.Instance == null)
+            return _pH > 1.5f ? warnaKuning : warnaHijau;
+
+        switch (GameLevelManager.Instance.CurrentLevel)
+        {
+            case GameLevelManager.GameLevel.Level11_MHP:
+                return _pH >= 5.2f && _pH <= 5.8f ? warnaHijau : warnaKuning;
+            case GameLevelManager.GameLevel.Level12_TailingDischarge:
+                return _pH >= 7.1f && _pH <= 7.9f ? warnaHijau : warnaKuning;
+            case GameLevelManager.GameLevel.Level13_TailingWaste:
+                return _pH >= 8.0f && _pH <= 9.0f ? warnaHijau : warnaKuning;
+            default:
+                return _pH > 1.5f ? warnaKuning : warnaHijau;
+        }
     }
 
     // ============================================================
@@ -629,7 +684,7 @@ public class DCSMonitorUI : MonoBehaviour
         if (txtPH != null)
         {
             txtPH.text = $"pH {_pH:F2}";
-            txtPH.color = _pH > 1.5f ? warnaKuning : warnaHijau;
+            txtPH.color = GetPHDisplayColor();
         }
 
         if (txtFlowRate != null)
