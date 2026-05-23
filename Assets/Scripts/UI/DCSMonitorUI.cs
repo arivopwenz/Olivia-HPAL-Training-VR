@@ -341,7 +341,7 @@ public class DCSMonitorUI : MonoBehaviour
                 break;
 
             case GameLevelManager.GameLevel.Level14_Emergency:
-                txtStatusFase.text = "STATUS: ⚠ DARURAT!";
+                txtStatusFase.text = "STATUS: DARURAT!";
                 txtStatusFase.color = warnaMerah;
                 OnDaruratDimulai();
                 break;
@@ -526,11 +526,11 @@ public class DCSMonitorUI : MonoBehaviour
 
         if (txtESDStatus != null)
         {
-            txtESDStatus.text = "⚠ DARURAT! TEKAN ESD SEGERA!";
+            txtESDStatus.text = "DARURAT! TEKAN ESD SEGERA!";
             txtESDStatus.color = warnaMerah;
         }
 
-        if (txtAlarm != null) txtAlarm.text = "‼ KONDISI DARURAT — TEKANAN KRITIS! SEGERA TEKAN ESD!";
+        if (txtAlarm != null) txtAlarm.text = "KONDISI DARURAT - TEKANAN KRITIS! SEGERA TEKAN ESD!";
         if (bgAlarm != null) bgAlarm.color = new Color(0.5f, 0.05f, 0.05f, 0.95f);
         _alarmAktif = true;
     }
@@ -567,7 +567,7 @@ public class DCSMonitorUI : MonoBehaviour
 
         if (txtESDStatus != null)
         {
-            txtESDStatus.text = "✅ ESD AKTIF — REAKTOR SHUTDOWN";
+            txtESDStatus.text = "ESD AKTIF - REAKTOR SHUTDOWN";
             txtESDStatus.color = warnaHijau;
         }
 
@@ -580,7 +580,7 @@ public class DCSMonitorUI : MonoBehaviour
         if (GameLevelManager.Instance != null &&
             GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level14_Emergency)
         {
-            GameLevelManager.Instance.SelesaikanLevel(GameLevelManager.GameLevel.Level14_Emergency);
+            GameLevelManager.Instance.NotifyLevel14EsdPressed();
         }
     }
 

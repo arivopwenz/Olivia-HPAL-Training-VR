@@ -65,10 +65,9 @@ public class PreHeaterVisualSync : MonoBehaviour
     {
         AutoCollectReferences();
 
-        if (_steamAudio == null)
-        {
-            _steamAudio = GetComponent<AudioSource>() ?? gameObject.AddComponent<AudioSource>();
-        }
+        _steamAudio = GetComponent<AudioSource>();
+        if (_steamAudio == null) _steamAudio = gameObject.AddComponent<AudioSource>();
+
         _steamAudio.loop = true;
         _steamAudio.spatialBlend = 1f;
         _steamAudio.maxDistance = 25f;
@@ -162,6 +161,15 @@ public class PreHeaterVisualSync : MonoBehaviour
     private void UpdateSteam(float t, bool aktif)
     {
         if (_steamParticles == null) return;
+
+        if (GameLevelManager.Instance != null)
+        {
+            var level = GameLevelManager.Instance.CurrentLevel;
+            if (level == GameLevelManager.GameLevel.Level5_SteamValve ||
+                level == GameLevelManager.GameLevel.Level7_Autoclave)
+                return;
+        }
+
         var em = _steamParticles.emission;
         if (aktif)
         {
@@ -171,6 +179,8 @@ public class PreHeaterVisualSync : MonoBehaviour
         else
         {
             em.rateOverTime = 0f;
+            if (_steamParticles.isPlaying)
+                _steamParticles.Stop(true, ParticleSystemStopBehavior.StopEmitting);
         }
     }
 

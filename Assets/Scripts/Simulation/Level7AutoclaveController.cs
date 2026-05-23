@@ -83,6 +83,20 @@ public class Level7AutoclaveController : MonoBehaviour
     [Range(0f, 1f)] [SerializeField] private float _reactorHumVolume = 0.5f;
     [Range(0f, 1f)] [SerializeField] private float _agitatorWhirVolume = 0.35f;
 
+    [Header("=== Heat Recovery Vapor Route ===")]
+    [SerializeField] private ProcessPipeNetwork _pipeNetwork;
+    [SerializeField] private string[] _heatRecoveryRouteIds =
+    {
+        "Autoclave_Vapor_To_HeatReceiver",
+        "HeatReceiver_Internal_Logic",
+        "HeatReceiver_To_Preheater"
+    };
+
+    [Header("=== Heat Recovery Steam FX ===")]
+    [SerializeField] private ParticleSystem[] _heatRecoverySteamFx;
+    [SerializeField] private float _heatRecoverySteamEmission = 42f;
+    [SerializeField] private bool _autoCreateHeatRecoverySteamFx = true;
+
     [Header("=== Timing ===")]
     [SerializeField] private float _fadeTransitionDuration = 2.5f;
 
@@ -110,6 +124,8 @@ public class Level7AutoclaveController : MonoBehaviour
         EnsureXRayMaterial();
         EnsureInnerFluid();
         EnsureAudio();
+        EnsureHeatRecoverySteamFx();
+        SetHeatRecoverySteamFx(false);
         SetXRayObjectsVisible(false);
     }
 
@@ -121,6 +137,7 @@ public class Level7AutoclaveController : MonoBehaviour
     private void OnDisable()
     {
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
+        SetHeatRecoveryFlow(false);
     }
 
     private void OnLevelStarted(GameLevelManager.GameLevel level)
@@ -136,6 +153,7 @@ public class Level7AutoclaveController : MonoBehaviour
             _rpmInspected = false;
             SetXRayObjectsVisible(false);
             RestoreShellMaterial();
+            SetHeatRecoveryFlow(true);
             StartReactorAudio();
             if (_hud != null) _hud.ShowNotifPublic(_msgStart);
 
@@ -151,6 +169,7 @@ public class Level7AutoclaveController : MonoBehaviour
         {
             SetXRayObjectsVisible(false);
             RestoreShellMaterial();
+            SetHeatRecoveryFlow(false);
             StopReactorAudio();
         }
     }
@@ -339,6 +358,7 @@ public class Level7AutoclaveController : MonoBehaviour
         if (_gaugesInspected >= 3 && !_questComplete)
         {
             _questComplete = true;
+            GameLevelManager.Instance?.NotifyLevel7AutoclaveInspectionComplete();
             if (_hud != null) _hud.ShowNotifPublic(_msgAllInspected);
             Debug.Log("[Level7] All 3 gauges inspected. Quest complete.");
         }
@@ -384,6 +404,141 @@ public class Level7AutoclaveController : MonoBehaviour
     {
         if (_reactorHumAudio != null) _reactorHumAudio.Stop();
         if (_agitatorWhirAudio != null) _agitatorWhirAudio.Stop();
+    }
+
+    private void SetHeatRecoveryFlow(bool active)
+    {
+        EnsureHeatRecoverySteamFx();
+
+        if (_pipeNetwork == null)
+        {
+            var mesinUtama = GameObject.Find("Mesin Utama");
+            if (mesinUtama != null)
+                _pipeNetwork = mesinUtama.GetComponent<ProcessPipeNetwork>();
+        }
+
+        if (_pipeNetwork == null || _heatRecoveryRouteIds == null)
+            return;
+
+        for (int i = 0; i < _heatRecoveryRouteIds.Length; i++)
+        {
+            string routeId = _heatRecoveryRouteIds[i];
+            if (!string.IsNullOrWhiteSpace(routeId))
+                _pipeNetwork.SetRouteFlowActive(routeId, active);
+        }
+
+        SetHeatRecoverySteamFx(active);
+    }
+
+    private void EnsureHeatRecoverySteamFx()
+    {
+        if (_heatRecoverySteamFx != null && _heatRecoverySteamFx.Length > 0)
+            return;
+
+        var found = new System.Collections.Generic.List<ParticleSystem>();
+        foreach (var ps in Resources.FindObjectsOfTypeAll<ParticleSystem>())
+        {
+            if (ps == null || !ps.gameObject.scene.IsValid()) continue;
+            string n = ps.gameObject.name;
+            if (n.StartsWith("HR_Steam") || n == "HeatRecovery_SteamFX_Group")
+                found.Add(ps);
+        }
+
+        if (found.Count == 0 && _autoCreateHeatRecoverySteamFx)
+        {
+            var parent = GameObject.Find("Autoclave_HeatRecovery_System");
+            Transform root = parent != null ? parent.transform : transform;
+            found.Add(CreateHeatRecoverySteamFx("HR_Steam_Riser_FX", new Vector3(17.125f, 7.05f, 34.597f), root));
+            found.Add(CreateHeatRecoverySteamFx("HR_Steam_Run_FX", new Vector3(24.2f, 7.05f, 40.4f), root));
+            found.Add(CreateHeatRecoverySteamFx("HR_Steam_PreheaterTieIn_FX", new Vector3(34.05f, 5.95f, 46.10f), root));
+        }
+
+        _heatRecoverySteamFx = found.ToArray();
+    }
+
+    private ParticleSystem CreateHeatRecoverySteamFx(string name, Vector3 position, Transform parent)
+    {
+        var go = new GameObject(name);
+        if (parent != null) go.transform.SetParent(parent, true);
+        go.transform.position = position;
+        go.transform.rotation = Quaternion.Euler(-35f, 0f, 0f);
+        var ps = go.AddComponent<ParticleSystem>();
+        ConfigureHeatRecoverySteamFx(ps);
+        return ps;
+    }
+
+    private void ConfigureHeatRecoverySteamFx(ParticleSystem ps)
+    {
+        if (ps == null) return;
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
+        var main = ps.main;
+        main.playOnAwake = false;
+        main.loop = true;
+        main.duration = 4f;
+        main.startLifetime = new ParticleSystem.MinMaxCurve(0.7f, 1.6f);
+        main.startSpeed = new ParticleSystem.MinMaxCurve(0.35f, 1.1f);
+        main.startSize = new ParticleSystem.MinMaxCurve(0.18f, 0.5f);
+        main.startColor = new Color(1f, 0.92f, 0.72f, 0.42f);
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 160;
+
+        var emission = ps.emission;
+        emission.enabled = true;
+        emission.rateOverTime = 0f;
+
+        var shape = ps.shape;
+        shape.enabled = true;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 18f;
+        shape.radius = 0.22f;
+        shape.length = 0.55f;
+
+        var velocity = ps.velocityOverLifetime;
+        velocity.enabled = true;
+        velocity.space = ParticleSystemSimulationSpace.World;
+        velocity.x = new ParticleSystem.MinMaxCurve(0f, 0f);
+        velocity.y = new ParticleSystem.MinMaxCurve(0.15f, 0.55f);
+        velocity.z = new ParticleSystem.MinMaxCurve(0f, 0f);
+
+        var color = ps.colorOverLifetime;
+        color.enabled = true;
+        var gradient = new Gradient();
+        gradient.SetKeys(
+            new[] { new GradientColorKey(new Color(1f, 0.86f, 0.55f), 0f), new GradientColorKey(Color.white, 1f) },
+            new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.42f, 0.18f), new GradientAlphaKey(0f, 1f) });
+        color.color = gradient;
+
+        var renderer = ps.GetComponent<ParticleSystemRenderer>();
+        renderer.renderMode = ParticleSystemRenderMode.Billboard;
+        var shader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
+        if (shader == null) shader = Shader.Find("Particles/Standard Unlit");
+        if (shader == null) shader = Shader.Find("Sprites/Default");
+        if (shader != null)
+        {
+            var mat = new Material(shader);
+            mat.name = "HR_Steam_FX_Material";
+            mat.color = new Color(1f, 0.9f, 0.65f, 0.38f);
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", mat.color);
+            if (mat.HasProperty("_Color")) mat.SetColor("_Color", mat.color);
+            renderer.sharedMaterial = mat;
+        }
+    }
+
+    private void SetHeatRecoverySteamFx(bool active)
+    {
+        if (_heatRecoverySteamFx == null) return;
+        for (int i = 0; i < _heatRecoverySteamFx.Length; i++)
+        {
+            var ps = _heatRecoverySteamFx[i];
+            if (ps == null) continue;
+            ConfigureHeatRecoverySteamFx(ps);
+            var emission = ps.emission;
+            emission.rateOverTime = active ? _heatRecoverySteamEmission : 0f;
+            ps.gameObject.SetActive(true);
+            if (active) ps.Play(true);
+            else ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
     }
 
     private AudioClip GenerateReactorHum(float duration, int sampleRate)
@@ -484,6 +639,12 @@ public class Level7AutoclaveController : MonoBehaviour
         {
             var go = GameObject.Find("SpawnPoint_DCS");
             if (go != null) _teleportTargetDcs = go.transform;
+        }
+        if (_pipeNetwork == null)
+        {
+            var mesinUtama = GameObject.Find("Mesin Utama");
+            if (mesinUtama != null)
+                _pipeNetwork = mesinUtama.GetComponent<ProcessPipeNetwork>();
         }
     }
 

@@ -139,10 +139,14 @@ public class GameLevelManager : MonoBehaviour
     private bool _level3OreSudahMasukSlurry;
     private bool _tundaTransisiLevel3;
     private bool _flowRateLevel4Dikonfirmasi;
+    private bool _level5PreheaterReady;
+    private bool _level6AcidComplete;
+    private bool _level7AutoclaveInspected;
     private bool _level10CcdComplete;
     private bool _level11MhpComplete;
     private bool _level12TailingFilterComplete;
     private bool _level13DryStackComplete;
+    private bool _level14EsdPressed;
     private float _waktuMulaiLevel;
     [SerializeField] private Level3Phase _level3Phase = Level3Phase.Idle;
     [SerializeField] private Level4Phase _level4Phase = Level4Phase.Idle;
@@ -397,13 +401,13 @@ public class GameLevelManager : MonoBehaviour
         {
             level = GameLevel.Level14_Emergency,
             namaLevel = "Level 14 - Darurat K3",
-            deskripsiQuest = "Laporkan kebocoran dan evakuasi, lalu tekan tombol ESD merah.",
+            deskripsiQuest = "Deteksi kebocoran/pressure critical, laporkan emergency via HT, lalu tekan tombol ESD merah.",
             nomorTombolDCS = 14,
             butuhVoiceReport = true,
             kataKunciVoice = "emergency",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
-            laporanVoiceLengkap = "Emergency, emergency. Kebocoran terdeteksi di sektor proses. Semua personel segera evakuasi.",
+            laporanVoiceLengkap = "Emergency, emergency. Kebocoran terdeteksi di sektor proses. Tekanan kritis, aktifkan ESD dan evakuasi.",
             audioBalasanNPC = "audio_level14_balasan"
         });
 
@@ -597,10 +601,14 @@ public class GameLevelManager : MonoBehaviour
         _dcsSudahDilihat = false;
         _level3OreSudahMasukSlurry = false;
         _flowRateLevel4Dikonfirmasi = false;
+        _level5PreheaterReady = false;
+        _level6AcidComplete = false;
+        _level7AutoclaveInspected = false;
         _level10CcdComplete = false;
         _level11MhpComplete = false;
         _level12TailingFilterComplete = false;
         _level13DryStackComplete = false;
+        _level14EsdPressed = false;
         _tundaTransisiLevel3 = false;
         _waktuMulaiLevel = Time.time;
 
@@ -738,6 +746,24 @@ public class GameLevelManager : MonoBehaviour
         if (data.nomorTombolDCS > 0 && !_dcsTombolSudahDitekan)
         {
             Log("VOICE", $"Urutan belum benar. Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level5_SteamValve && !_level5PreheaterReady)
+        {
+            Log("VOICE", "Pre-heater belum mencapai suhu operasi. Buka katup steam sampai suhu minimal 180 C dulu.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level6_AcidInjection && !_level6AcidComplete)
+        {
+            Log("VOICE", "Acid injection belum sesuai SOP. Capai 350 kg/ton dan pH 1.0 dulu.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level7_Autoclave && !_level7AutoclaveInspected)
+        {
+            Log("VOICE", "Autoclave belum selesai diinspeksi. Cek gauge suhu, tekanan, dan RPM dulu.", "orange");
             return false;
         }
 
@@ -1018,7 +1044,11 @@ public class GameLevelManager : MonoBehaviour
     public void SetSuhu(float nilai) => _suhuSaatIni = nilai;
     public void SetTekanan(float nilai) => _tekananSaatIni = nilai;
     public void SetRPM(float nilai) => _rpmSaatIni = nilai;
-    public void SetPH(float nilai) => _phSaatIni = nilai;
+    public void SetPH(float nilai)
+    {
+        _phSaatIni = nilai;
+        CekParameterLevel6();
+    }
 
     public float FlowRate => _flowRateSaatIni;
     public float AcidRatio => _acidRatioSaatIni;
@@ -1047,6 +1077,33 @@ public class GameLevelManager : MonoBehaviour
     }
     public Level4Phase CurrentLevel4Phase => _level4Phase;
     public bool Level3OreSudahMasukSlurry => _level3OreSudahMasukSlurry;
+
+    public void NotifyLevel5PreheaterReady()
+    {
+        if (_currentLevel != GameLevel.Level5_SteamValve)
+            return;
+
+        _level5PreheaterReady = true;
+        Log("LEVEL 5", "Pre-heater reached operating temperature. Final HT report is now allowed.", "green");
+    }
+
+    public void NotifyLevel6AcidInjectionComplete()
+    {
+        if (_currentLevel != GameLevel.Level6_AcidInjection)
+            return;
+
+        _level6AcidComplete = true;
+        Log("LEVEL 6", "Acid ratio and pH reached SOP. Final HT report is now allowed.", "green");
+    }
+
+    public void NotifyLevel7AutoclaveInspectionComplete()
+    {
+        if (_currentLevel != GameLevel.Level7_Autoclave)
+            return;
+
+        _level7AutoclaveInspected = true;
+        Log("LEVEL 7", "Autoclave gauges inspected. Final HT report is now allowed.", "green");
+    }
 
     public void NotifyLevel10CCDComplete()
     {
@@ -1084,6 +1141,19 @@ public class GameLevelManager : MonoBehaviour
         Log("LEVEL 13", "Dry stack tailing secured. Final HT report is now allowed.", "green");
     }
 
+    public void NotifyLevel14EsdPressed()
+    {
+        if (_currentLevel != GameLevel.Level14_Emergency)
+            return;
+
+        _level14EsdPressed = true;
+        SetSuhu(90f);
+        SetTekanan(1.5f);
+        SetRPM(0f);
+        Log("LEVEL 14", "ESD aktif. Menunggu laporan HT emergency jika belum diterima.", "green");
+        CekKondisiLevelSelesai();
+    }
+
     private void CekParameterLevel4()
     {
         if (_currentLevel != GameLevel.Level4_SlurryPump)
@@ -1114,10 +1184,13 @@ public class GameLevelManager : MonoBehaviour
             return;
 
         var data = _dataLevel[GameLevel.Level6_AcidInjection];
-        if (Mathf.Abs(_acidRatioSaatIni - data.targetAcidRatio) <= 10f)
+        bool acidOK = Mathf.Abs(_acidRatioSaatIni - data.targetAcidRatio) <= 10f;
+        bool phOK = Mathf.Abs(_phSaatIni - data.targetPH) <= 0.15f || _phSaatIni <= 1.1f;
+        if (acidOK && phOK)
         {
-            Log("ACID OK", $"Rasio asam {_acidRatioSaatIni} kg/ton. Target {data.targetAcidRatio} kg/ton tercapai.", "green");
+            Log("ACID OK", $"Rasio asam {_acidRatioSaatIni} kg/ton dan pH {_phSaatIni:F1}. Target SOP tercapai.", "green");
             _dcsTombolSudahDitekan = true;
+            _level6AcidComplete = true;
             CekKondisiLevelSelesai();
         }
     }
@@ -1145,6 +1218,8 @@ public class GameLevelManager : MonoBehaviour
         var data = _dataLevel[_currentLevel];
         bool tombolOK = data.nomorTombolDCS == 0 || _dcsTombolSudahDitekan;
         bool voiceOK = !data.butuhVoiceReport || _voiceReportSudahDilakukan;
+        if (_currentLevel == GameLevel.Level14_Emergency)
+            tombolOK = tombolOK && _level14EsdPressed;
 
         if (tombolOK && voiceOK)
             SelesaikanLevel(_currentLevel);
@@ -1232,11 +1307,14 @@ public class GameLevelManager : MonoBehaviour
         switch (level)
         {
             case GameLevel.Level1_APD:
+                yield return "apd lengkap";
                 yield return "ppe complete";
                 yield return "safety gear complete";
                 break;
 
             case GameLevel.Level2_DCSPrep:
+                yield return "siapkan area";
+                yield return "siapkan area crusher";
                 yield return "prepare area";
                 yield return "crusher area ready";
                 break;
@@ -1244,37 +1322,52 @@ public class GameLevelManager : MonoBehaviour
             case GameLevel.Level3_OreSlurry:
                 if (string.Equals(laporanLengkap, _dataLevel[GameLevel.Level3_OreSlurry].laporanVoiceAwal, StringComparison.Ordinal))
                 {
+                    yield return "jalankan alur ore";
+                    yield return "jalankan ore";
                     yield return "start ore flow";
                     yield return "start ore line";
                 }
                 else
                 {
+                    yield return "ore masuk";
+                    yield return "ore sudah masuk";
+                    yield return "ore masuk slurry";
                     yield return "ore ready";
                     yield return "ore in slurry tank";
                 }
                 break;
 
             case GameLevel.Level4_SlurryPump:
+                yield return "slurry pump aktif";
+                yield return "cairan sudah di preheater";
+                yield return "slurry masuk preheater";
                 yield return "slurry pump active";
                 yield return "flow set";
                 break;
 
             case GameLevel.Level5_SteamValve:
+                yield return "katup steam terbuka";
                 yield return "steam valve open";
                 yield return "heater temperature up";
                 break;
 
             case GameLevel.Level6_AcidInjection:
+                yield return "acid aktif";
+                yield return "injeksi asam aktif";
                 yield return "acid injection active";
                 yield return "acid ratio set";
                 break;
 
             case GameLevel.Level7_Autoclave:
+                yield return "suhu 250";
+                yield return "suhu dua ratus lima puluh";
+                yield return "tekanan 50";
                 yield return "autoclave stable";
                 yield return "temperature pressure rpm";
                 break;
 
             case GameLevel.Level8_Monitoring:
+                yield return "parameter stabil";
                 yield return "parameter stable";
                 yield return "operation stable";
                 break;
@@ -1285,22 +1378,26 @@ public class GameLevelManager : MonoBehaviour
                 break;
 
             case GameLevel.Level10_CCD:
+                yield return "ccd aktif";
                 yield return "ccd active";
                 yield return "separation started";
                 break;
 
             case GameLevel.Level11_MHP:
+                yield return "mhp terbentuk";
                 yield return "mhp formed";
                 yield return "precipitation normal";
                 break;
 
             case GameLevel.Level12_TailingDischarge:
+                yield return "limbah dialirkan";
                 yield return "tailing discharge safe";
                 yield return "waste transferred";
                 yield return "filter press complete";
                 break;
 
             case GameLevel.Level13_TailingWaste:
+                yield return "tailing aman";
                 yield return "tailing safe";
                 yield return "pH 8.5";
                 yield return "filter press complete";

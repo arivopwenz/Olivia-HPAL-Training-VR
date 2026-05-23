@@ -108,7 +108,10 @@ public class SlurryFXController : MonoBehaviour
         go.transform.localPosition = Vector3.zero;
 
         var ps = go.AddComponent<ParticleSystem>();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+
         var main = ps.main;
+        main.playOnAwake = false;
         main.duration = 5f;
         main.loop = true;
         main.startLifetime = new ParticleSystem.MinMaxCurve(1.5f, 3.5f);
@@ -132,7 +135,9 @@ public class SlurryFXController : MonoBehaviour
         var velocityOverLifetime = ps.velocityOverLifetime;
         velocityOverLifetime.enabled = true;
         velocityOverLifetime.space = ParticleSystemSimulationSpace.World;
+        velocityOverLifetime.x = new ParticleSystem.MinMaxCurve(0f, 0f);
         velocityOverLifetime.y = new ParticleSystem.MinMaxCurve(0.4f, _tinggiNaikBubble * 0.5f);
+        velocityOverLifetime.z = new ParticleSystem.MinMaxCurve(0f, 0f);
 
         var sizeOverLifetime = ps.sizeOverLifetime;
         sizeOverLifetime.enabled = true;
@@ -165,15 +170,17 @@ public class SlurryFXController : MonoBehaviour
         Shader sprShader = Shader.Find("Universal Render Pipeline/Particles/Unlit");
         if (sprShader == null) sprShader = Shader.Find("Particles/Standard Unlit");
         if (sprShader == null) sprShader = Shader.Find("Sprites/Default");
-        Material mat = new Material(sprShader);
-        mat.color = _warnaBubble;
-        // Gunakan tekstur lingkaran default Unity
-        Texture2D tex = Resources.GetBuiltinResource<Texture2D>("Default-Particle.psd");
-        if (tex != null) mat.mainTexture = tex;
-        psRenderer.material = mat;
+        if (sprShader != null)
+        {
+            Material mat = new Material(sprShader);
+            mat.color = _warnaBubble;
+            if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", _warnaBubble);
+            if (mat.HasProperty("_Color")) mat.SetColor("_Color", _warnaBubble);
+            psRenderer.material = mat;
+        }
         psRenderer.renderMode = ParticleSystemRenderMode.Billboard;
 
-        ps.Stop();
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
         return ps;
     }
 

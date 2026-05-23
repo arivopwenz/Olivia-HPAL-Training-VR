@@ -317,6 +317,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         if (Mathf.Abs(_acidRatioCurrent - _acidRatioTarget) <= _acidRatioTolerance && _phCurrent <= 1.1f)
         {
             _acidQuestComplete = true;
+            GameLevelManager.Instance?.NotifyLevel6AcidInjectionComplete();
             if (_hud != null) _hud.ShowNotifPublic(_msgAcidComplete);
             Debug.Log("[Level6] Acid injection target reached. Ratio=" + _acidRatioCurrent + " pH=" + _phCurrent);
         }

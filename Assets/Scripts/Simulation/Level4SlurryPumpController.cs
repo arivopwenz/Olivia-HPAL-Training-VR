@@ -42,6 +42,16 @@ public class Level4SlurryPumpController : MonoBehaviour
     [Range(0.5f, 0.99f)] [SerializeField] private float _diameterRelatif = 0.88f;
     [SerializeField] private bool _autoFindPipa = true;
 
+    [Header("=== Process Pipe Network ===")]
+    [SerializeField] private ProcessPipeNetwork _pipeNetwork;
+    [SerializeField] private string[] _level4FlowRouteIds =
+    {
+        "Tank_To_Pump",
+        "Pump_Internal_Logic",
+        "Pump_To_Preheater",
+        "Legacy_Level4_Local"
+    };
+
     [Header("=== Slurry Tank Drain ===")]
     [Tooltip("Slurry_Fill di Slurry Tank yang akan berkurang sambil pipa terisi.")]
     [SerializeField] private Transform _slurryTankFill;
@@ -145,6 +155,7 @@ public class Level4SlurryPumpController : MonoBehaviour
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
         GameLevelManager.OnLevel4PhaseChanged -= OnLevel4PhaseChanged;
         if (_seqCoroutine != null) { StopCoroutine(_seqCoroutine); _seqCoroutine = null; }
+        SetLevel4PipeFlow(false);
         StopPumpSound();
     }
 
@@ -154,6 +165,7 @@ public class Level4SlurryPumpController : MonoBehaviour
         SetHighlight(_pumpHighlightRenderers, false, ref _highlightPumpAktif);
         SetHighlight(_preheaterHighlightRenderers, false, ref _highlightPreheaterAktif);
         HideLiquid();
+        SetLevel4PipeFlow(false);
         StopPumpSound();
 
         // Saat Level 4 mulai → paksa slurry tank ke kondisi PENUH 100%
@@ -192,10 +204,12 @@ public class Level4SlurryPumpController : MonoBehaviour
                 if (_hud != null)
                     _hud.ShowNotifPublic("Flow rate 450 m³/h tercapai. Tahan T dan lapor: 'slurry pump aktif'.");
                 // Mulai pump motor sound (player baru hidupkan pump dengan flow rate tepat)
+                SetLevel4PipeFlow(true);
                 StartPumpSound();
                 break;
 
             case GameLevelManager.Level4Phase.ObservasiPump:
+                SetLevel4PipeFlow(true);
                 StartSequence(SeqTeleportKeFieldDanFillPipa());
                 break;
 
@@ -345,6 +359,7 @@ public class Level4SlurryPumpController : MonoBehaviour
         yield return new WaitForSeconds(_durasiFade * 0.5f);
 
         // Stop pump sound saat fade out
+        SetLevel4PipeFlow(false);
         StopPumpSound();
 
         var dcsTarget = EnsureDcsTarget();
@@ -418,6 +433,29 @@ public class Level4SlurryPumpController : MonoBehaviour
         if (_liquidFillRuntime != null) _liquidFillRuntime.SetActive(false);
     }
 
+    private void SetLevel4PipeFlow(bool active)
+    {
+        if (_pipeNetwork == null)
+        {
+            if (!isActiveAndEnabled || !gameObject.activeInHierarchy)
+                return;
+
+            var mesinUtama = GameObject.Find("Mesin Utama");
+            if (mesinUtama != null)
+                _pipeNetwork = mesinUtama.GetComponent<ProcessPipeNetwork>();
+        }
+
+        if (_pipeNetwork == null || _level4FlowRouteIds == null)
+            return;
+
+        for (int i = 0; i < _level4FlowRouteIds.Length; i++)
+        {
+            string routeId = _level4FlowRouteIds[i];
+            if (!string.IsNullOrWhiteSpace(routeId))
+                _pipeNetwork.SetRouteFlowActive(routeId, active);
+        }
+    }
+
     // ============================================================
     //  PUMP MOTOR SOUND
     // ============================================================
@@ -462,6 +500,8 @@ public class Level4SlurryPumpController : MonoBehaviour
 
     private void StartPumpSound()
     {
+        if (!isActiveAndEnabled || !gameObject.activeInHierarchy) return;
+
         EnsurePumpAudio();
         if (_pumpAudioSource == null) return;
         if (_pumpAudioSource.isPlaying && _pumpAudioSource.volume > 0.1f) return;
@@ -475,7 +515,19 @@ public class Level4SlurryPumpController : MonoBehaviour
     private void StopPumpSound()
     {
         if (_pumpAudioSource == null) return;
-        if (_pumpFadeCoroutine != null) StopCoroutine(_pumpFadeCoroutine);
+        if (_pumpFadeCoroutine != null)
+        {
+            StopCoroutine(_pumpFadeCoroutine);
+            _pumpFadeCoroutine = null;
+        }
+
+        if (!isActiveAndEnabled || !gameObject.activeInHierarchy)
+        {
+            _pumpAudioSource.volume = 0f;
+            _pumpAudioSource.Stop();
+            return;
+        }
+
         _pumpFadeCoroutine = StartCoroutine(FadeAudioVolumeAndStop(_pumpAudioSource, 0f, _pumpFadeInDurasi));
     }
 
@@ -595,6 +647,13 @@ public class Level4SlurryPumpController : MonoBehaviour
             var go = GameObject.Find("Mesin Utama/PreHeater_Field_1/Pipe_FromPump")
                   ?? GameObject.Find("Pipe_FromPump");
             if (go != null) _pipaUtama = go.transform;
+        }
+
+        if (_pipeNetwork == null)
+        {
+            var mesinUtama = GameObject.Find("Mesin Utama");
+            if (mesinUtama != null)
+                _pipeNetwork = mesinUtama.GetComponent<ProcessPipeNetwork>();
         }
 
         if (_pumpAudioPosition == null && _pumpReference != null)

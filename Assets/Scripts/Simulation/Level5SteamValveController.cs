@@ -120,6 +120,11 @@ public class Level5SteamValveController : MonoBehaviour
             UpdateVisuals();
             if (_hud != null) _hud.ShowNotifPublic(_pesanMulai);
         }
+        else
+        {
+            _valveOpenPercent = 0f;
+            UpdateVisuals();
+        }
     }
 
     private void Update()
@@ -235,6 +240,7 @@ public class Level5SteamValveController : MonoBehaviour
         if (_suhuSaatIni >= _suhuMinimumQuest)
         {
             _questTercapai = true;
+            GameLevelManager.Instance?.NotifyLevel5PreheaterReady();
             Debug.Log("[Level5] Suhu Pre-Heater mencapai " + _suhuSaatIni.ToString("F0") + " C. Quest tercapai!");
             if (_hud != null) _hud.ShowNotifPublic(_pesanSuhuTercapai);
         }
