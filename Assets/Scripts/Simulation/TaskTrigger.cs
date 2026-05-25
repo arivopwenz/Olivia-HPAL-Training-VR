@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 /// <summary>
 /// Adapter universal yang menghubungkan interaksi XR Grab/Socket
@@ -55,7 +56,7 @@ public class TaskTrigger : MonoBehaviour
     {
         if (other.CompareTag("Player") || other.GetComponentInChildren<Camera>() != null)
         {
-            Debug.Log($"[AutoEquip] Player menyentuh {gameObject.name}, otomatis memakai {tipeTugas}");
+            Debug.Log($"[AutoEquip] Player menyentuh {gameObject.name}, otomatis memakai {GetEffectiveTaskType()}");
             DoNotify();
         }
     }
@@ -64,7 +65,10 @@ public class TaskTrigger : MonoBehaviour
     {
         if (phaseManager == null) return;
 
-        switch (tipeTugas)
+        TaskType effectiveType = GetEffectiveTaskType();
+        DockApdKeSocketTubuh(effectiveType);
+
+        switch (effectiveType)
         {
             case TaskType.Helm:         phaseManager.OnHelmetWorn();        break;
             case TaskType.Rompi:        phaseManager.OnVestWorn();          break;
@@ -91,5 +95,88 @@ public class TaskTrigger : MonoBehaviour
                 GameLevelManager.Instance?.NotifyDcsViewed();
                 break;
         }
+    }
+
+    private TaskType GetEffectiveTaskType()
+    {
+        XRGrabInteractable grabRoot = GetComponentInParent<XRGrabInteractable>();
+        if (grabRoot == null)
+            return tipeTugas;
+
+        TaskTrigger rootTrigger = grabRoot.GetComponent<TaskTrigger>();
+        return rootTrigger != null ? rootTrigger.tipeTugas : tipeTugas;
+    }
+
+    private void DockApdKeSocketTubuh(TaskType type)
+    {
+        string socketName = SocketTubuhUntuk(type);
+        if (string.IsNullOrEmpty(socketName))
+            return;
+
+        XRGrabInteractable grabRoot = GetComponentInParent<XRGrabInteractable>();
+        Transform item = grabRoot != null ? grabRoot.transform : transform;
+        GameObject socketObject = GameObject.Find(socketName);
+        if (socketObject == null || item == null)
+            return;
+
+        if (grabRoot != null && grabRoot.isSelected && grabRoot.interactionManager != null)
+        {
+            var selecting = new System.Collections.Generic.List<UnityEngine.XR.Interaction.Toolkit.Interactors.IXRSelectInteractor>(grabRoot.interactorsSelecting);
+            foreach (var interactor in selecting)
+                grabRoot.interactionManager.SelectExit(interactor, grabRoot);
+        }
+
+        Rigidbody rb = item.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            rb.linearVelocity = Vector3.zero;
+            rb.angularVelocity = Vector3.zero;
+            rb.isKinematic = true;
+            rb.useGravity = false;
+        }
+
+        ApdDisplayItemStabilizer stabilizer = item.GetComponent<ApdDisplayItemStabilizer>();
+        if (stabilizer != null)
+            stabilizer.enabled = false;
+
+        Vector3 worldScale = item.lossyScale;
+        item.SetParent(socketObject.transform, false);
+        item.localPosition = Vector3.zero;
+        item.localRotation = Quaternion.identity;
+        SetWorldScale(item, worldScale);
+
+        foreach (Renderer renderer in item.GetComponentsInChildren<Renderer>(true))
+            if (renderer != null) renderer.enabled = true;
+        foreach (Collider collider in item.GetComponentsInChildren<Collider>(true))
+            if (collider != null) collider.enabled = true;
+        if (grabRoot != null) grabRoot.enabled = true;
+
+        item.gameObject.SetActive(true);
+    }
+
+    private string SocketTubuhUntuk(TaskType type)
+    {
+        switch (type)
+        {
+            case TaskType.Helm: return "Socket_Helmet";
+            case TaskType.Rompi: return "Socket_Rompi";
+            case TaskType.Kacamata: return "Socket_Glasess";
+            case TaskType.Sepatu: return "Socket_Boots";
+            case TaskType.SarungTangan: return "Socket_Gloves";
+            case TaskType.Respirator: return "Socket_RespiratorMask";
+            case TaskType.EarProtection: return "Socket_EarPlug";
+            case TaskType.RadioHT: return "Socket_WalkieTalkie";
+            default: return null;
+        }
+    }
+
+    private void SetWorldScale(Transform target, Vector3 worldScale)
+    {
+        Vector3 parentScale = target.parent != null ? target.parent.lossyScale : Vector3.one;
+        target.localScale = new Vector3(
+            Mathf.Approximately(parentScale.x, 0f) ? worldScale.x : worldScale.x / parentScale.x,
+            Mathf.Approximately(parentScale.y, 0f) ? worldScale.y : worldScale.y / parentScale.y,
+            Mathf.Approximately(parentScale.z, 0f) ? worldScale.z : worldScale.z / parentScale.z
+        );
     }
 }

@@ -55,6 +55,7 @@ public class LockerHubController : MonoBehaviour
         _phaseManager = Object.FindAnyObjectByType<PhaseManager>();
         _hud = Object.FindAnyObjectByType<PlayerHUD>();
         _teleportManager = Object.FindAnyObjectByType<LevelTeleportManager>();
+        _apdLengkap = _phaseManager != null && _phaseManager.APDLengkapSempurna;
 
         if (_audioSource == null)
         {
@@ -69,13 +70,13 @@ public class LockerHubController : MonoBehaviour
     private void OnEnable()
     {
         PhaseManager.OnAPD7Lengkap += OnApdLengkap;
-        WalkieTalkieManager.OnPTTDilepas += OnPlayerLepasPTT;
+        GameLevelManager.OnVoiceReportAccepted += OnVoiceReportAccepted;
     }
 
     private void OnDisable()
     {
         PhaseManager.OnAPD7Lengkap -= OnApdLengkap;
-        WalkieTalkieManager.OnPTTDilepas -= OnPlayerLepasPTT;
+        GameLevelManager.OnVoiceReportAccepted -= OnVoiceReportAccepted;
     }
 
     private void OnApdLengkap()
@@ -88,12 +89,14 @@ public class LockerHubController : MonoBehaviour
         _hud?.ShowNotifPublic(_pesanCekHT);
     }
 
-    private void OnPlayerLepasPTT()
+    private void OnVoiceReportAccepted(string keyword)
     {
-        if (!_apdLengkap || _sedangProsesKeluar) return;
+        bool apdLengkapSekarang = _apdLengkap || (PhaseManager.Instance != null && PhaseManager.Instance.APDLengkapSempurna);
+        if (!apdLengkapSekarang || _sedangProsesKeluar) return;
         if (GameLevelManager.Instance == null) return;
         if (GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level1_APD) return;
 
+        _apdLengkap = true;
         _sedangProsesKeluar = true;
         StartCoroutine(SequenceKeluarLoker());
     }

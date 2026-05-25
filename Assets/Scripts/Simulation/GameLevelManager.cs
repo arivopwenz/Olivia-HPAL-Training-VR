@@ -731,6 +731,9 @@ public class GameLevelManager : MonoBehaviour
             return false;
 
         var data = _dataLevel[_currentLevel];
+        if (_currentLevel == GameLevel.Level1_APD)
+            return HandleVoiceLevel1(data, keyword);
+
         if (_currentLevel == GameLevel.Level3_OreSlurry)
             return HandleVoiceLevel3(data, keyword);
 
@@ -814,6 +817,32 @@ public class GameLevelManager : MonoBehaviour
         OnVoiceReportAccepted?.Invoke(keyword);
         Log("VOICE REPORT", $"Laporan diterima: '<i>{keyword}</i>'", "cyan");
         CekKondisiLevelSelesai();
+        return true;
+    }
+
+    private bool HandleVoiceLevel1(LevelData data, string keyword)
+    {
+        if (_phaseManager == null)
+            _phaseManager = FindFirstObjectByType<PhaseManager>();
+
+        if (_phaseManager != null && !_phaseManager.APDLengkapSempurna)
+        {
+            Log("VOICE", "APD belum lengkap. Walkie Talkie belum boleh menyelesaikan Level 1.", "orange");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(keyword))
+        {
+            Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk Level 1.", "orange");
+            return false;
+        }
+
+        if (!VoiceReportCocok(data, keyword))
+            Log("VOICE", $"Level 1 menerima frasa WT non-kosong sebagai cek radio: '<i>{keyword}</i>'", "cyan");
+
+        _voiceReportSudahDilakukan = true;
+        OnVoiceReportAccepted?.Invoke(keyword);
+        Log("VOICE REPORT", $"Laporan APD Level 1 diterima: '<i>{keyword}</i>'", "cyan");
         return true;
     }
 

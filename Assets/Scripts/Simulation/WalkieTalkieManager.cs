@@ -32,6 +32,7 @@ public class WalkieTalkieManager : MonoBehaviour
     [SerializeField] private string _animShowTrigger = "Show";
     [SerializeField] private string _animHideTrigger = "Hide";
     [SerializeField] private bool _autoShowOnPTT = true;
+    [SerializeField] private bool _hidePhysicalWalkieSaatPTTSelesai = false;
 
     [Header("=== Voice Recognition ===")]
     [SerializeField] private float _delaySebelumDiproses = 1.35f;
@@ -70,6 +71,7 @@ public class WalkieTalkieManager : MonoBehaviour
     private bool _adaKeywordPadaSesiPtt;
     private Coroutine _coroutineProsesLaporan;
     private Coroutine _coroutineSmoothShow;
+    private bool _pttDariWalkieFisik;
     private AudioClip _debugMicClip;
     private string _debugMicDevice;
     private bool _debugMicMonitoring;
@@ -210,7 +212,7 @@ public class WalkieTalkieManager : MonoBehaviour
             _coroutineProsesLaporan = null;
         }
 
-        if (_autoShowOnPTT)
+        if (_autoShowOnPTT && !_pttDariWalkieFisik)
             TampilkanHT(true);
 
         if (_audioSourceRadio != null && _suaraStaticBuka != null)
@@ -247,7 +249,7 @@ public class WalkieTalkieManager : MonoBehaviour
         _pttSedangDitekan = false;
         OnPTTDilepas?.Invoke();
 
-        if (_autoShowOnPTT)
+        if (_autoShowOnPTT && !_pttDariWalkieFisik)
             TampilkanHT(false);
 
         if (_audioSourceRadio != null && _suaraStaticTutup != null)
@@ -323,8 +325,10 @@ public class WalkieTalkieManager : MonoBehaviour
         yield return new WaitForSeconds(_delaySebelumDiproses);
 
         string laporan = _pendingSpeechText;
-        if (string.IsNullOrWhiteSpace(laporan) && _modeTanpaVoiceUntukTempatRame)
+        if (string.IsNullOrWhiteSpace(laporan) && _modeTanpaVoiceUntukTempatRame && _adaKeywordPadaSesiPtt)
             laporan = AmbilLaporanManualTanpaVoice();
+        if (string.IsNullOrWhiteSpace(laporan) && TryGetLevel1MicFallback(out string laporanLevel1))
+            laporan = laporanLevel1;
 
         if (string.IsNullOrWhiteSpace(laporan))
         {
@@ -340,7 +344,7 @@ public class WalkieTalkieManager : MonoBehaviour
 
         // Fallback agresif: kalau mode tanpa voice aktif dan speech text ditolak,
         // coba lagi dengan laporan manual dari GLM (frasa lengkap level aktif).
-        if (!laporanDiterima && _modeTanpaVoiceUntukTempatRame && GameLevelManager.Instance != null)
+        if (!laporanDiterima && _modeTanpaVoiceUntukTempatRame && _adaKeywordPadaSesiPtt && GameLevelManager.Instance != null)
         {
             string laporanManual = AmbilLaporanManualTanpaVoice();
             if (!string.IsNullOrWhiteSpace(laporanManual) && laporanManual != laporan)
@@ -358,6 +362,29 @@ public class WalkieTalkieManager : MonoBehaviour
             Log("VOICE", $"Laporan HT tidak sesuai instruksi level aktif: '<b>{laporan}</b>'", "orange");
 
         _coroutineProsesLaporan = null;
+    }
+
+    private bool TryGetLevel1MicFallback(out string laporan)
+    {
+        laporan = string.Empty;
+        if (GameLevelManager.Instance == null ||
+            GameLevelManager.Instance.CurrentLevel != GameLevelManager.GameLevel.Level1_APD)
+            return false;
+
+        if (PhaseManager.Instance == null || !PhaseManager.Instance.APDLengkapSempurna)
+            return false;
+
+        bool adaSuara = _debugMicInput && _debugMicPeak >= _ambangMicTerdengar;
+        bool adaTeksParsial = _adaKeywordPadaSesiPtt || !string.IsNullOrWhiteSpace(_pendingHypothesisText);
+        if (!adaSuara && !adaTeksParsial)
+            return false;
+
+        laporan = GameLevelManager.Instance.GetLaporanVoiceDisplay(GameLevelManager.GameLevel.Level1_APD);
+        if (string.IsNullOrWhiteSpace(laporan))
+            laporan = "APD lengkap";
+
+        Log("VOICE", $"Level 1 fallback: mic/teks WT terdeteksi, kirim laporan '<b>{laporan}</b>'.", "cyan");
+        return true;
     }
 
     private string AmbilLaporanManualTanpaVoice()
@@ -434,6 +461,18 @@ public class WalkieTalkieManager : MonoBehaviour
     public bool RecognizerAktif => _recognizerAktif;
     public string LastKeyword => _lastKeyword;
 
+    public void BeginPhysicalWalkiePTT()
+    {
+        _pttDariWalkieFisik = true;
+        OnPTTPress();
+    }
+
+    public void EndPhysicalWalkiePTT()
+    {
+        OnPTTRelease();
+        _pttDariWalkieFisik = false;
+    }
+
     private void TampilkanHT(bool tampil)
     {
         if (_walkieTalkieInHand == null)
@@ -492,7 +531,7 @@ public class WalkieTalkieManager : MonoBehaviour
         {
             if (_walkieAnimator != null && !string.IsNullOrEmpty(_animHideTrigger))
                 _walkieAnimator.SetTrigger(_animHideTrigger);
-            else if (sudahDipakai)
+            else if (sudahDipakai && _hidePhysicalWalkieSaatPTTSelesai)
                 _walkieTalkieInHand.SetActive(false);
 
             if (sudahDipakai)
@@ -504,7 +543,16 @@ public class WalkieTalkieManager : MonoBehaviour
 
                 // Restore rigidbody supaya bisa di-grab/lepas normal.
                 var rb = _walkieTalkieInHand.GetComponent<Rigidbody>();
-                if (rb != null) rb.isKinematic = false;
+                if (rb != null)
+                {
+                    if (!rb.isKinematic)
+                    {
+                        rb.linearVelocity = Vector3.zero;
+                        rb.angularVelocity = Vector3.zero;
+                    }
+                    rb.isKinematic = true;
+                    rb.useGravity = false;
+                }
             }
         }
     }

@@ -2,9 +2,14 @@ using UnityEngine;
 
 public class IndustrialOreWaterAnimator : MonoBehaviour
 {
+    [Header("Activation")]
+    public GameObject runWhenActiveObject;
+    public bool animateOnlyWhenRunObjectActive;
+
     [Header("Ore conveyor")]
     public Renderer[] beltRenderers;
     public Transform[] rollers;
+    public Transform[] conveyorSteps;
     public Transform[] oreChunks;
     public Transform oreStart;
     public Transform oreMid;
@@ -23,17 +28,20 @@ public class IndustrialOreWaterAnimator : MonoBehaviour
     private float _beltOffset;
     private float _waterOffset;
     private Vector3[] _waterBaseScales;
+    private bool _lastRunning;
 
     private void Awake()
     {
         CacheWaterScales();
-        PlayParticles(true);
+        _lastRunning = IsAnimationRunning();
+        PlayParticles(_lastRunning);
     }
 
     private void OnEnable()
     {
         CacheWaterScales();
-        PlayParticles(true);
+        _lastRunning = IsAnimationRunning();
+        PlayParticles(_lastRunning);
     }
 
     private void OnDisable()
@@ -43,12 +51,31 @@ public class IndustrialOreWaterAnimator : MonoBehaviour
 
     private void Update()
     {
+        bool running = IsAnimationRunning();
+        if (running != _lastRunning)
+        {
+            PlayParticles(running);
+            _lastRunning = running;
+        }
+
+        if (!running)
+            return;
+
         float dt = Time.deltaTime;
         AnimateBelt(dt);
         AnimateRollers(dt);
+        AnimateConveyorSteps();
         AnimateOreChunks(dt);
         AnimateWater(dt);
         KeepActiveParticlesPlaying();
+    }
+
+    private bool IsAnimationRunning()
+    {
+        if (!animateOnlyWhenRunObjectActive || runWhenActiveObject == null)
+            return true;
+
+        return runWhenActiveObject.activeInHierarchy;
     }
 
     private void CacheWaterScales()
@@ -98,6 +125,27 @@ public class IndustrialOreWaterAnimator : MonoBehaviour
             float t = Mathf.Repeat(Time.time * oreSpeed + i / Mathf.Max(1f, oreChunks.Length), 1f);
             chunk.position = Bezier(oreStart.position, oreMid.position, oreEnd.position, t);
             chunk.Rotate(new Vector3(37f, 49f, 23f), dt * 65f, Space.Self);
+        }
+    }
+
+    private void AnimateConveyorSteps()
+    {
+        if (conveyorSteps == null || oreStart == null || oreMid == null || oreEnd == null)
+            return;
+
+        int count = Mathf.Max(1, conveyorSteps.Length);
+        for (int i = 0; i < conveyorSteps.Length; i++)
+        {
+            Transform step = conveyorSteps[i];
+            if (step == null)
+                continue;
+
+            float t = Mathf.Repeat(Time.time * oreSpeed + i / (float)count, 1f);
+            Vector3 position = Bezier(oreStart.position, oreMid.position, oreEnd.position, t);
+            Vector3 tangent = BezierTangent(oreStart.position, oreMid.position, oreEnd.position, t);
+            step.position = position + Vector3.up * 0.04f;
+            if (tangent.sqrMagnitude > 0.001f)
+                step.rotation = Quaternion.LookRotation(tangent.normalized, Vector3.up);
         }
     }
 
@@ -173,5 +221,10 @@ public class IndustrialOreWaterAnimator : MonoBehaviour
     {
         float u = 1f - t;
         return u * u * a + 2f * u * t * b + t * t * c;
+    }
+
+    private Vector3 BezierTangent(Vector3 a, Vector3 b, Vector3 c, float t)
+    {
+        return 2f * (1f - t) * (b - a) + 2f * t * (c - b);
     }
 }

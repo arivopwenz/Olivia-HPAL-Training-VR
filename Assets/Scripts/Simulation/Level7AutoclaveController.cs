@@ -43,6 +43,7 @@ public class Level7AutoclaveController : MonoBehaviour
     [SerializeField] private Renderer _shellRenderer;
     [SerializeField] private Renderer[] _endCapRenderers;
     [SerializeField] private Transform _agitatorShaft;
+    [SerializeField] private Transform[] _agitatorShafts;
 
     [Header("=== X-Ray Vision ===")]
     [Tooltip("Material to swap shell to when X-Ray is active (transparent ghost).")]
@@ -258,10 +259,22 @@ public class Level7AutoclaveController : MonoBehaviour
 
     private void AnimateAgitator()
     {
-        if (_agitatorShaft == null) return;
         float degPerSec = _agitatorRPM * 6f; // RPM * 360/60
         _agitatorAngle += degPerSec * Time.deltaTime;
-        _agitatorShaft.localRotation = Quaternion.AngleAxis(_agitatorAngle, _agitatorAxis);
+
+        if (_agitatorShafts != null && _agitatorShafts.Length > 0)
+        {
+            Quaternion rotation = Quaternion.AngleAxis(_agitatorAngle, _agitatorAxis);
+            foreach (Transform shaft in _agitatorShafts)
+            {
+                if (shaft != null)
+                    shaft.localRotation = rotation;
+            }
+            return;
+        }
+
+        if (_agitatorShaft != null)
+            _agitatorShaft.localRotation = Quaternion.AngleAxis(_agitatorAngle, _agitatorAxis);
     }
 
     // ============================================================

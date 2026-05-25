@@ -58,6 +58,13 @@ public class LevelTeleportManager : MonoBehaviour
                 if (_debugLog) Debug.Log($"[LevelTeleportManager] Auto-found XR Origin: {rig.name}");
             }
         }
+
+        EnsureDefaultSpawnConfigs();
+    }
+
+    private void OnValidate()
+    {
+        EnsureDefaultSpawnConfigs();
     }
 
     private void OnEnable()
@@ -122,12 +129,16 @@ public class LevelTeleportManager : MonoBehaviour
 
             // Rotasi: MatchOriginUpCameraForward untuk set yaw
             Vector3 fwd = targetRot * Vector3.forward;
+            fwd.y = 0f;
+            if (fwd.sqrMagnitude < 0.0001f)
+                fwd = _xrOrigin.forward;
+            fwd.Normalize();
             xrOriginComp.MatchOriginUpCameraForward(Vector3.up, fwd);
         }
         else
         {
             // Fallback kalau XROrigin component gak ada
-            _xrOrigin.SetPositionAndRotation(targetPos, targetRot);
+            _xrOrigin.SetPositionAndRotation(targetPos, Quaternion.Euler(0f, targetRot.eulerAngles.y, 0f));
         }
 
         if (ccEnabled && cc != null) cc.enabled = true;
@@ -173,6 +184,57 @@ public class LevelTeleportManager : MonoBehaviour
         var byTag = GameObject.FindWithTag("Player");
         if (byTag != null)
             return byTag.transform;
+
+        return null;
+    }
+
+    private void EnsureDefaultSpawnConfigs()
+    {
+        if (_spawnConfigs == null)
+            _spawnConfigs = new List<LevelSpawnConfig>();
+
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level1_APD, "SpawnPoint_APD", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level2_DCSPrep, "SpawnPoint_DCS", true);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level3_OreSlurry, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level4_SlurryPump, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level5_SteamValve, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level6_AcidInjection, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level7_Autoclave, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level8_Monitoring, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level9_FlashVessel, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level10_CCD, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level11_MHP, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level12_TailingDischarge, "SpawnPoint_DCS", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level13_TailingWaste, "SpawnPoint_Lvl13", false);
+        EnsureSpawnConfig(GameLevelManager.GameLevel.Level14_Emergency, "SpawnPoint_Lvl14", false);
+    }
+
+    private void EnsureSpawnConfig(GameLevelManager.GameLevel level, string spawnName, bool autoNotifyDcsViewed)
+    {
+        LevelSpawnConfig config = _spawnConfigs.Find(c => c != null && c.level == level);
+        if (config == null)
+        {
+            config = new LevelSpawnConfig { level = level };
+            _spawnConfigs.Add(config);
+        }
+
+        if (config.spawnPoint == null)
+            config.spawnPoint = FindSpawnPoint(spawnName);
+
+        config.autoNotifyDcsViewed = autoNotifyDcsViewed;
+    }
+
+    private Transform FindSpawnPoint(string spawnName)
+    {
+        GameObject go = GameObject.Find(spawnName);
+        if (go != null)
+            return go.transform;
+
+        foreach (Transform t in UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (t.name == spawnName)
+                return t;
+        }
 
         return null;
     }

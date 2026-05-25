@@ -21,7 +21,7 @@ public class DirectionArrowIndicator : MonoBehaviour
 
     [Header("=== Posisi Panah ===")]
     [Tooltip("Jarak panah dari kamera (m).")]
-    [SerializeField] private float _jarakDariKamera = 1.4f;
+    [SerializeField] private float _jarakDariKamera = 1.75f;
     [Tooltip("Offset Y dari titik tengah pandangan (negatif = di bawah view).")]
     [SerializeField] private float _offsetY = -0.30f;
     [Tooltip("Smoothing posisi panah agar tidak nervous.")]
@@ -47,6 +47,7 @@ public class DirectionArrowIndicator : MonoBehaviour
     [SerializeField] private float _dotMemandang = 0.85f;
 
     private MeshRenderer _renderer;
+    private Renderer[] _renderers;
     private Material _material;
     private Vector3 _smoothPosVel;
     private Quaternion _currentRot = Quaternion.identity;
@@ -92,7 +93,7 @@ public class DirectionArrowIndicator : MonoBehaviour
         if (_autoHideSaatDekatTarget && dist <= _jarakAutoHide)
         {
             // Hanya sembunyikan render, tetap aktif logic-nya supaya bisa muncul lagi kalau menjauh
-            if (_renderer != null) _renderer.enabled = false;
+            SetVisualVisible(false);
             return;
         }
 
@@ -101,12 +102,12 @@ public class DirectionArrowIndicator : MonoBehaviour
             float dot = Vector3.Dot(_camera.forward.normalized, toTarget.normalized);
             if (dot >= _dotMemandang)
             {
-                if (_renderer != null) _renderer.enabled = false;
+                SetVisualVisible(false);
                 return;
             }
         }
 
-        if (_renderer != null) _renderer.enabled = true;
+        SetVisualVisible(true);
 
         // Posisi panah: di depan kamera
         Vector3 targetPos = _camera.position + _camera.forward * _jarakDariKamera + _camera.up * _offsetY;
@@ -131,17 +132,23 @@ public class DirectionArrowIndicator : MonoBehaviour
         if (_pulse && _material != null)
         {
             float t = Mathf.PingPong(Time.time / _pulsePeriod, 1f);
-            float scale = Mathf.Lerp(0.85f, 1.15f, t);
-            transform.localScale = new Vector3(scale, scale, scale) * _baseScale;
+            float scale = Mathf.Lerp(0.9f, 1.12f, t);
+            ApplyStableScale(scale);
             float intensity = Mathf.Lerp(_glowIntensity * 0.6f, _glowIntensity, t);
             _material.SetColor("_EmissionColor", _warnaPanah * intensity);
         }
     }
 
-    private float _baseScale = 0.18f;
+    [SerializeField] private float _baseScale = 0.30f;
 
     private void BuatVisual()
     {
+        if (CloneLevel1ArrowVisual())
+        {
+            ApplyStableScale(1f);
+            return;
+        }
+
         // Buat panah dari Cube primitive yang di-stretch jadi bentuk panah (body + head)
         // Sederhana: cube body + cube head terpotong (atau pyramid). Cukup dengan capsule + cone visual.
 
@@ -149,17 +156,17 @@ public class DirectionArrowIndicator : MonoBehaviour
         var body = GameObject.CreatePrimitive(PrimitiveType.Cube);
         body.name = "ArrowBody";
         body.transform.SetParent(transform, false);
-        body.transform.localPosition = new Vector3(0f, 0f, -0.4f);
-        body.transform.localScale = new Vector3(0.25f, 0.25f, 0.8f);
+        body.transform.localPosition = new Vector3(0f, 0f, -0.32f);
+        body.transform.localScale = new Vector3(0.18f, 0.12f, 0.58f);
         DestroyImmediate(body.GetComponent<Collider>());
 
         // Head: cube rotated 45 deg → pseudo-arrow point
         var head = GameObject.CreatePrimitive(PrimitiveType.Cube);
         head.name = "ArrowHead";
         head.transform.SetParent(transform, false);
-        head.transform.localPosition = new Vector3(0f, 0f, 0.3f);
+        head.transform.localPosition = new Vector3(0f, 0f, 0.22f);
         head.transform.localRotation = Quaternion.Euler(0f, 45f, 45f);
-        head.transform.localScale = new Vector3(0.5f, 0.5f, 0.5f);
+        head.transform.localScale = new Vector3(0.38f, 0.38f, 0.38f);
         DestroyImmediate(head.GetComponent<Collider>());
 
         Shader shader = Shader.Find("Universal Render Pipeline/Lit");
@@ -173,6 +180,76 @@ public class DirectionArrowIndicator : MonoBehaviour
         head.GetComponent<MeshRenderer>().sharedMaterial = _material;
 
         _renderer = body.GetComponent<MeshRenderer>();
-        transform.localScale = Vector3.one * _baseScale;
+        _renderers = GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer renderer in _renderers)
+        {
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+        ApplyStableScale(1f);
+    }
+
+    private bool CloneLevel1ArrowVisual()
+    {
+        Transform source = null;
+        foreach (Transform t in Resources.FindObjectsOfTypeAll<Transform>())
+        {
+            if (t == null || !t.gameObject.scene.IsValid() || t == transform)
+                continue;
+
+            if (t.name == "TaskHint_Arrow3D" && t.GetComponentInChildren<Renderer>(true) != null)
+            {
+                source = t;
+                break;
+            }
+        }
+
+        if (source == null)
+            return false;
+
+        GameObject clone = Instantiate(source.gameObject, transform);
+        clone.name = "TaskHint_Arrow3D_Runtime";
+        clone.transform.localPosition = Vector3.zero;
+        clone.transform.localRotation = Quaternion.identity;
+        clone.transform.localScale = source.localScale;
+
+        foreach (Collider collider in clone.GetComponentsInChildren<Collider>(true))
+            DestroyImmediate(collider);
+
+        _renderers = clone.GetComponentsInChildren<Renderer>(true);
+        foreach (Renderer renderer in _renderers)
+        {
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+
+        _renderer = _renderers.Length > 0 ? _renderers[0] as MeshRenderer : null;
+        if (_renderers.Length > 0)
+            _material = _renderers[0].material;
+
+        return true;
+    }
+
+    private void ApplyStableScale(float pulseScale)
+    {
+        float parentScale = 1f;
+        if (transform.parent != null)
+        {
+            Vector3 lossy = transform.parent.lossyScale;
+            parentScale = Mathf.Max(0.001f, Mathf.Max(Mathf.Abs(lossy.x), Mathf.Abs(lossy.y), Mathf.Abs(lossy.z)));
+        }
+
+        float localScale = Mathf.Clamp(_baseScale * pulseScale / parentScale, 0.04f, 0.42f);
+        transform.localScale = Vector3.one * localScale;
+    }
+
+    private void SetVisualVisible(bool visible)
+    {
+        if (_renderers == null || _renderers.Length == 0)
+            _renderers = GetComponentsInChildren<Renderer>(true);
+
+        for (int i = 0; i < _renderers.Length; i++)
+            if (_renderers[i] != null)
+                _renderers[i].enabled = visible;
     }
 }

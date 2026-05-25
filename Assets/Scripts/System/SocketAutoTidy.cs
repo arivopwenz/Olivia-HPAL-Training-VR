@@ -9,6 +9,7 @@ public class SocketAutoTidy : MonoBehaviour
     [SerializeField] private string namePrefix = "Socket_";
     [SerializeField] private bool setTrigger = true;
     [SerializeField] private bool disableRigidbody = true;
+    [SerializeField] private bool disableScannerSocketColliders = true;
 
     private void Awake()
     {
@@ -17,6 +18,12 @@ public class SocketAutoTidy : MonoBehaviour
         {
             if (!col.gameObject.name.StartsWith(namePrefix))
                 continue;
+
+            if (disableScannerSocketColliders && col.gameObject.name.StartsWith("Socket_Scanner_"))
+            {
+                col.enabled = false;
+                continue;
+            }
 
             if (setTrigger)
                 col.isTrigger = true;

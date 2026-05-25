@@ -1,0 +1,7 @@
+interface:
+  display_name: "3D Design for Unity and Blender"
+  short_description: "Lightweight realistic Unity/Blender 3D"
+  default_prompt: "Use $design-3d-unity-blender to design, build, optimize, and verify lightweight realistic 3D assets or industrial scenes."
+
+policy:
+  allow_implicit_invocation: true

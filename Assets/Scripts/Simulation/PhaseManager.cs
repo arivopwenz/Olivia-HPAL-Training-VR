@@ -165,13 +165,18 @@ public class PhaseManager : MonoBehaviour
 
     private void PakaiApd(ApdItem apd)
     {
-        if (apd.sudahDipakai) return;
+        if (apd.sudahDipakai)
+        {
+            SembunyikanApdDiMeja(apd.namaApd);
+            return;
+        }
         apd.sudahDipakai = true;
         OnApdItemWorn?.Invoke(apd.namaApd);
         Log("APD", $"✓ <b>{apd.namaApd}</b> terpasang! ({JumlahAPDTerpasang}/{TOTAL_APD})", "green");
 
         // Disable grab pada object APD ini supaya tidak bisa diambil ulang.
         KuncIGrabAPD(apd.namaApd, true);
+        SembunyikanApdDiMeja(apd.namaApd);
 
         if (APDLengkapSempurna)
         {
@@ -192,45 +197,164 @@ public class PhaseManager : MonoBehaviour
 
     private bool _apd7LengkapSudahPernahTrigger = false;
 
+    private void SembunyikanApdDiMeja(string namaApd)
+    {
+        string[] objectNames = MapApdKeObjectNames(namaApd);
+        if (objectNames == null || objectNames.Length == 0)
+            return;
+
+        foreach (Transform t in UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (t == null || !t.gameObject.scene.IsValid() || !IsUnderScannerSocket(t))
+                continue;
+
+            bool match = false;
+            foreach (string objectName in objectNames)
+            {
+                if (t.name == objectName)
+                {
+                    match = true;
+                    break;
+                }
+            }
+
+            if (!match)
+                continue;
+
+            foreach (Renderer renderer in t.GetComponentsInChildren<Renderer>(true))
+                if (renderer != null) renderer.enabled = false;
+            foreach (Collider collider in t.GetComponentsInChildren<Collider>(true))
+                if (collider != null) collider.enabled = false;
+
+            var grab = t.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+            if (grab != null) grab.enabled = false;
+
+            var stabilizer = t.GetComponent<ApdDisplayItemStabilizer>();
+            if (stabilizer != null) stabilizer.enabled = false;
+        }
+    }
+
+    private bool IsUnderScannerSocket(Transform t)
+    {
+        while (t != null)
+        {
+            if (t.name.StartsWith("Socket_Scanner_"))
+                return true;
+            t = t.parent;
+        }
+        return false;
+    }
+
+    private string[] MapApdKeObjectNames(string namaApd)
+    {
+        if (string.IsNullOrEmpty(namaApd)) return null;
+        string n = namaApd.ToLowerInvariant();
+        if (n.Contains("helm")) return new[] { "Helmet" };
+        if (n.Contains("rompi") || n.Contains("vest")) return new[] { "Vest" };
+        if (n.Contains("kacamata") || n.Contains("glass")) return new[] { "Glassess" };
+        if (n.Contains("sepatu") || n.Contains("boot")) return new[] { "Boots" };
+        if (n.Contains("sarung tangan") || n.Contains("glove")) return new[] { "Gloves" };
+        if (n.Contains("respirator") || n.Contains("masker")) return new[] { "RespiratorMask" };
+        if (n.Contains("earplug") || n.Contains("ear protection")) return new[] { "EarPlug" };
+        if (n.Contains("walkie") || n.Contains("ht")) return new[] { "Walkie Talkie" };
+        return null;
+    }
+
     /// <summary>
     /// Lock atau unlock XRGrabInteractable pada semua child di socket APD bersangkutan.
     /// Saat true: APD tidak bisa di-grab (sudah dipakai).
     /// </summary>
     private void KuncIGrabAPD(string namaApd, bool kunci)
     {
-        // Map nama APD → socket name
-        string socketName = MapApdKeSocket(namaApd);
-        if (string.IsNullOrEmpty(socketName)) return;
+        if (!string.IsNullOrEmpty(namaApd))
+        {
+            string lowered = namaApd.ToLowerInvariant();
+            if (lowered.Contains("walkie") || lowered.Contains("ht") ||
+                lowered.Contains("respirator") || lowered.Contains("masker"))
+                return;
+        }
 
-        // Cari semua socket dengan nama itu (Socket_Helmet, Socket_RespiratorMask, dll)
-        // dan disable grab pada item yang dipakai (yang sudah parent ke socket).
+        string[] socketNames = MapApdKeSockets(namaApd);
+        var handled = new List<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+
         var sockets = UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
         foreach (var t in sockets)
         {
-            if (t.name != socketName) continue;
+            bool socketMatch = false;
+            if (socketNames != null)
+            {
+                foreach (string socketName in socketNames)
+                {
+                    if (t.name == socketName)
+                    {
+                        socketMatch = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!socketMatch) continue;
             foreach (var grab in t.GetComponentsInChildren<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>(true))
             {
                 if (grab == null) continue;
-                grab.enabled = !kunci;
-                // Juga disable colliders supaya raycast tidak hit-able
-                foreach (var col in grab.GetComponentsInChildren<Collider>(true))
-                    col.enabled = !kunci;
+                SetGrabLock(grab, kunci, handled);
             }
+        }
+
+        foreach (TaskTrigger trigger in UnityEngine.Object.FindObjectsByType<TaskTrigger>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (trigger == null || !TaskMatchesApdName(namaApd, trigger.tipeTugas))
+                continue;
+
+            foreach (var grab in trigger.GetComponentsInChildren<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>(true))
+                SetGrabLock(grab, kunci, handled);
+
+            var ownGrab = trigger.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+            SetGrabLock(ownGrab, kunci, handled);
         }
     }
 
-    private string MapApdKeSocket(string namaApd)
+    private void SetGrabLock(UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable grab, bool kunci, List<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable> handled)
+    {
+        if (grab == null || handled.Contains(grab))
+            return;
+
+        handled.Add(grab);
+        grab.enabled = !kunci;
+        foreach (var col in grab.GetComponentsInChildren<Collider>(true))
+            col.enabled = !kunci;
+    }
+
+    private bool TaskMatchesApdName(string namaApd, TaskTrigger.TaskType type)
+    {
+        if (string.IsNullOrEmpty(namaApd))
+            return false;
+
+        string n = namaApd.ToLowerInvariant();
+        switch (type)
+        {
+            case TaskTrigger.TaskType.Helm: return n.Contains("helm");
+            case TaskTrigger.TaskType.Rompi: return n.Contains("rompi") || n.Contains("vest");
+            case TaskTrigger.TaskType.Kacamata: return n.Contains("kacamata") || n.Contains("glass");
+            case TaskTrigger.TaskType.Sepatu: return n.Contains("sepatu") || n.Contains("boot");
+            case TaskTrigger.TaskType.SarungTangan: return n.Contains("sarung tangan") || n.Contains("glove");
+            case TaskTrigger.TaskType.EarProtection: return n.Contains("earplug") || n.Contains("ear protection");
+            default: return false;
+        }
+    }
+
+    private string[] MapApdKeSockets(string namaApd)
     {
         if (string.IsNullOrEmpty(namaApd)) return null;
         string n = namaApd.ToLowerInvariant();
-        if (n.Contains("helm")) return "Socket_Helmet";
-        if (n.Contains("rompi") || n.Contains("vest")) return "Socket_Rompi";
-        if (n.Contains("kacamata") || n.Contains("glass")) return "Socket_Glasess";
-        if (n.Contains("sepatu") || n.Contains("boot")) return "Socket_Boots";
-        if (n.Contains("sarung tangan") || n.Contains("glove")) return "Socket_Gloves";
-        if (n.Contains("respirator") || n.Contains("masker")) return "Socket_RespiratorMask";
-        if (n.Contains("earplug") || n.Contains("ear protection")) return "Socket_EarPlug";
-        if (n.Contains("walkie") || n.Contains("ht")) return "Socket_WalkieTalkie";
+        if (n.Contains("helm")) return new[] { "Socket_Helmet", "Socket_Scanner_Hat" };
+        if (n.Contains("rompi") || n.Contains("vest")) return new[] { "Socket_Rompi", "Socket_Scanner_Rompi" };
+        if (n.Contains("kacamata") || n.Contains("glass")) return new[] { "Socket_Glasess", "Socket_Scanner_Glassess" };
+        if (n.Contains("sepatu") || n.Contains("boot")) return new[] { "Socket_Boots", "Socket_Scanner_Boots" };
+        if (n.Contains("sarung tangan") || n.Contains("glove")) return new[] { "Socket_Gloves", "Socket_Scanner_Gloves" };
+        if (n.Contains("respirator") || n.Contains("masker")) return new[] { "Socket_RespiratorMask", "Socket_Scanner_RespiratorMask" };
+        if (n.Contains("earplug") || n.Contains("ear protection")) return new[] { "Socket_EarPlug", "Socket_Scanner_EarPlug" };
+        if (n.Contains("walkie") || n.Contains("ht")) return new[] { "Socket_WalkieTalkie", "Socket_Scanner_WalkieTalkie" };
         return null;
     }
 
@@ -260,38 +384,7 @@ public class PhaseManager : MonoBehaviour
 
     private void PindahkanRespiratorKeSocketBaju()
     {
-        if (_respiratorObject == null)
-        {
-            GameObject respirator = GameObject.Find("RespiratorMask");
-            if (respirator != null)
-                _respiratorObject = respirator.transform;
-        }
-
-        if (_socketRespiratorBaju == null)
-        {
-            GameObject socketBaju = GameObject.Find("Socket_Respirator_Baju");
-            if (socketBaju != null)
-                _socketRespiratorBaju = socketBaju.transform;
-        }
-
-        if (_respiratorObject == null || _socketRespiratorBaju == null)
-        {
-            Log("RESPIRATOR AUTO", "RespiratorMask atau Socket_Respirator_Baju belum ditemukan.", "orange");
-            return;
-        }
-
-        Rigidbody rb = _respiratorObject.GetComponent<Rigidbody>();
-        if (rb != null)
-        {
-            rb.linearVelocity = Vector3.zero;
-            rb.angularVelocity = Vector3.zero;
-        }
-
-        _respiratorObject.SetParent(_socketRespiratorBaju, false);
-        _respiratorObject.localPosition = _posisiLokalRespiratorDiBaju;
-        _respiratorObject.localRotation = Quaternion.Euler(_rotasiLokalRespiratorDiBaju);
-        SetWorldScale(_respiratorObject, _skalaDuniaRespiratorDiBaju);
-
+        PastikanMaskerAdaDiSocketBaju();
         OnRespiratorStored();
         Log("RESPIRATOR AUTO", "Level 2 dimulai: respirator dipindahkan ke socket baju agar bisa dilihat saat menunduk.", "cyan");
     }
@@ -426,12 +519,53 @@ public class PhaseManager : MonoBehaviour
         _respiratorObject.gameObject.SetActive(true);
 
         // 4. Pastikan renderer & collider on supaya bisa di-grab.
-        Renderer mr = _respiratorObject.GetComponentInChildren<Renderer>(true);
-        if (mr != null) mr.enabled = true;
-        Collider col = _respiratorObject.GetComponent<Collider>();
-        if (col != null) col.enabled = true;
+        foreach (Renderer mr in _respiratorObject.GetComponentsInChildren<Renderer>(true))
+        {
+            if (mr == null) continue;
+            mr.enabled = true;
+            BuatMaterialSolid(mr);
+        }
+
+        foreach (Collider col in _respiratorObject.GetComponentsInChildren<Collider>(true))
+            if (col != null) col.enabled = true;
+
+        var grabReady = _respiratorObject.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+        if (grabReady != null) grabReady.enabled = true;
 
         Log("RESPIRATOR", $"Masker dipastikan ada di socket baju di pos {_respiratorObject.position}, scale={_respiratorObject.lossyScale}, siap di-grab player.", "cyan");
+    }
+
+    private void BuatMaterialSolid(Renderer r)
+    {
+        if (r == null) return;
+        var mats = r.materials;
+        for (int i = 0; i < mats.Length; i++)
+        {
+            var m = mats[i];
+            if (m == null) continue;
+
+            if (m.HasProperty("_BaseColor"))
+            {
+                Color c = m.GetColor("_BaseColor");
+                c.a = 1f;
+                m.SetColor("_BaseColor", c);
+            }
+            if (m.HasProperty("_Color"))
+            {
+                Color c = m.GetColor("_Color");
+                c.a = 1f;
+                m.SetColor("_Color", c);
+            }
+            if (m.HasProperty("_Surface"))
+            {
+                m.SetFloat("_Surface", 0f);
+                m.SetFloat("_ZWrite", 1f);
+                m.SetOverrideTag("RenderType", "Opaque");
+                m.renderQueue = -1;
+                m.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            }
+        }
+        r.materials = mats;
     }
 
     /// <summary>

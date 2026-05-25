@@ -255,8 +255,8 @@ public class PlayerHUD : MonoBehaviour
         SetTaskDone(taskRespirator);
         SetTaskDone(taskEarplug);
         SetTaskDone(taskWalkieTalkie);
-        SetFase(FaseQuest.MasukPintu);
-        ShowNotif("Semua APD lengkap! Sekarang masuk ke pintu loker.", true);
+        SetFase(FaseQuest.GunakanWT);
+        ShowNotif("Semua APD lengkap! Lapor lewat WT untuk lanjut ke Level 2.", true);
     }
 
     private void OnPTTPress()
