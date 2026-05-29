@@ -374,28 +374,47 @@ public class Level9FlashVesselController : MonoBehaviour
             return;
 
         Transform root = _flashVesselField.transform;
+        Transform rigRoot = FindDeepChild(root, "FlashVessel_BlenderRig") ?? root;
         if (_letdownValveHandwheel == null)
-            _letdownValveHandwheel = root.Find("LetdownValve_Assembly/LetdownValve_Handwheel");
+            _letdownValveHandwheel = FindDeepChild(rigRoot, "LetdownValve_Handwheel");
         if (_pressureGaugeNeedle == null)
-            _pressureGaugeNeedle = root.Find("PressureGauge_Needle");
+            _pressureGaugeNeedle = FindDeepChild(rigRoot, "PressureGauge_Needle");
         if (_vaporFx == null)
         {
-            Transform fx = root.Find("Vapor_FX");
+            Transform fx = FindDeepChild(root, "Vapor_FX");
             if (fx != null)
                 _vaporFx = fx.GetComponent<ParticleSystem>();
         }
         if (_inletLiquid == null)
         {
-            Transform inlet = root.Find("Pipe_AutoclaveToFlash_Liquid");
+            Transform inlet = FindDeepChild(rigRoot, "Pipe_AutoclaveToFlash_Liquid");
             if (inlet != null)
                 _inletLiquid = inlet.gameObject;
         }
         if (_outletLiquid == null)
         {
-            Transform outlet = root.Find("Pipe_FlashToCCD_Liquid");
+            Transform outlet = FindDeepChild(rigRoot, "Pipe_FlashToCCD_Liquid");
             if (outlet != null)
                 _outletLiquid = outlet.gameObject;
         }
+    }
+
+    private Transform FindDeepChild(Transform root, string childName)
+    {
+        if (root == null || string.IsNullOrEmpty(childName))
+            return null;
+
+        foreach (Transform child in root)
+        {
+            if (child.name == childName)
+                return child;
+
+            Transform nested = FindDeepChild(child, childName);
+            if (nested != null)
+                return nested;
+        }
+
+        return null;
     }
 
     public bool QuestComplete => _questComplete;

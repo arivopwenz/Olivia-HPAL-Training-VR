@@ -1,0 +1,127 @@
+using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit.Interactors;
+
+/// <summary>
+/// OLIVIA VR — InteractorRayHealer.cs
+///
+/// Force-enable interactor XR bawaan setiap frame agar ray kontroler tetap muncul
+/// setelah Level 1 tanpa menyalakan visual debug/custom merah.
+///
+/// Bug:
+///   ControllerInputActionManager (XR Toolkit Starter Asset) men-disable interactor
+///   saat teleport mode aktif. Kalau gameplay pakai scripted teleport (XROrigin.Move...),
+///   CIAM tidak fire teleport-deactivate event.
+///
+/// Strategi:
+///   Force enable di LateUpdate. Cost: ~10 component lookups per frame. OK untuk VR rig.
+/// </summary>
+[DefaultExecutionOrder(32000)]
+public class InteractorRayHealer : MonoBehaviour
+{
+    private static InteractorRayHealer _instance;
+
+    [Tooltip("Heal di LateUpdate setiap frame. Set false kalau mau pakai interval saja.")]
+    [SerializeField] private bool _aggressiveHeal = true;
+
+    [Tooltip("Interval (detik) untuk heal periodic kalau aggressive heal off.")]
+    [SerializeField] private float _intervalDetik = 0.5f;
+
+    private float _nextHeal;
+    private NearFarInteractor[] _cachedNearFar;
+    private float _nextRescan;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void AutoCreate()
+    {
+        if (_instance != null)
+            return;
+
+        var go = new GameObject("XR_Interactor_Ray_Healer_Auto");
+        DontDestroyOnLoad(go);
+        _instance = go.AddComponent<InteractorRayHealer>();
+    }
+
+    private void Awake()
+    {
+        if (_instance != null && _instance != this)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
+        _instance = this;
+        DontDestroyOnLoad(gameObject);
+    }
+
+    private void Update()
+    {
+        if (!_aggressiveHeal && Time.unscaledTime >= _nextHeal)
+        {
+            _nextHeal = Time.unscaledTime + _intervalDetik;
+            HealNow();
+        }
+    }
+
+    private void LateUpdate()
+    {
+        if (_aggressiveHeal)
+            HealNow();
+    }
+
+    public void HealNow()
+    {
+        // Cache list interactor; rescan tiap 2 detik supaya kalau ada interactor baru ditambah, ketemu.
+        if (_cachedNearFar == null || Time.unscaledTime >= _nextRescan)
+        {
+            _cachedNearFar = UnityEngine.Object.FindObjectsByType<NearFarInteractor>(
+                FindObjectsInactive.Include, FindObjectsSortMode.None);
+            _nextRescan = Time.unscaledTime + 2f;
+        }
+
+        for (int i = 0; i < _cachedNearFar.Length; i++)
+        {
+            var nf = _cachedNearFar[i];
+            if (nf == null) continue;
+            if (!nf.gameObject.activeSelf) nf.gameObject.SetActive(true);
+            if (!nf.enabled) nf.enabled = true;
+            HealNearFarLineVisual(nf.gameObject);
+        }
+
+        XRInteractorRecovery.PulihkanRayInteractor();
+    }
+
+    private void HealNearFarLineVisual(GameObject root)
+    {
+        if (root == null) return;
+
+        var behaviours = root.GetComponentsInChildren<MonoBehaviour>(true);
+        for (int i = 0; i < behaviours.Length; i++)
+        {
+            var mb = behaviours[i];
+            if (!IsBuiltInRayVisual(mb)) continue;
+
+            if (!mb.gameObject.activeSelf)
+                mb.gameObject.SetActive(true);
+            if (!mb.enabled)
+                mb.enabled = true;
+        }
+
+        foreach (var lr in root.GetComponentsInChildren<LineRenderer>(true))
+        {
+            if (lr == null) continue;
+            if (!lr.gameObject.activeSelf)
+                lr.gameObject.SetActive(true);
+            if (!lr.enabled)
+                lr.enabled = true;
+        }
+    }
+
+
+    private bool IsBuiltInRayVisual(MonoBehaviour mb)
+    {
+        if (mb == null) return false;
+
+        string tn = mb.GetType().Name;
+        return tn == "XRInteractorLineVisual" || tn == "CurveVisualController";
+    }
+}

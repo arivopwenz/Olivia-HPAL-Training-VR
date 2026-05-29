@@ -140,8 +140,19 @@ public class GameLevelManager : MonoBehaviour
     private bool _tundaTransisiLevel3;
     private bool _flowRateLevel4Dikonfirmasi;
     private bool _level5PreheaterReady;
+    private bool _level6OutletReportDone;
+    private bool _level6SlurryMasukAutoclave;
+    private bool _level6SlurryReportDone;
+    private bool _level6DcsAcidReady;
     private bool _level6AcidComplete;
     private bool _level7AutoclaveInspected;
+    private bool _level7XrayActivated;
+    private bool _level7ScaleMarked;
+    private bool _level7GaugesLogged;
+    private bool _level7SafetyDrillDone;
+    private bool _level7SampleTaken;
+    private bool _level8FlashLetdownDone;
+    private bool _level8SampleTaken;
     private bool _level10CcdComplete;
     private bool _level11MhpComplete;
     private bool _level12TailingFilterComplete;
@@ -239,7 +250,7 @@ public class GameLevelManager : MonoBehaviour
             kataKunciVoice = "ore masuk",
             kataKunciVoiceAwal = "jalankan alur ore",
             laporanVoiceAwal = "Field, jalankan alur ore ke slurry tank. Operator DCS standby monitoring.",
-            laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan lima puluh persen dan proses aman.",
+            laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan tujuh puluh lima persen dan proses aman.",
             audioBalasanNPC = "audio_level3_balasan"
         });
 
@@ -262,12 +273,12 @@ public class GameLevelManager : MonoBehaviour
         {
             level = GameLevel.Level5_SteamValve,
             namaLevel = "Level 5 - Steam Valve",
-            deskripsiQuest = "Buka katup steam dan laporkan kenaikan suhu pre-heater.",
+            deskripsiQuest = "Aktifkan pre-heater dari DCS, lalu turun ke lapangan dan putar katup steam.",
             nomorTombolDCS = 5,
             butuhVoiceReport = true,
             kataKunciVoice = "katup steam terbuka",
-            kataKunciVoiceAwal = "",
-            laporanVoiceAwal = "",
+            kataKunciVoiceAwal = "aktifkan pre-heater",
+            laporanVoiceAwal = "Field, aktifkan steam valve di pre-heater. DCS standby memantau kenaikan suhu.",
             laporanVoiceLengkap = "DCS, katup steam terbuka. Suhu pre-heater sudah naik ke rentang operasi.",
             audioBalasanNPC = "audio_level5_balasan",
             targetSuhu = 190f
@@ -277,12 +288,12 @@ public class GameLevelManager : MonoBehaviour
         {
             level = GameLevel.Level6_AcidInjection,
             namaLevel = "Level 6 - Acid Injection",
-            deskripsiQuest = "Aktifkan injeksi asam, capai rasio 350 kilogram per ton, lalu laporkan.",
+            deskripsiQuest = "Authorize outlet pre-heater, buka valve ke autoclave, set acid 350 kg/ton, verifikasi skid asam, lalu laporkan.",
             nomorTombolDCS = 6,
             butuhVoiceReport = true,
             kataKunciVoice = "acid aktif",
-            kataKunciVoiceAwal = "",
-            laporanVoiceAwal = "",
+            kataKunciVoiceAwal = "outlet preheater dibuka",
+            laporanVoiceAwal = "Outlet pre-heater dibuka, segera salurkan ke autoclave.",
             laporanVoiceLengkap = "Field, acid injection aktif. Rasio asam tiga ratus lima puluh kilogram per ton dan pH turun ke satu koma nol.",
             audioBalasanNPC = "audio_level6_balasan",
             targetAcidRatio = 350f,
@@ -309,18 +320,18 @@ public class GameLevelManager : MonoBehaviour
         TambahLevel(new LevelData
         {
             level = GameLevel.Level8_Monitoring,
-            namaLevel = "Level 8 - Monitoring Ketat",
-            deskripsiQuest = "Stabilkan suhu, tekanan, dan RPM autoclave dari DCS, lalu laporkan kondisi aman.",
+            namaLevel = "Level 8 - Flash Letdown Train",
+            deskripsiQuest = "Turunkan tekanan slurry bertahap lewat 3 flash vessel, recover steam, lalu ambil sample.",
             nomorTombolDCS = 8,
             butuhVoiceReport = true,
-            kataKunciVoice = "parameter stabil",
-            kataKunciVoiceAwal = "",
-            laporanVoiceAwal = "",
-            laporanVoiceLengkap = "DCS, parameter stabil. Suhu, tekanan, dan RPM kembali dalam batas SOP.",
+            kataKunciVoice = "sample diambil",
+            kataKunciVoiceAwal = "flash letdown selesai",
+            laporanVoiceAwal = "DCS, flash letdown selesai. Slurry sudah atmospheric, suhu seratus derajat.",
+            laporanVoiceLengkap = "DCS, sample diambil. Ni tenor empat koma dua gram per liter, free acid dua puluh lima gram per liter, kondisi normal.",
             audioBalasanNPC = "audio_level8_balasan",
-            targetSuhu = 252f,
-            targetTekanan = 47.5f,
-            targetRPM = 60f
+            targetSuhu = 100f,
+            targetTekanan = 1f,
+            targetRPM = 0f
         });
 
         TambahLevel(new LevelData
@@ -461,7 +472,7 @@ public class GameLevelManager : MonoBehaviour
                 data.kataKunciVoiceAwal = "jalankan alur ore";
                 data.kataKunciVoice = "ore masuk";
                 data.laporanVoiceAwal = "Field, jalankan alur ore ke slurry tank. Operator DCS standby monitoring.";
-                data.laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan lima puluh persen dan proses aman.";
+                data.laporanVoiceLengkap = "DCS, ore sudah masuk ke slurry tank. Level cairan tujuh puluh lima persen dan proses aman.";
                 data.aliasTambahanPerBaris = "start ore flow\nstart ore line\nore ready\nore in slurry tank";
                 break;
             case GameLevel.Level4_SlurryPump:
@@ -471,13 +482,17 @@ public class GameLevelManager : MonoBehaviour
                 break;
             case GameLevel.Level5_SteamValve:
                 data.kataKunciVoice = "katup steam terbuka";
+                data.kataKunciVoiceAwal = "aktifkan pre-heater";
+                data.laporanVoiceAwal = "Field, aktifkan steam valve di pre-heater. DCS standby memantau kenaikan suhu.";
                 data.laporanVoiceLengkap = "DCS, katup steam terbuka. Suhu pre-heater sudah naik ke rentang operasi.";
                 data.aliasTambahanPerBaris = "steam valve open\nheater temperature up";
                 break;
             case GameLevel.Level6_AcidInjection:
+                data.kataKunciVoiceAwal = "outlet preheater dibuka";
+                data.laporanVoiceAwal = "Outlet pre-heater dibuka, segera salurkan ke autoclave.";
                 data.kataKunciVoice = "acid aktif";
                 data.laporanVoiceLengkap = "Field, acid injection aktif. Rasio asam tiga ratus lima puluh kilogram per ton dan pH turun ke satu koma nol.";
-                data.aliasTambahanPerBaris = "acid injection active\nacid ratio set";
+                data.aliasTambahanPerBaris = "outlet preheater dibuka\npreheater outlet open\nslurry masuk autoclave\nslurry panas masuk autoclave\nacid injection active\nacid ratio set";
                 break;
             case GameLevel.Level7_Autoclave:
                 data.kataKunciVoice = "suhu 250";
@@ -602,8 +617,19 @@ public class GameLevelManager : MonoBehaviour
         _level3OreSudahMasukSlurry = false;
         _flowRateLevel4Dikonfirmasi = false;
         _level5PreheaterReady = false;
+        _level6OutletReportDone = false;
+        _level6SlurryMasukAutoclave = false;
+        _level6SlurryReportDone = false;
+        _level6DcsAcidReady = false;
         _level6AcidComplete = false;
         _level7AutoclaveInspected = false;
+        _level7XrayActivated = false;
+        _level7ScaleMarked = false;
+        _level7GaugesLogged = false;
+        _level7SafetyDrillDone = false;
+        _level7SampleTaken = false;
+        _level8FlashLetdownDone = false;
+        _level8SampleTaken = false;
         _level10CcdComplete = false;
         _level11MhpComplete = false;
         _level12TailingFilterComplete = false;
@@ -740,6 +766,12 @@ public class GameLevelManager : MonoBehaviour
         if (_currentLevel == GameLevel.Level4_SlurryPump)
             return HandleVoiceLevel4(data, keyword);
 
+        if (_currentLevel == GameLevel.Level5_SteamValve)
+            return HandleVoiceLevel5(data, keyword);
+
+        if (_currentLevel == GameLevel.Level6_AcidInjection)
+            return HandleVoiceLevel6(data, keyword);
+
         if (_currentLevel == GameLevel.Level2_DCSPrep && !_dcsSudahDilihat)
         {
             Log("VOICE", "Urutan belum benar. Lihat area DCS dulu sebelum kirim laporan HT.", "orange");
@@ -770,9 +802,9 @@ public class GameLevelManager : MonoBehaviour
             return false;
         }
 
-        if (_currentLevel == GameLevel.Level8_Monitoring && !ParameterAutoklaveSesuaiSOP())
+        if (_currentLevel == GameLevel.Level8_Monitoring && !_level8FlashLetdownDone)
         {
-            Log("VOICE", "Parameter belum stabil. Koreksi suhu, tekanan, dan RPM sampai masuk batas SOP dulu.", "orange");
+            Log("VOICE", "Flash letdown belum selesai. Buka letdown valve FV1-FV2-FV3 dan recover steam dulu.", "orange");
             return false;
         }
 
@@ -881,7 +913,7 @@ public class GameLevelManager : MonoBehaviour
 
             case Level3Phase.ObservasiLapangan:
             case Level3Phase.LaporanAwalDiterima:
-                Log("VOICE", "Level 3 sedang proses teleport atau observasi. Tunggu slurry mencapai 25% sebelum laporan akhir.", "orange");
+                Log("VOICE", "Level 3 sedang proses teleport atau observasi. Tunggu slurry mencapai 75% sebelum laporan akhir.", "orange");
                 return false;
 
             default:
@@ -970,6 +1002,185 @@ public class GameLevelManager : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// Handler voice Level 5 — Steam Valve & Pre-Heater. Dual-stage:
+    ///   Stage 1: "aktifkan pre-heater" (di DCS, setelah tombol DCS 5 ditekan)
+    ///            → diterima sebagai laporan AWAL → controller akan teleport ke field.
+    ///   Stage 2: "katup steam terbuka" (di field, setelah suhu ≥180°C)
+    ///            → diterima sebagai laporan AKHIR → level selesai.
+    /// </summary>
+    private bool HandleVoiceLevel5(LevelData data, string keyword)
+    {
+        if (data.nomorTombolDCS > 0 && !_dcsTombolSudahDitekan)
+        {
+            Log("VOICE", $"Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        // Stage 1 — Laporan AWAL "aktifkan pre-heater" (sebelum suhu tercapai).
+        if (!_level5PreheaterReady)
+        {
+            string frasaAwal = string.IsNullOrEmpty(data.laporanVoiceAwal)
+                ? "Field, aktifkan steam valve di pre-heater."
+                : data.laporanVoiceAwal;
+            string aliasAwal = string.IsNullOrEmpty(data.kataKunciVoiceAwal)
+                ? "aktifkan pre-heater"
+                : data.kataKunciVoiceAwal;
+            bool matchAwal = VoiceReportCocokDenganCadangan(data, keyword, frasaAwal, aliasAwal);
+            if (!matchAwal)
+                matchAwal = VoiceReportCocokDenganCadangan(data, keyword, frasaAwal, "aktifkan preheater");
+            if (!matchAwal)
+                matchAwal = VoiceReportCocokDenganCadangan(data, keyword, frasaAwal, "activate preheater");
+
+            if (matchAwal)
+            {
+                OnVoiceReportAccepted?.Invoke(keyword);
+                Log("VOICE REPORT", $"Laporan AWAL Level 5 diterima: '<i>{keyword}</i>'. Teleport ke field.", "cyan");
+                return true; // jangan tandai _voiceReportSudahDilakukan; itu untuk laporan akhir.
+            }
+
+            Log("VOICE", "Pre-heater belum mencapai suhu operasi. Buka katup steam sampai suhu minimal 180 C dulu.", "orange");
+            return false;
+        }
+
+        // Stage 2 — Laporan AKHIR "katup steam terbuka" (suhu sudah ≥180°C).
+        string frasaAkhir = string.IsNullOrEmpty(data.laporanVoiceLengkap)
+            ? "DCS, katup steam terbuka. Suhu pre-heater sudah naik ke rentang operasi."
+            : data.laporanVoiceLengkap;
+        string aliasAkhir = string.IsNullOrEmpty(data.kataKunciVoice) ? "katup steam terbuka" : data.kataKunciVoice;
+        bool matchAkhir = VoiceReportCocokDenganCadangan(data, keyword, frasaAkhir, aliasAkhir);
+        if (!matchAkhir)
+            matchAkhir = VoiceReportCocokDenganCadangan(data, keyword, frasaAkhir, "steam valve open");
+        if (!matchAkhir)
+            matchAkhir = VoiceReportCocokDenganCadangan(data, keyword, frasaAkhir, "heater temperature up");
+
+        if (!matchAkhir)
+        {
+            Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk laporan akhir Level 5. Sebut 'katup steam terbuka'.", "orange");
+            return false;
+        }
+
+        _voiceReportSudahDilakukan = true;
+        OnVoiceReportAccepted?.Invoke(keyword);
+        Log("VOICE REPORT", $"Laporan AKHIR Level 5 diterima: '<i>{keyword}</i>'. Kembali ke DCS.", "cyan");
+        CekKondisiLevelSelesai();
+        return true;
+    }
+
+    /// <summary>
+    /// Handler Level 6 multi-stage:
+    /// 1) DCS button 6 -> report outlet pre-heater open.
+    /// 2) Field valve/slurry fill complete -> report slurry masuk autoclave.
+    /// 3) DCS acid 350 + field acid valve/flow complete -> final report acid aktif.
+    /// </summary>
+    private bool HandleVoiceLevel6(LevelData data, string keyword)
+    {
+        if (data.nomorTombolDCS > 0 && !_dcsTombolSudahDitekan)
+        {
+            Log("VOICE", $"Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        if (!_level6OutletReportDone)
+        {
+            string frasaAwal = string.IsNullOrEmpty(data.laporanVoiceAwal)
+                ? "Outlet pre-heater dibuka, segera salurkan ke autoclave."
+                : data.laporanVoiceAwal;
+
+            bool matchAwal = VoiceReportCocokDenganCadangan(data, keyword, frasaAwal, "outlet preheater dibuka");
+            if (!matchAwal) matchAwal = VoiceReportCocokDenganCadangan(data, keyword, frasaAwal, "outlet pre heater dibuka");
+            if (!matchAwal) matchAwal = VoiceReportCocokDenganCadangan(data, keyword, frasaAwal, "tutup preheater dibuka");
+            if (!matchAwal) matchAwal = VoiceReportCocokDenganCadangan(data, keyword, frasaAwal, "segera salurkan ke autoclave");
+            if (!matchAwal) matchAwal = VoiceReportCocokDenganCadangan(data, keyword, frasaAwal, "preheater outlet open");
+            if (!matchAwal) matchAwal = VoiceCocokDenganSalahSatuAlias(keyword,
+                "outlet preheater dibuka",
+                "outlet pre heater dibuka",
+                "tutup preheater dibuka",
+                "segera salurkan ke autoclave",
+                "preheater outlet open");
+
+            if (!matchAwal)
+            {
+                Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk laporan awal Level 6. Sebut 'outlet preheater dibuka'.", "orange");
+                return false;
+            }
+
+            _level6OutletReportDone = true;
+            OnVoiceReportAccepted?.Invoke(keyword);
+            Log("VOICE REPORT", $"Laporan AWAL Level 6 diterima: '<i>{keyword}</i>'. Teleport ke valve slurry.", "cyan");
+            return true;
+        }
+
+        if (!_level6SlurryReportDone)
+        {
+            if (!_level6SlurryMasukAutoclave)
+            {
+                Log("VOICE", "Buka valve slurry dan tunggu cairan ungu masuk autoclave dulu.", "orange");
+                return false;
+            }
+
+            string frasaSlurry = "DCS, slurry panas sudah masuk autoclave. Jalur pre-heater aman.";
+            bool matchSlurry = VoiceReportCocokDenganCadangan(data, keyword, frasaSlurry, "slurry masuk autoclave");
+            if (!matchSlurry) matchSlurry = VoiceReportCocokDenganCadangan(data, keyword, frasaSlurry, "slurry panas masuk autoclave");
+            if (!matchSlurry) matchSlurry = VoiceReportCocokDenganCadangan(data, keyword, frasaSlurry, "cairan ungu masuk autoclave");
+            if (!matchSlurry) matchSlurry = VoiceReportCocokDenganCadangan(data, keyword, frasaSlurry, "autoclave terisi slurry");
+            if (!matchSlurry) matchSlurry = VoiceCocokDenganSalahSatuAlias(keyword,
+                "slurry masuk autoclave",
+                "slurry panas masuk autoclave",
+                "cairan ungu masuk autoclave",
+                "autoclave terisi slurry");
+
+            if (!matchSlurry)
+            {
+                Log("VOICE", $"Ucapan '{keyword}' belum cocok. Sebut 'slurry masuk autoclave'.", "orange");
+                return false;
+            }
+
+            _level6SlurryReportDone = true;
+            OnVoiceReportAccepted?.Invoke(keyword);
+            Log("VOICE REPORT", $"Laporan SLURRY Level 6 diterima: '<i>{keyword}</i>'. Kembali ke DCS acid setup.", "cyan");
+            return true;
+        }
+
+        if (!_level6DcsAcidReady)
+        {
+            Log("VOICE", "Set rasio acid 350 kg/ton dan pH 1.0 di DCS dulu.", "orange");
+            return false;
+        }
+
+        if (!_level6AcidComplete)
+        {
+            Log("VOICE", "Verifikasi skid asam di field: buka valve H2SO4 sampai flow masuk autoclave.", "orange");
+            return false;
+        }
+
+        string frasaAkhir = string.IsNullOrEmpty(data.laporanVoiceLengkap)
+            ? "Field, acid injection aktif. Rasio asam tiga ratus lima puluh kilogram per ton dan pH turun ke satu koma nol."
+            : data.laporanVoiceLengkap;
+        bool matchAkhir = VoiceReportCocokDenganCadangan(data, keyword, frasaAkhir, data.kataKunciVoice);
+        if (!matchAkhir) matchAkhir = VoiceReportCocokDenganCadangan(data, keyword, frasaAkhir, "rasio 350 kilo");
+        if (!matchAkhir) matchAkhir = VoiceReportCocokDenganCadangan(data, keyword, frasaAkhir, "pH 1.0");
+        if (!matchAkhir) matchAkhir = VoiceReportCocokDenganCadangan(data, keyword, frasaAkhir, "acid injection active");
+        if (!matchAkhir) matchAkhir = VoiceCocokDenganSalahSatuAlias(keyword,
+            "acid aktif",
+            "rasio 350 kilo",
+            "ph 1 0",
+            "pH 1.0",
+            "acid injection active");
+
+        if (!matchAkhir)
+        {
+            Log("VOICE", $"Ucapan '{keyword}' belum cocok untuk laporan akhir Level 6. Sebut 'acid aktif, rasio 350 kilo, pH 1.0'.", "orange");
+            return false;
+        }
+
+        _voiceReportSudahDilakukan = true;
+        OnVoiceReportAccepted?.Invoke(keyword);
+        Log("VOICE REPORT", $"Laporan AKHIR Level 6 diterima: '<i>{keyword}</i>'. Level selesai.", "cyan");
+        CekKondisiLevelSelesai();
+        return true;
+    }
+
     public void NotifyDcsViewed()
     {
         if (_currentLevel != GameLevel.Level2_DCSPrep || _dcsSudahDilihat)
@@ -1010,7 +1221,7 @@ public class GameLevelManager : MonoBehaviour
 
         _level3OreSudahMasukSlurry = true;
         OnLevel3OreReachedSlurry?.Invoke();
-        Log("LEVEL 3", "Ore/laterit sudah mencapai slurry tank. Lanjut amati pengisian tank sampai 25%.", "green");
+        Log("LEVEL 3", "Ore/laterit sudah mencapai slurry tank. Lanjut amati pengisian tank sampai 75%.", "green");
     }
 
     public void NotifyLevel3SlurryReady(float percent)
@@ -1023,11 +1234,11 @@ public class GameLevelManager : MonoBehaviour
 
         if (!_level3OreSudahMasukSlurry)
         {
-            Log("LEVEL 3", "Slurry belum boleh dinilai 25% karena ore belum terdeteksi masuk ke tank.", "orange");
+            Log("LEVEL 3", "Slurry belum boleh dinilai 75% karena ore belum terdeteksi masuk ke tank.", "orange");
             return;
         }
 
-        if (percent < 25f)
+        if (percent < 75f)
             return;
 
         SetLevel3Phase(Level3Phase.SiapLaporanAkhir);
@@ -1056,6 +1267,132 @@ public class GameLevelManager : MonoBehaviour
         }
 
         return string.IsNullOrWhiteSpace(data.laporanVoiceLengkap) ? data.kataKunciVoice : data.laporanVoiceLengkap;
+    }
+
+    /// <summary>
+    /// Ambil keyword pendek (kata kunci) yang dipakai untuk fallback laporan manual.
+    /// </summary>
+    public string GetKataKunciVoiceUntukLevel(GameLevel level)
+    {
+        if (!_dataLevel.TryGetValue(level, out var data))
+            return string.Empty;
+
+        if (level == GameLevel.Level3_OreSlurry &&
+            (_level3Phase == Level3Phase.MenungguLaporanAwal || _level3Phase == Level3Phase.LaporanAwalDiterima))
+            return string.IsNullOrWhiteSpace(data.kataKunciVoiceAwal) ? data.kataKunciVoice : data.kataKunciVoiceAwal;
+
+        if (level == GameLevel.Level6_AcidInjection)
+        {
+            if (!_level6OutletReportDone)
+                return string.IsNullOrWhiteSpace(data.kataKunciVoiceAwal) ? "outlet preheater dibuka" : data.kataKunciVoiceAwal;
+            if (!_level6SlurryReportDone)
+                return "slurry masuk autoclave";
+            return data.kataKunciVoice;
+        }
+
+        return data.kataKunciVoice;
+    }
+
+    /// <summary>
+    /// Force-accept laporan HT untuk level aktif tanpa keyword matching ketat.
+    /// Tetap respect syarat sequencing (DCS dilihat, tombol ditekan, parameter SOP).
+    /// Dipakai oleh WalkieTalkieManager dalam mode tanpa voice.
+    /// </summary>
+    public bool ForceAcceptVoiceUntukLevelAktif(string laporan)
+    {
+        if (!_dataLevel.ContainsKey(_currentLevel))
+            return false;
+
+        var data = _dataLevel[_currentLevel];
+
+        // Validasi sequencing per level (sama seperti OnVoiceKeywordTerdeteksi).
+        if (_currentLevel == GameLevel.Level1_APD)
+        {
+            if (_phaseManager == null) _phaseManager = FindFirstObjectByType<PhaseManager>();
+            if (_phaseManager != null && !_phaseManager.APDLengkapSempurna)
+            {
+                Log("VOICE", "APD belum lengkap. Walkie Talkie belum boleh menyelesaikan Level 1.", "orange");
+                return false;
+            }
+            _voiceReportSudahDilakukan = true;
+            OnVoiceReportAccepted?.Invoke(laporan);
+            Log("VOICE FORCE", $"Laporan APD Level 1 diterima (force): '<i>{laporan}</i>'", "cyan");
+            return true;
+        }
+
+        if (_currentLevel == GameLevel.Level2_DCSPrep && !_dcsSudahDilihat)
+        {
+            Log("VOICE", "Urutan belum benar. Lihat area DCS dulu sebelum kirim laporan HT.", "orange");
+            return false;
+        }
+
+        if (data.nomorTombolDCS > 0 && !_dcsTombolSudahDitekan)
+        {
+            Log("VOICE", $"Urutan belum benar. Tekan tombol DCS {data.nomorTombolDCS} dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        // Per-level gates (mirror OnVoiceKeywordTerdeteksi).
+        if (_currentLevel == GameLevel.Level3_OreSlurry)
+        {
+            switch (_level3Phase)
+            {
+                case Level3Phase.MenungguLaporanAwal:
+                    SetLevel3Phase(Level3Phase.LaporanAwalDiterima);
+                    OnVoiceReportAccepted?.Invoke(laporan);
+                    Log("VOICE FORCE", $"Laporan awal Level 3 diterima (force): '<i>{laporan}</i>'", "cyan");
+                    return true;
+                case Level3Phase.SiapLaporanAkhir:
+                    _voiceReportSudahDilakukan = true;
+                    OnVoiceReportAccepted?.Invoke(laporan);
+                    Log("VOICE FORCE", $"Laporan akhir Level 3 diterima (force): '<i>{laporan}</i>'", "cyan");
+                    OnLevel3LaporanAkhirDiterima?.Invoke();
+                    if (!_tundaTransisiLevel3) CekKondisiLevelSelesai();
+                    return true;
+                default:
+                    Log("VOICE", "Level 3 belum berada pada tahap menerima laporan HT.", "orange");
+                    return false;
+            }
+        }
+
+        if (_currentLevel == GameLevel.Level4_SlurryPump)
+        {
+            switch (_level4Phase)
+            {
+                case Level4Phase.MenungguLaporanFlow:
+                    OnVoiceReportAccepted?.Invoke(laporan);
+                    Log("VOICE FORCE", $"Laporan AWAL Level 4 diterima (force): '<i>{laporan}</i>'", "cyan");
+                    SetLevel4Phase(Level4Phase.ObservasiPump);
+                    return true;
+                case Level4Phase.MenungguLaporanAkhir:
+                    OnVoiceReportAccepted?.Invoke(laporan);
+                    Log("VOICE FORCE", $"Laporan AKHIR Level 4 diterima (force): '<i>{laporan}</i>'", "cyan");
+                    SetLevel4Phase(Level4Phase.KembaliKeDcs);
+                    return true;
+                default:
+                    Log("VOICE", "Level 4 sedang transisi atau belum siap menerima laporan HT.", "orange");
+                    return false;
+            }
+        }
+
+        if (_currentLevel == GameLevel.Level5_SteamValve && !_level5PreheaterReady) return Reject("Pre-heater belum mencapai suhu operasi.");
+        if (_currentLevel == GameLevel.Level6_AcidInjection) return HandleVoiceLevel6(data, laporan);
+        if (_currentLevel == GameLevel.Level7_Autoclave && !_level7AutoclaveInspected) return Reject("Autoclave belum selesai diinspeksi.");
+        if (_currentLevel == GameLevel.Level8_Monitoring && !_level8FlashLetdownDone) return Reject("Flash letdown belum selesai.");
+        if (_currentLevel == GameLevel.Level9_FlashVessel && Mathf.Abs(_tekananSaatIni - data.targetTekanan) > 1.5f) return Reject("Flash vessel belum stabil.");
+        if (_currentLevel == GameLevel.Level10_CCD && !_level10CcdComplete) return Reject("CCD belum stabil.");
+        if (_currentLevel == GameLevel.Level11_MHP && !_level11MhpComplete) return Reject("MHP belum siap.");
+        if (_currentLevel == GameLevel.Level12_TailingDischarge && !_level12TailingFilterComplete) return Reject("Tailing treatment belum selesai.");
+        if (_currentLevel == GameLevel.Level13_TailingWaste && !_level13DryStackComplete) return Reject("Dry stack belum aman.");
+
+        // Lolos semua sequencing → terima.
+        _voiceReportSudahDilakukan = true;
+        OnVoiceReportAccepted?.Invoke(laporan);
+        Log("VOICE FORCE", $"Laporan diterima (force): '<i>{laporan}</i>'", "cyan");
+        CekKondisiLevelSelesai();
+        return true;
+
+        bool Reject(string reason) { Log("VOICE", reason, "orange"); return false; }
     }
 
     public void SetFlowRate(float nilai)
@@ -1089,6 +1426,13 @@ public class GameLevelManager : MonoBehaviour
     public bool LevelAktif => _levelSedangBerjalan;
     public Level3Phase CurrentLevel3Phase => _level3Phase;
 
+    // Public state untuk director arrow / UI lainnya.
+    public bool SudahLihatDcs => _dcsSudahDilihat;
+    public bool SudahTekanTombolDcs => _dcsTombolSudahDitekan;
+    public bool SudahLaporanHt => _voiceReportSudahDilakukan;
+    public int NomorTombolDcsLevelIni =>
+        _dataLevel.TryGetValue(_currentLevel, out var data) ? data.nomorTombolDCS : 0;
+
     /// <summary>
     /// Set true untuk menahan transisi otomatis Level 3 → 4 setelah laporan akhir diterima.
     /// Panel pilihan akan memanggil ini sebelum show, lalu LanjutkanTransisiLevel3() saat player pilih "Lanjut".
@@ -1107,6 +1451,16 @@ public class GameLevelManager : MonoBehaviour
     public Level4Phase CurrentLevel4Phase => _level4Phase;
     public bool Level3OreSudahMasukSlurry => _level3OreSudahMasukSlurry;
 
+    // Level 5 state
+    public bool Level5PreheaterReady => _level5PreheaterReady;
+
+    // Level 6 state
+    public bool Level6OutletReportDone => _level6OutletReportDone;
+    public bool Level6SlurryMasukAutoclave => _level6SlurryMasukAutoclave;
+    public bool Level6SlurryReportDone => _level6SlurryReportDone;
+    public bool Level6DcsAcidReady => _level6DcsAcidReady;
+    public bool Level6AcidComplete => _level6AcidComplete;
+
     public void NotifyLevel5PreheaterReady()
     {
         if (_currentLevel != GameLevel.Level5_SteamValve)
@@ -1121,8 +1475,27 @@ public class GameLevelManager : MonoBehaviour
         if (_currentLevel != GameLevel.Level6_AcidInjection)
             return;
 
+        _level6DcsAcidReady = true;
         _level6AcidComplete = true;
-        Log("LEVEL 6", "Acid ratio and pH reached SOP. Final HT report is now allowed.", "green");
+        Log("LEVEL 6", "Acid skid verified and H2SO4 flow reached autoclave. Final HT report is now allowed.", "green");
+    }
+
+    public void NotifyLevel6SlurryMasukAutoclaveReady()
+    {
+        if (_currentLevel != GameLevel.Level6_AcidInjection)
+            return;
+
+        _level6SlurryMasukAutoclave = true;
+        Log("LEVEL 6", "Slurry panas sudah masuk autoclave. Laporan slurry via HT sekarang diwajibkan.", "green");
+    }
+
+    public void NotifyLevel6DcsAcidRatioReady()
+    {
+        if (_currentLevel != GameLevel.Level6_AcidInjection)
+            return;
+
+        _level6DcsAcidReady = true;
+        Log("LEVEL 6", "DCS acid ratio 350 kg/ton dan pH 1.0 tercapai. Lanjut verifikasi field skid asam.", "green");
     }
 
     public void NotifyLevel7AutoclaveInspectionComplete()
@@ -1132,6 +1505,87 @@ public class GameLevelManager : MonoBehaviour
 
         _level7AutoclaveInspected = true;
         Log("LEVEL 7", "Autoclave gauges inspected. Final HT report is now allowed.", "green");
+    }
+
+    public void NotifyLevel7XrayActivated()
+    {
+        if (_currentLevel != GameLevel.Level7_Autoclave) return;
+        if (_level7XrayActivated) return;
+        _level7XrayActivated = true;
+        Log("LEVEL 7", "X-Ray vision aktif. Player bisa lihat internal autoclave.", "cyan");
+    }
+
+    public void NotifyLevel7ScaleMarked()
+    {
+        if (_currentLevel != GameLevel.Level7_Autoclave) return;
+        if (_level7ScaleMarked) return;
+        _level7ScaleMarked = true;
+        Log("LEVEL 7", "Scale buildup ditandai di maintenance log.", "cyan");
+        TryCompleteLevel7Inspection();
+    }
+
+    public void NotifyLevel7GaugesLogged()
+    {
+        if (_currentLevel != GameLevel.Level7_Autoclave) return;
+        if (_level7GaugesLogged) return;
+        _level7GaugesLogged = true;
+        Log("LEVEL 7", "Cluster gauge tercatat di logbook.", "cyan");
+        TryCompleteLevel7Inspection();
+    }
+
+    public void NotifyLevel7SafetyDrillDone()
+    {
+        if (_currentLevel != GameLevel.Level7_Autoclave) return;
+        if (_level7SafetyDrillDone) return;
+        _level7SafetyDrillDone = true;
+        Log("LEVEL 7", "Safety drill (PSV/ESD/Quench/Exit) dikonfirmasi.", "cyan");
+        TryCompleteLevel7Inspection();
+    }
+
+    public void NotifyLevel7SampleTaken()
+    {
+        if (_currentLevel != GameLevel.Level7_Autoclave) return;
+        if (_level7SampleTaken) return;
+        _level7SampleTaken = true;
+        Log("LEVEL 7", "Sample PLS diambil aman dari sample port.", "cyan");
+        TryCompleteLevel7Inspection();
+    }
+
+    private void TryCompleteLevel7Inspection()
+    {
+        if (_level7AutoclaveInspected) return;
+        if (_level7XrayActivated && _level7GaugesLogged && _level7ScaleMarked && _level7SafetyDrillDone && _level7SampleTaken)
+        {
+            _level7AutoclaveInspected = true;
+            Log("LEVEL 7", "Semua tahap inspeksi selesai. Lanjut laporan HT.", "green");
+        }
+    }
+
+    public bool Level7XrayActivated => _level7XrayActivated;
+    public bool Level7ScaleMarked => _level7ScaleMarked;
+    public bool Level7GaugesLogged => _level7GaugesLogged;
+    public bool Level7SafetyDrillDone => _level7SafetyDrillDone;
+    public bool Level7SampleTaken => _level7SampleTaken;
+    public bool Level7AutoclaveInspected => _level7AutoclaveInspected;
+
+    // ===== Level 8 Flash Letdown =====
+    public bool Level8FlashLetdownDone => _level8FlashLetdownDone;
+    public bool Level8SampleTaken => _level8SampleTaken;
+
+    public void NotifyLevel8FlashLetdownDone()
+    {
+        if (_currentLevel != GameLevel.Level8_Monitoring) return;
+        if (_level8FlashLetdownDone) return;
+        _level8FlashLetdownDone = true;
+        Log("LEVEL 8", "Flash letdown 3-stage selesai. Slurry atmospheric.", "green");
+    }
+
+    public void NotifyLevel8SampleTaken()
+    {
+        if (_currentLevel != GameLevel.Level8_Monitoring) return;
+        if (_level8SampleTaken) return;
+        _level8SampleTaken = true;
+        Log("LEVEL 8", "Sample slurry diambil dan dianalisa. Ni tenor OK.", "green");
     }
 
     public void NotifyLevel10CCDComplete()
@@ -1217,10 +1671,9 @@ public class GameLevelManager : MonoBehaviour
         bool phOK = Mathf.Abs(_phSaatIni - data.targetPH) <= 0.15f || _phSaatIni <= 1.1f;
         if (acidOK && phOK)
         {
-            Log("ACID OK", $"Rasio asam {_acidRatioSaatIni} kg/ton dan pH {_phSaatIni:F1}. Target SOP tercapai.", "green");
+            Log("ACID OK", $"Rasio asam {_acidRatioSaatIni} kg/ton dan pH {_phSaatIni:F1}. Target DCS tercapai, lanjut verifikasi skid asam.", "green");
             _dcsTombolSudahDitekan = true;
-            _level6AcidComplete = true;
-            CekKondisiLevelSelesai();
+            _level6DcsAcidReady = true;
         }
     }
 
@@ -1291,6 +1744,21 @@ public class GameLevelManager : MonoBehaviour
             return true;
 
         return VoiceReportCocokDenganAliasEnglish(data, spoken, laporanLengkap, keywordPendek);
+    }
+
+    private bool VoiceCocokDenganSalahSatuAlias(string ucapan, params string[] aliases)
+    {
+        string spoken = NormalizeVoiceText(ucapan);
+        if (string.IsNullOrWhiteSpace(spoken) || aliases == null)
+            return false;
+
+        for (int i = 0; i < aliases.Length; i++)
+        {
+            if (TextVoiceCocok(spoken, aliases[i]))
+                return true;
+        }
+
+        return false;
     }
 
     private bool VoiceReportCocokDenganAliasEnglish(LevelData data, string spoken, string laporanLengkap, string keywordPendek)
@@ -1587,6 +2055,93 @@ public class GameLevelManager : MonoBehaviour
         TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl4", fallbackName: "SpawnPoint_DCS");
 
         Log("DEBUG", "Skip ke Level 4. Tekan tombol DCS 4 lalu atur flow rate ke 450 m3/h.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 5 (Steam Valve)")]
+    private void DebugSkipKeLevel5()
+    {
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level5_SteamValve);
+        TryOnDCSTombolDitekan(5);
+        // Trigger laporan awal supaya teleport ke field preheater.
+        OnVoiceReportAccepted?.Invoke("aktifkan pre-heater");
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl5", fallbackName: "SpawnPoint_DCS");
+        Log("DEBUG", "Skip ke Level 5. Putar handwheel steam valve sampai suhu ≥ 180°C, lalu lapor 'katup steam terbuka'.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 6 (Acid Injection)")]
+    private void DebugSkipKeLevel6()
+    {
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level6_AcidInjection);
+        TryOnDCSTombolDitekan(6);
+        // Trigger laporan outlet preheater supaya phase masuk ke teleport ke field slurry valve.
+        OnVoiceReportAccepted?.Invoke("outlet preheater dibuka");
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl6", fallbackName: "SpawnPoint_DCS");
+        Log("DEBUG", "Skip ke Level 6. Putar handwheel preheater → cairan masuk autoclave → lapor 'slurry masuk autoclave' → set acid 350/stroke 70%/ARM → field LOCAL START + LEAK OK → lapor akhir.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 6 - Acid Skid (Field)")]
+    private void DebugSkipKeLevel6AcidSkid()
+    {
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level6_AcidInjection);
+        TryOnDCSTombolDitekan(6);
+        // Lengkapkan flag intermediate Level 6 supaya langsung ke acid skid.
+        _level6OutletReportDone = true;
+        _level6SlurryMasukAutoclave = true;
+        _level6SlurryReportDone = true;
+        _level6DcsAcidReady = true;
+        SetAcidRatio(350f);
+        SetPH(1.0f);
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl6_AcidSkid", fallbackName: "SpawnPoint_Lvl6");
+        Log("DEBUG", "Skip ke Level 6 acid skid. Tekan LOCAL START → tunggu 8 detik → tekan LEAK OK → cairan naik di calibration column → lapor akhir.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 7 (Autoclave Inspection)")]
+    private void DebugSkipKeLevel7()
+    {
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level7_Autoclave);
+        TryOnDCSTombolDitekan(7);
+        // Set parameter autoclave langsung sesuai SOP supaya gauge needle reflect target.
+        SetSuhu(252f);
+        SetTekanan(47.5f);
+        SetRPM(60f);
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl7", fallbackName: "SpawnPoint_DCS");
+        Log("DEBUG", "Skip ke Level 7. Tekan X (X-Ray) → C (cycle layer) → M (mark scale 3x) → klik 3 gauge → L (logbook) → V+B (sample) → S 4x (safety drill) → lapor 'autoclave normal'.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Auto-Complete Level 7 (semua flag)")]
+    private void DebugAutoCompleteLevel7()
+    {
+        if (_currentLevel != GameLevel.Level7_Autoclave)
+        {
+            Log("DEBUG", "Bukan di Level 7. Skip dulu via 'Skip ke Level 7'.", "yellow");
+            return;
+        }
+        NotifyLevel7XrayActivated();
+        NotifyLevel7ScaleMarked();
+        NotifyLevel7GaugesLogged();
+        NotifyLevel7SafetyDrillDone();
+        NotifyLevel7SampleTaken();
+        Log("DEBUG", "Semua tahap inspeksi Level 7 ter-flag. Tinggal lapor HT.", "green");
+    }
+
+    /// <summary>
+    /// Helper: pakai semua APD lengkap (helm, rompi, kacamata, sepatu, sarung tangan, respirator, earplug, walkie talkie).
+    /// </summary>
+    private void AutoEquipApdLengkap()
+    {
+        if (PhaseManager.Instance == null) return;
+        PhaseManager.Instance.OnHelmetWorn();
+        PhaseManager.Instance.OnVestWorn();
+        PhaseManager.Instance.OnGlassesWorn();
+        PhaseManager.Instance.OnBootsWorn();
+        PhaseManager.Instance.OnGlovesWorn();
+        PhaseManager.Instance.OnRespiratiorWorn();
+        PhaseManager.Instance.OnEarplugWorn();
+        PhaseManager.Instance.OnWalkieTalkieTaken();
     }
 
     /// <summary>

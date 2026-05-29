@@ -272,7 +272,7 @@ public class DCSMonitorUI : MonoBehaviour
             case GameLevelManager.GameLevel.Level6_AcidInjection:
                 txtStatusFase.text = "STATUS: INJEKSI ASAM SULFAT";
                 txtStatusFase.color = warnaKuning;
-                SetValve(ref _valveAcidFeed, true);
+                SetValve(ref _valveAcidFeed, false);
                 TriggerAlarm("PERHATIAN — INJEKSI H₂SO₄ DIMULAI!", false);
                 break;
 
@@ -347,6 +347,9 @@ public class DCSMonitorUI : MonoBehaviour
                 break;
         }
 
+        if (level == GameLevelManager.GameLevel.Level6_AcidInjection)
+            TriggerAlarm("LEVEL 6 - TEKAN DCS 6 UNTUK AUTHORIZE JALUR PRE-HEATER KE AUTOCLAVE", false);
+
         // 2. Update flow step berdasarkan level
         _flowCurrentStep = Mathf.Clamp(_flowCurrentStep, 0, _flowStepNames.Length - 1);
         UpdateFlowTracker();
@@ -411,6 +414,34 @@ public class DCSMonitorUI : MonoBehaviour
             SetTaskDone(taskMesinDCS);
             TriggerAlarm("Slurry pump aktif. Atur flow rate ke 450 m3/h lalu kirim laporan HT.", false);
             SyncFlowRateKeLevelManager();
+            UpdateSemuaTampilan();
+            UpdateFlowTracker();
+            return;
+        }
+
+        if (GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level6_AcidInjection && nomorTombol == 6)
+        {
+            _mesinAktif = true;
+            _flowCurrentStep = 5;
+            _targetFlow = 430f;
+            _rpm = Mathf.Max(_rpm, 18f);
+            _flowRate = Mathf.Max(_flowRate, 220f);
+            _kadarAsam = Mathf.Max(_kadarAsam, 8f);
+            _waktuProses = 0f;
+            SetValve(ref _valveSlurry, true);
+            SetValve(ref _valveAcidFeed, false);
+
+            if (txtStatusMesin != null)
+            {
+                txtStatusMesin.text = "ROUTE AUTHORIZED";
+                txtStatusMesin.color = warnaKuning;
+            }
+
+            if (panelTaskMesin != null)
+                panelTaskMesin.SetActive(true);
+
+            SetTaskDone(taskMesinDCS);
+            TriggerAlarm("Outlet pre-heater authorized. Lapor HT lalu buka valve field ke autoclave.", false);
             UpdateSemuaTampilan();
             UpdateFlowTracker();
         }

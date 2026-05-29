@@ -11,7 +11,7 @@ public class DcsViewTrigger : MonoBehaviour
     [SerializeField] private float _intervalCek = 0.2f;
 
     [Tooltip("Print debug log saat trigger fire (bantu diagnose).")]
-    [SerializeField] private bool _debugLog = true;
+    [SerializeField] private bool _debugLog = false;
 
     private float _waktuCekTerakhir = -999f;
 
@@ -24,7 +24,7 @@ public class DcsViewTrigger : MonoBehaviour
 
         bool playerTag = other.CompareTag("Player");
         bool hasCamera = other.GetComponentInChildren<Camera>() != null;
-        if (_debugLog)
+        if (_debugLog && (playerTag || hasCamera))
             Debug.Log($"[DcsViewTrigger.{source}] other='{other.name}' tag={other.tag} playerTag={playerTag} hasCamera={hasCamera}");
 
         if (!playerTag && !hasCamera) return;

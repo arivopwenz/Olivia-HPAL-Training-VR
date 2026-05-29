@@ -143,6 +143,11 @@ public class LevelTeleportManager : MonoBehaviour
 
         if (ccEnabled && cc != null) cc.enabled = true;
 
+        // Recovery: re-enable NearFar/Poke Interactor yang ke-disable oleh
+        // ControllerInputActionManager.OnStartTeleport (XR Toolkit sample) saat
+        // input teleport dipencet. Tanpa ini, ray klik UI hilang di Level 2-14.
+        XRInteractorRecovery.PulihkanRayInteractor();
+
         if (_debugLog)
             Debug.Log($"[LevelTeleportManager] Teleport {config.level} → '{config.spawnPoint.name}' target={targetPos}. Origin final pos={_xrOrigin.position}, Camera pos={xrOriginComp?.Camera?.transform.position}");
     }

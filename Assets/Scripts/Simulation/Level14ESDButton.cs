@@ -20,10 +20,23 @@ public class Level14ESDButton : MonoBehaviour
 
     private void OnTriggerEnter(Collider other)
     {
-        if (other.CompareTag("PlayerHand") ||
-            other.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactors.XRDirectInteractor>() != null)
+        if (AdalahTanganPlayer(other))
         {
             PressButton();
         }
+    }
+
+    private bool AdalahTanganPlayer(Collider other)
+    {
+        if (other == null)
+            return false;
+
+        if (other.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactors.XRDirectInteractor>() != null)
+            return true;
+
+        string n = other.name.ToLowerInvariant();
+        string p = other.transform.parent != null ? other.transform.parent.name.ToLowerInvariant() : string.Empty;
+        return n.Contains("playerhand") || n.Contains("transparenthand") || n.Contains("controller") ||
+               p.Contains("playerhand") || p.Contains("transparenthand") || p.Contains("controller");
     }
 }

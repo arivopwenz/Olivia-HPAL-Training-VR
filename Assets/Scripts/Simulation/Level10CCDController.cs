@@ -400,52 +400,75 @@ public class Level10CCDController : MonoBehaviour
             return;
 
         Transform root = _ccdField.transform;
+        Transform rigRoot = FindDeepChild(root, "CCD_BlenderRig") ?? root;
         if (_feedLiquid == null)
         {
-            Transform liquid = root.Find("Feed_Inlet_FromFlash_Liquid");
+            Transform liquid = FindDeepChild(rigRoot, "Feed_Inlet_FromFlash_Liquid");
             if (liquid != null)
                 _feedLiquid = liquid.gameObject;
         }
 
         if (_overflowLiquid == null)
         {
-            Transform liquid = root.Find("Overflow_ToPurification_Liquid");
+            Transform liquid = FindDeepChild(rigRoot, "Overflow_ToPurification_Liquid");
             if (liquid != null)
                 _overflowLiquid = liquid.gameObject;
         }
 
         if (_separationFx == null)
         {
-            Transform fx = root.Find("CCD_Separation_FX");
+            Transform fx = FindDeepChild(root, "CCD_Separation_FX");
             if (fx != null)
                 _separationFx = fx.GetComponent<ParticleSystem>();
         }
 
         if (_rakeArmRoots == null || _rakeArmRoots.Length == 0)
         {
-            _rakeArmRoots = new Transform[]
-            {
-                root.Find("CCD_Clarifier_1/Rake_Arm_Root"),
-                root.Find("CCD_Clarifier_2/Rake_Arm_Root"),
-                root.Find("CCD_Clarifier_3/Rake_Arm_Root")
-            };
+            System.Collections.Generic.List<Transform> rakeRoots = new System.Collections.Generic.List<Transform>();
+            FindDeepChildren(rigRoot, "Rake_Arm_Root", rakeRoots);
+            _rakeArmRoots = rakeRoots.ToArray();
         }
 
         if (_settledMudLayers == null || _settledMudLayers.Length == 0)
         {
-            _settledMudLayers = new GameObject[]
-            {
-                FindChildGameObject(root, "CCD_Clarifier_1/Settled_Underflow_Mud"),
-                FindChildGameObject(root, "CCD_Clarifier_2/Settled_Underflow_Mud"),
-                FindChildGameObject(root, "CCD_Clarifier_3/Settled_Underflow_Mud")
-            };
+            System.Collections.Generic.List<Transform> mudLayers = new System.Collections.Generic.List<Transform>();
+            FindDeepChildren(rigRoot, "Settled_Underflow_Mud", mudLayers);
+            _settledMudLayers = new GameObject[mudLayers.Count];
+            for (int i = 0; i < mudLayers.Count; i++)
+                _settledMudLayers[i] = mudLayers[i].gameObject;
         }
     }
 
-    private GameObject FindChildGameObject(Transform root, string path)
+    private Transform FindDeepChild(Transform root, string childName)
     {
-        Transform child = root.Find(path);
-        return child != null ? child.gameObject : null;
+        if (root == null || string.IsNullOrEmpty(childName))
+            return null;
+
+        foreach (Transform child in root)
+        {
+            if (child.name == childName)
+                return child;
+
+            Transform nested = FindDeepChild(child, childName);
+            if (nested != null)
+                return nested;
+        }
+
+        return null;
+    }
+
+    private void FindDeepChildren(Transform root, string childName, System.Collections.Generic.List<Transform> results)
+    {
+        if (root == null || string.IsNullOrEmpty(childName) || results == null)
+            return;
+
+        foreach (Transform child in root)
+        {
+            if (child.name == childName || child.name.StartsWith(childName + ".", System.StringComparison.Ordinal))
+                results.Add(child);
+
+            FindDeepChildren(child, childName, results);
+        }
     }
 
     public bool QuestComplete => _questComplete;

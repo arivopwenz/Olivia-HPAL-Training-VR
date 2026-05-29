@@ -49,6 +49,15 @@ public sealed class Level1ApdTaskHintDirector : MonoBehaviour
 
     private void Awake()
     {
+        // Disabled: UniversalTaskMarker sekarang handle Level 1 juga.
+        // Matikan script ini supaya tidak double-arrow.
+        if (UniversalTaskMarker.Instance != null || FindFirstObjectByType<UniversalTaskMarker>(FindObjectsInactive.Include) != null)
+        {
+            enabled = false;
+            SetVisible(false);
+            return;
+        }
+
         if (arrowObject == null)
         {
             Transform arrow = transform.Find("TaskHint_Arrow3D");
@@ -64,37 +73,9 @@ public sealed class Level1ApdTaskHintDirector : MonoBehaviour
 
     private void LateUpdate()
     {
-        ResolveTargets();
-        HintEntry? activeEntry = FindFirstIncompleteEntry();
-        if (!activeEntry.HasValue)
-        {
-            SetVisible(false);
-            return;
-        }
-
-        HintEntry entry = activeEntry.Value;
-        Transform target = entry.target;
-        if (target == null)
-        {
-            SetVisible(false);
-            return;
-        }
-
-        _activeTarget = target;
-        Bounds bounds = CalculateBounds(target);
-        float pulse = 0.5f + 0.5f * Mathf.Sin(Time.time * pulseSpeed);
-        Color color = Color.Lerp(hintColor, doneColor, pulse * 0.22f);
-        DrawOutline(bounds, color);
-
-        if (arrowObject != null)
-        {
-            arrowObject.SetActive(true);
-            Vector3 basePosition = bounds.center + Vector3.up * (bounds.extents.y + 0.54f);
-            arrowObject.transform.position = basePosition + entry.arrowOffset;
-            arrowObject.transform.rotation = Quaternion.Euler(-90f, Time.time * 45f, 0f);
-            float scale = baseArrowScale * (0.92f + pulse * 0.16f);
-            arrowObject.transform.localScale = Vector3.one * scale;
-        }
+        // Disabled — UniversalTaskMarker sekarang handle Level 1 juga.
+        SetVisible(false);
+        return;
     }
 
     private HintEntry? FindFirstIncompleteEntry()
@@ -145,6 +126,9 @@ public sealed class Level1ApdTaskHintDirector : MonoBehaviour
 
     private void CreateOutline()
     {
+        if (_lineMaterial != null)
+            return;
+
         _lineMaterial = new Material(Shader.Find("Sprites/Default"));
         _lineMaterial.name = "M_Runtime_TaskHint_Line";
 
@@ -219,7 +203,13 @@ public sealed class Level1ApdTaskHintDirector : MonoBehaviour
 
     private void SetEdge(int index, Vector3 a, Vector3 b, Color color)
     {
+        if (index < 0 || index >= _outlineEdges.Length)
+            return;
+
         LineRenderer lr = _outlineEdges[index];
+        if (lr == null)
+            return;
+
         lr.enabled = true;
         lr.startColor = color;
         lr.endColor = color;
@@ -258,7 +248,23 @@ public sealed class Level1ApdTaskHintDirector : MonoBehaviour
         if (arrowObject != null)
             arrowObject.SetActive(visible);
         for (int i = 0; i < _outlineEdges.Length; i++)
-            _outlineEdges[i].enabled = visible;
+        {
+            if (_outlineEdges[i] != null)
+                _outlineEdges[i].enabled = visible;
+        }
         _activeTarget = visible ? _activeTarget : null;
+    }
+
+    private void EnsureOutlineReady()
+    {
+        for (int i = 0; i < _outlineEdges.Length; i++)
+        {
+            if (_outlineEdges[i] == null)
+            {
+                _lineMaterial = null;
+                CreateOutline();
+                return;
+            }
+        }
     }
 }

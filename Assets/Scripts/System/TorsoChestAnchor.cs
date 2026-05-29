@@ -13,6 +13,7 @@ using UnityEngine;
 ///   2. Pasang script ini, assign field _camera ke Main Camera.
 ///   3. Pindahkan socket APD (mis. Socket_Respirator_Baju) jadi child TorsoAnchor.
 /// </summary>
+[DefaultExecutionOrder(-100)]
 public class TorsoChestAnchor : MonoBehaviour
 {
     [Header("=== Referensi Kamera ===")]
@@ -53,10 +54,12 @@ public class TorsoChestAnchor : MonoBehaviour
 
     private void OnEnable()
     {
-        if (_camera == null && Camera.main != null)
-            _camera = Camera.main.transform;
+        ForceSyncNow();
+    }
 
-        SyncronisasiInstan();
+    private void Start()
+    {
+        ForceSyncNow();
     }
 
     private void LateUpdate()
@@ -68,6 +71,8 @@ public class TorsoChestAnchor : MonoBehaviour
             else
                 return;
         }
+
+        PakaiDefaultDadaYangTerlihat();
 
         Vector3 forwardYaw = HitungForwardYaw();
         Vector3 rightYaw = Vector3.Cross(Vector3.up, forwardYaw).normalized;
@@ -111,6 +116,23 @@ public class TorsoChestAnchor : MonoBehaviour
         }
 
         return Vector3.forward;
+    }
+
+    private void PakaiDefaultDadaYangTerlihat()
+    {
+        if (_offsetY < -0.34f) _offsetY = -0.32f;
+        if (_offsetDepan < 0.20f) _offsetDepan = 0.22f;
+        _smoothPos = 0f;
+        _smoothRot = 0f;
+    }
+
+    public void ForceSyncNow()
+    {
+        if (_camera == null && Camera.main != null)
+            _camera = Camera.main.transform;
+
+        PakaiDefaultDadaYangTerlihat();
+        SyncronisasiInstan();
     }
 
     private void SyncronisasiInstan()

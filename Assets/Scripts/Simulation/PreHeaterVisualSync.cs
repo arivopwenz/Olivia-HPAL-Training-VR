@@ -45,6 +45,17 @@ public class PreHeaterVisualSync : MonoBehaviour
     [SerializeField] private Color _warnaPanasMaks = new Color(1f, 0.45f, 0.1f, 1f);
     [SerializeField] private float _intensitasPanas = 2.5f;
 
+    [Header("=== Temperature Visual ===")]
+    [Tooltip("Read temperature from Level5SteamValveController for pipe emissive color.")]
+    [SerializeField] private bool _enableTemperatureVisual = true;
+    [SerializeField] private Color _warnaPipaDingin = new Color(0.6f, 0.6f, 0.6f, 1f);
+    [SerializeField] private Color _warnaPipaPanas = new Color(1f, 0.35f, 0.05f, 1f);
+    [SerializeField] private float _suhuMinimumVisual = 60f;
+    [SerializeField] private float _suhuMaksimumVisual = 200f;
+    private Level5SteamValveController _level5Controller;
+    private Color[] _warnaPipaAsli;
+    private bool _warnaPipaCaptured;
+
     [Header("=== LED Indicator ===")]
     [SerializeField] private Renderer _ledIndicator;
     [SerializeField] private Color _warnaIdle = new Color(0.4f, 0f, 0f, 1f);
@@ -93,6 +104,7 @@ public class PreHeaterVisualSync : MonoBehaviour
         UpdateMaterialScroll(t, aktif);
         UpdateSteam(t, aktif);
         ApplyFinGlow(aktif ? t : 0f);
+        UpdateTemperatureVisual();
         UpdateAudio(t, aktif);
         UpdateLedIndicator(aktif, flow);
     }
@@ -165,9 +177,13 @@ public class PreHeaterVisualSync : MonoBehaviour
         if (GameLevelManager.Instance != null)
         {
             var level = GameLevelManager.Instance.CurrentLevel;
-            if (level == GameLevelManager.GameLevel.Level5_SteamValve ||
+            if (level == GameLevelManager.GameLevel.Level4_SlurryPump ||
+                level == GameLevelManager.GameLevel.Level5_SteamValve ||
                 level == GameLevelManager.GameLevel.Level7_Autoclave)
+            {
+                StopSteamVisualOnly();
                 return;
+            }
         }
 
         var em = _steamParticles.emission;
@@ -202,6 +218,19 @@ public class PreHeaterVisualSync : MonoBehaviour
     private void UpdateAudio(float t, bool aktif)
     {
         if (_steamAudio == null) return;
+        if (GameLevelManager.Instance != null)
+        {
+            var level = GameLevelManager.Instance.CurrentLevel;
+            if (level == GameLevelManager.GameLevel.Level4_SlurryPump ||
+                level == GameLevelManager.GameLevel.Level5_SteamValve)
+            {
+                _steamAudio.volume = 0f;
+                if (_steamAudio.isPlaying)
+                    _steamAudio.Stop();
+                return;
+            }
+        }
+
         if (aktif)
         {
             if (!_steamAudio.isPlaying) _steamAudio.Play();
@@ -213,6 +242,69 @@ public class PreHeaterVisualSync : MonoBehaviour
             _steamAudio.volume = Mathf.MoveTowards(_steamAudio.volume, 0f, Time.deltaTime * 0.6f);
             if (_steamAudio.volume <= 0.001f && _steamAudio.isPlaying)
                 _steamAudio.Stop();
+        }
+    }
+
+    private void StopSteamVisualOnly()
+    {
+        if (_steamParticles == null) return;
+        var em = _steamParticles.emission;
+        em.rateOverTime = 0f;
+        if (_steamParticles.isPlaying)
+            _steamParticles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        if (_steamParticles.gameObject.activeSelf)
+            _steamParticles.gameObject.SetActive(false);
+    }
+
+    private void UpdateTemperatureVisual()
+    {
+        if (!_enableTemperatureVisual) return;
+
+        if (_level5Controller == null)
+            _level5Controller = FindFirstObjectByType<Level5SteamValveController>(FindObjectsInactive.Include);
+        if (_level5Controller == null) return;
+
+        float suhu = _level5Controller.SuhuSaatIni;
+        float tSuhu = Mathf.InverseLerp(_suhuMinimumVisual, _suhuMaksimumVisual, suhu);
+        Color targetWarna = Color.Lerp(_warnaPipaDingin, _warnaPipaPanas, tSuhu);
+
+        // Capture original colors once
+        if (!_warnaPipaCaptured && _flowMaterials != null && _flowMaterials.Length > 0)
+        {
+            _warnaPipaAsli = new Color[_flowMaterials.Length];
+            for (int i = 0; i < _flowMaterials.Length; i++)
+                if (_flowMaterials[i] != null)
+                    _warnaPipaAsli[i] = _flowMaterials[i].GetColor("_BaseColor");
+            _warnaPipaCaptured = true;
+        }
+
+        // Lerp emissive on pipe materials
+        if (_flowMaterials != null)
+        {
+            float emissiveStrength = Mathf.Lerp(0f, 1.8f, tSuhu);
+            Color emissive = _warnaPipaPanas * emissiveStrength;
+            for (int i = 0; i < _flowMaterials.Length; i++)
+            {
+                var m = _flowMaterials[i];
+                if (m == null) continue;
+                m.SetColor("_EmissionColor", tSuhu > 0.05f ? emissive : Color.black);
+                if (m.HasProperty("_EmissionColor"))
+                    m.EnableKeyword("_EMISSION");
+            }
+        }
+
+        // Also update fin renderers emissive
+        if (_finRenderers != null)
+        {
+            for (int i = 0; i < _finRenderers.Length; i++)
+            {
+                if (_finRenderers[i] == null) continue;
+                var mpb = new MaterialPropertyBlock();
+                _finRenderers[i].GetPropertyBlock(mpb);
+                Color finEmissive = Color.Lerp(_warnaPanasIdle, _warnaPanasMaks, tSuhu) * _intensitasPanas * tSuhu;
+                mpb.SetColor("_EmissionColor", finEmissive);
+                _finRenderers[i].SetPropertyBlock(mpb);
+            }
         }
     }
 

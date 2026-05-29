@@ -1,0 +1,18 @@
+OLIVIA PlayMode Smoke Result
+scene=Assets/Scenes/Level1.unity
+GameLevelManager=True
+Level6Controller=True
+after_start: NearFar=2/2 XRRay=0/1 Line=2/2
+OLIVIA_Left_TransparentHand parent=Left Controller localEuler=(0.00, 0.00, 0.00) active=True
+OLIVIA_Right_TransparentHand parent=Right Controller localEuler=(0.00, 0.00, 0.00) active=True
+DCS6=True
+VoiceOutlet=False
+SlurryArrived=False
+VoiceSlurry=False
+AcidRatio=0
+PH=5.0
+AcidComplete=False
+VoiceFinal=True
+CurrentLevel=Level6_AcidInjection
+after_level6: NearFar=2/2 XRRay=0/1 Line=2/2
+Errors=0

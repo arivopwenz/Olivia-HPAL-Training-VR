@@ -473,33 +473,90 @@ public class Level11MHPController : MonoBehaviour
 
         if (_neutralizationFx == null)
         {
-            Transform fx = root.Find("Neutralization_FX");
+            Transform fx = FindTransform(root, "Neutralization_FX");
             if (fx != null)
                 _neutralizationFx = fx.GetComponent<ParticleSystem>();
         }
 
         if (_precipitationFx == null)
         {
-            Transform fx = root.Find("MHP_Precipitation_FX");
+            Transform fx = FindTransform(root, "MHP_Precipitation_FX");
             if (fx != null)
                 _precipitationFx = fx.GetComponent<ParticleSystem>();
         }
 
-        if (_agitatorRoots == null || _agitatorRoots.Length == 0)
+        if (!HasAnyTransform(_agitatorRoots))
         {
             _agitatorRoots = new Transform[]
             {
-                root.Find("Neutralization_Purification_Tank/Agitator_Root"),
-                root.Find("Polishing_Tank/Agitator_Root"),
-                root.Find("MHP_Precipitation_Tank/Agitator_Root")
+                FindTransform(root, "Neutralization_Purification_Tank/Agitator_Root"),
+                FindTransform(root, "Polishing_Tank/Agitator_Root"),
+                FindTransform(root, "MHP_Precipitation_Tank/Agitator_Root")
             };
         }
     }
 
     private GameObject FindChild(Transform root, string path)
     {
-        Transform child = root.Find(path);
+        Transform child = FindTransform(root, path);
         return child != null ? child.gameObject : null;
+    }
+
+    private Transform FindTransform(Transform root, string path)
+    {
+        if (root == null || string.IsNullOrEmpty(path))
+            return null;
+
+        Transform direct = root.Find(path);
+        if (direct != null)
+            return direct;
+
+        string[] parts = path.Split('/');
+        return FindPathDeep(root, parts, 0);
+    }
+
+    private Transform FindPathDeep(Transform root, string[] parts, int index)
+    {
+        if (root == null || parts == null || index >= parts.Length)
+            return null;
+
+        foreach (Transform child in root)
+        {
+            if (NameMatches(child.name, parts[index]))
+            {
+                if (index == parts.Length - 1)
+                    return child;
+
+                Transform nested = FindPathDeep(child, parts, index + 1);
+                if (nested != null)
+                    return nested;
+            }
+
+            Transform deep = FindPathDeep(child, parts, index);
+            if (deep != null)
+                return deep;
+        }
+
+        return null;
+    }
+
+    private bool NameMatches(string actual, string expected)
+    {
+        return actual == expected || actual.StartsWith(expected + ".");
+    }
+
+    private bool HasAnyTransform(Transform[] transforms)
+    {
+        if (transforms == null)
+            return false;
+
+        for (int i = 0; i < transforms.Length; i++)
+        {
+            if (transforms[i] != null)
+                return true;
+        }
+
+        return false;
     }
 
     public bool QuestComplete => _questComplete;

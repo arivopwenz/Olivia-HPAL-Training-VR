@@ -37,6 +37,11 @@ public class SlurryAgitator : MonoBehaviour
 
     private void Awake()
     {
+        SiapkanAudio();
+    }
+
+    private void SiapkanAudio()
+    {
         _audio = GetComponent<AudioSource>();
         _audio.playOnAwake = false;
         _audio.loop = true;
@@ -46,12 +51,16 @@ public class SlurryAgitator : MonoBehaviour
         _audio.maxDistance = 25f;
         _audio.rolloffMode = AudioRolloffMode.Linear;
 
-        _clipMotor = BuatClipMotor(durasi: 4f, sampleRate: 22050);
-        _audio.clip = _clipMotor;
+        if (_clipMotor == null)
+            _clipMotor = BuatClipMotor(durasi: 4f, sampleRate: 22050);
+
+        if (_audio.clip == null)
+            _audio.clip = _clipMotor;
     }
 
     public void Mulai()
     {
+        SiapkanAudio();
         _aktif = true;
         if (_audio != null && !_audio.isPlaying)
             _audio.Play();

@@ -39,8 +39,8 @@ public class PlayerHUD : MonoBehaviour
         [TextArea(2, 4)] public string tungguTransisi = "<b>MISI: Bersiap ke area crusher</b>\n<size=83%>Laporan awal diterima. Tunggu transisi ke area mesin.</size>";
         [TextArea(2, 4)] public string pakaiApdLapangan = "<b>MISI: Pakai APD lapangan</b>\n<size=83%>Sebelum turun ke crusher/slurry, pakai kacamata pelindung dan respirator. Walkie Talkie tetap dibawa.</size>";
         [TextArea(2, 4)] public string observasiOreAir = "<b>MISI: Amati ore dan air masuk</b>\n<size=83%>Tunggu ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>";
-        [TextArea(2, 4)] public string observasiSlurry = "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 50%.</size>";
-        [TextArea(2, 4)] public string laporanAkhir = "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 50%.</size>";
+        [TextArea(2, 4)] public string observasiSlurry = "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Air mengalir dari pipa kiri. Perhatikan level cairan naik sampai menyentuh batas 75%.</size>";
+        [TextArea(2, 4)] public string laporanAkhir = "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 75%.</size>";
         [TextArea(2, 4)] public string kembaliKeDcs = "<b>MISI: Kembali ke DCS</b>\n<size=83%>Laporan akhir diterima. Bersiap untuk transisi ke Level 4.</size>";
     }
 
@@ -102,6 +102,7 @@ public class PlayerHUD : MonoBehaviour
     private bool _level3LaporanAwalSelesai;
     private bool _level3OreSampaiSlurry;
     private bool _level3Slurry25Tercapai;
+    private bool _level5LaporanAwalDone;
 
     private RectTransform _questRect;
     private RectTransform _operasionalRect;
@@ -182,6 +183,7 @@ public class PlayerHUD : MonoBehaviour
             _level3LaporanAwalSelesai = false;
             _level3OreSampaiSlurry = false;
             _level3Slurry25Tercapai = false;
+            _level5LaporanAwalDone = false;
             SetFase(level == GameLevelManager.GameLevel.Level2_DCSPrep ? FaseQuest.LihatDCS : FaseQuest.MulaiMesin);
             UpdateOperasionalChecklist(level);
             if (level == GameLevelManager.GameLevel.Level3_OreSlurry)
@@ -316,7 +318,28 @@ public class PlayerHUD : MonoBehaviour
             return;
         }
 
-        _voiceReportSelesai = true;
+        // Level 5 punya 2 laporan: awal ("aktifkan pre-heater") dan akhir ("katup steam terbuka").
+        // Jangan set _voiceReportSelesai untuk laporan awal supaya task akhir tidak ikut kecentang.
+        if (_levelAktif == GameLevelManager.GameLevel.Level5_SteamValve)
+        {
+            bool preheaterReady = GameLevelManager.Instance != null && GameLevelManager.Instance.Level5PreheaterReady;
+            if (preheaterReady)
+                _voiceReportSelesai = true;   // laporan AKHIR
+            else
+                _level5LaporanAwalDone = true; // laporan AWAL
+        }
+        else if (_levelAktif == GameLevelManager.GameLevel.Level6_AcidInjection)
+        {
+            // Level 6 punya 3 laporan: outlet, slurry masuk, dan acid aktif (final).
+            // _voiceReportSelesai hanya boleh true saat laporan AKHIR (acid complete).
+            bool acidComplete = GameLevelManager.Instance != null && GameLevelManager.Instance.Level6AcidComplete;
+            if (acidComplete) _voiceReportSelesai = true;
+            // Laporan intermediate: jangan set _voiceReportSelesai. GLM akan handle internal flag.
+        }
+        else
+        {
+            _voiceReportSelesai = true;
+        }
         UpdateOperasionalChecklist(_levelAktif);
     }
 
@@ -535,13 +558,13 @@ public class PlayerHUD : MonoBehaviour
                 if (panelWalkieTalkieHint != null)
                     panelWalkieTalkieHint.SetActive(false);
                 SetQuestLabel(_level3OreSampaiSlurry
-                    ? Teks(_teksLevel3.observasiSlurry, "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Ore sudah masuk. Perhatikan level cairan naik sampai menyentuh batas 50%.</size>")
+                    ? Teks(_teksLevel3.observasiSlurry, "<b>MISI: Amati slurry tank terisi</b>\n<size=83%>Air mengalir dari pipa kiri. Perhatikan level cairan naik sampai menyentuh batas 75%.</size>")
                     : Teks(_teksLevel3.observasiOreAir, "<b>MISI: Amati ore dan air masuk</b>\n<size=83%>Tunggu ore/laterit benar-benar mencapai slurry tank, lalu amati pengisian tank.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.SiapLaporanAkhir:
                 SetFase(FaseQuest.LaporHT);
-                SetQuestLabel(Teks(_teksLevel3.laporanAkhir, "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 50%.</size>"));
+                SetQuestLabel(Teks(_teksLevel3.laporanAkhir, "<b>MISI: Kirim laporan HT akhir</b>\n<size=83%>Laporkan bahwa ore sudah masuk ke slurry tank dan level cairan mencapai 75%.</size>"));
                 break;
 
             case GameLevelManager.Level3Phase.Selesai:
@@ -562,6 +585,11 @@ public class PlayerHUD : MonoBehaviour
     public void ShowNotifPublic(string pesan)
     {
         ShowNotif(pesan, false);
+    }
+
+    public void ShowNotifPublic(string pesan, float duration)
+    {
+        ShowNotif(pesan, false, duration);
     }
 
     public void PlayManualFade(float totalDuration)
@@ -696,7 +724,7 @@ public class PlayerHUD : MonoBehaviour
             lines.Add($"{Check(_level3LaporanAwalSelesai)} Lapor HT awal");
             lines.Add($"{Check(apdLapanganSiap)} Pakai kacamata + respirator");
             lines.Add($"{Check(_level3OreSampaiSlurry)} Ore/laterit sampai ke slurry tank");
-            lines.Add($"{Check(_level3Slurry25Tercapai)} Pastikan slurry 50%");
+            lines.Add($"{Check(_level3Slurry25Tercapai)} Pastikan slurry 75%");
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT akhir");
             txtParameterInfo.text = string.Join("\n", lines);
             return;
@@ -744,6 +772,137 @@ public class PlayerHUD : MonoBehaviour
                                   || p4 == GameLevelManager.Level4Phase.Selesai;
             lines.Add($"{Check(laporAkhirSelesai)} Lapor HT akhir: 'cairan sudah di preheater'");
 
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 5: Steam Valve — detail per-step
+        if (level == GameLevelManager.GameLevel.Level5_SteamValve)
+        {
+            bool preheaterReady = GameLevelManager.Instance.Level5PreheaterReady;
+            bool sudahLaporAwal = _level5LaporanAwalDone || preheaterReady;
+            // Lapor HT akhir hanya valid kalau preheater sudah ready DAN voice report final accepted.
+            bool laporAkhirOk = preheaterReady && _voiceReportSelesai;
+            lines.Add($"{Check(sudahLaporAwal)} Lapor HT: 'aktifkan pre-heater'");
+            lines.Add($"{Check(preheaterReady)} Putar katup steam (suhu >= 180C)");
+            lines.Add($"{Check(laporAkhirOk)} Lapor HT akhir: 'katup steam terbuka'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 6: Acid Injection — detail per-step
+        if (level == GameLevelManager.GameLevel.Level6_AcidInjection)
+        {
+            bool outletDone = GameLevelManager.Instance.Level6OutletReportDone;
+            bool slurryMasuk = GameLevelManager.Instance.Level6SlurryMasukAutoclave;
+            bool slurryReport = GameLevelManager.Instance.Level6SlurryReportDone;
+            bool dcsAcidReady = GameLevelManager.Instance.Level6DcsAcidReady;
+            bool acidComplete = GameLevelManager.Instance.Level6AcidComplete;
+
+            lines.Add($"{Check(outletDone)} Lapor HT: 'outlet preheater dibuka'");
+            lines.Add($"{Check(slurryMasuk)} Putar valve preheater (cairan masuk autoclave)");
+            lines.Add($"{Check(slurryReport)} Lapor HT: 'slurry masuk autoclave'");
+            lines.Add($"{Check(dcsAcidReady)} DCS: set acid 350 + stroke 70% + ARM");
+            lines.Add($"{Check(acidComplete)} Field acid skid: tekan LOCAL START + LEAK OK");
+            // Lapor akhir hanya ter-check kalau acid complete + final voice accepted.
+            bool laporAkhirAcidOk = acidComplete && _voiceReportSelesai;
+            lines.Add($"{Check(laporAkhirAcidOk)} Lapor HT akhir: 'acid aktif, pH 1.0'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 7: Autoclave (REBUILT - simpler 4-step flow)
+        if (level == GameLevelManager.GameLevel.Level7_Autoclave)
+        {
+            var glm = GameLevelManager.Instance;
+            // Pakai flag granular: GaugesLogged = fill 100%, Xray = X-Ray seen, SafetyDrillDone = drill done.
+            bool dcsDone = _dcsTombolDitekan;
+            bool valveOpened = glm != null && glm.Level7GaugesLogged; // Slurry fill 100%
+            bool xrayDone = glm != null && glm.Level7XrayActivated;
+            bool safetyDone = glm != null && glm.Level7SafetyDrillDone;
+            bool inspected = glm != null && glm.Level7AutoclaveInspected;
+            bool laporOk = inspected && _voiceReportSelesai;
+
+            lines.Add($"{Check(dcsDone)} Klik tombol DCS 7 (start autoclave route)");
+            lines.Add($"{Check(valveOpened)} Putar valve inlet → cairan masuk autoclave");
+            lines.Add($"{Check(xrayDone)} Aktifkan X-Ray (X) untuk monitor cairan + agitator");
+            lines.Add($"{Check(safetyDone)} Konfirmasi safety drill 4 step (S): PSV/ESD/Quench/Exit");
+            lines.Add($"{Check(laporOk)} Lapor HT: 'autoclave normal, suhu 250, tekanan 50, agitator 60 RPM'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 8: Monitoring
+        if (level == GameLevelManager.GameLevel.Level8_Monitoring)
+        {
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 8");
+            lines.Add($"{Check(_voiceReportSelesai)} Monitor parameter: suhu, tekanan, RPM");
+            lines.Add($"{Check(_voiceReportSelesai)} Stabilkan semua parameter ke SOP");
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'parameter stabil'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 9: Flash Vessel
+        if (level == GameLevelManager.GameLevel.Level9_FlashVessel)
+        {
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 9");
+            lines.Add($"{Check(_voiceReportSelesai)} Buka letdown valve ke flash vessel");
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'tekanan turun, flash vessel aktif'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 10: CCD
+        if (level == GameLevelManager.GameLevel.Level10_CCD)
+        {
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 10");
+            lines.Add($"{Check(_voiceReportSelesai)} Aktifkan CCD separator");
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'CCD aktif, pemisahan berjalan'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 11: MHP
+        if (level == GameLevelManager.GameLevel.Level11_MHP)
+        {
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 11");
+            lines.Add($"{Check(_voiceReportSelesai)} Ambil sampel MHP");
+            lines.Add($"{Check(_voiceReportSelesai)} Verifikasi pH 5.5 dan warna hijau");
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'MHP presipitasi berhasil'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 12: Tailing Discharge
+        if (level == GameLevelManager.GameLevel.Level12_TailingDischarge)
+        {
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 12");
+            lines.Add($"{Check(_voiceReportSelesai)} Netralisasi tailing (pH naik ke 7.5)");
+            lines.Add($"{Check(_voiceReportSelesai)} Filter press: moisture < 25%");
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'tailing netral, filter press OK'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 13: Tailing Waste / Dry Stack
+        if (level == GameLevelManager.GameLevel.Level13_TailingWaste)
+        {
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 13");
+            lines.Add($"{Check(_voiceReportSelesai)} Tambah limestone (pH naik ke 8.5)");
+            lines.Add($"{Check(_voiceReportSelesai)} Verifikasi moisture cake < 25%");
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'dry stack aman, pH 8.5'");
+            txtParameterInfo.text = string.Join("\n", lines);
+            return;
+        }
+
+        // Level 14: Emergency
+        if (level == GameLevelManager.GameLevel.Level14_Emergency)
+        {
+            lines.Add("[ ] Deteksi alarm gas / kebocoran");
+            lines.Add("[ ] Lapor HT: 'Emergency! Evakuasi!'");
+            lines.Add("[ ] Tekan tombol ESD (merah)");
+            lines.Add($"{Check(_voiceReportSelesai)} Shutdown berhasil");
             txtParameterInfo.text = string.Join("\n", lines);
             return;
         }
@@ -802,6 +961,11 @@ public class PlayerHUD : MonoBehaviour
 
     private void ShowNotif(string pesan, bool sukses)
     {
+        ShowNotif(pesan, sukses, 4.5f);
+    }
+
+    private void ShowNotif(string pesan, bool sukses, float duration)
+    {
         if (panelNotif == null)
             return;
 
@@ -812,7 +976,16 @@ public class PlayerHUD : MonoBehaviour
         if (bgNotif != null)
             bgNotif.color = sukses ? new Color(0.08f, 0.45f, 0.12f, 0.95f) : new Color(0.06f, 0.18f, 0.42f, 0.95f);
 
-        StartCoroutine(HideNotif());
+        if (_hideNotifCo != null) StopCoroutine(_hideNotifCo);
+        _hideNotifCo = StartCoroutine(HideNotifAfter(duration));
+    }
+
+    private Coroutine _hideNotifCo;
+
+    private IEnumerator HideNotifAfter(float seconds)
+    {
+        yield return new WaitForSeconds(seconds);
+        if (panelNotif != null) panelNotif.SetActive(false);
     }
 
     private IEnumerator HideNotif()

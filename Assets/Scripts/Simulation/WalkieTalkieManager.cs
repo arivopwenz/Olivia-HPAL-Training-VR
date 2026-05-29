@@ -26,8 +26,7 @@ public class WalkieTalkieManager : MonoBehaviour
     [SerializeField] private AudioClip[] _audioBalasanNPC = new AudioClip[15];
 
     [Header("=== Visual HT (Opsional) ===")]
-    [SerializeField] private GameObject _walkieTalkieInHand;
-    [SerializeField] private Transform _rightHandAnchor;
+    [SerializeField] private GameObject _walkieTalkieInHand;    [SerializeField] private Transform _rightHandAnchor;
     [SerializeField] private Animator _walkieAnimator;
     [SerializeField] private string _animShowTrigger = "Show";
     [SerializeField] private string _animHideTrigger = "Hide";
@@ -42,7 +41,7 @@ public class WalkieTalkieManager : MonoBehaviour
     [SerializeField] private bool _pakaiFallbackKeyboard = true;
     [SerializeField] private bool _izinkanMouseUntukPTT = false;
     [SerializeField] private bool _modeTanpaVoiceUntukTempatRame = false;
-    [SerializeField] private bool _autoSubmitKeywordSaatSpeechGagal = false;
+    [SerializeField] private bool _autoSubmitKeywordSaatSpeechGagal = true;
     [SerializeField] private float _minimumDurasiPttUntukFallback = 0.25f;
 
     [Header("=== Debug Mic Input ===")]
@@ -324,11 +323,36 @@ public class WalkieTalkieManager : MonoBehaviour
     {
         yield return new WaitForSeconds(_delaySebelumDiproses);
 
+        // Tentukan apakah PTT cukup lama untuk dianggap "ucapan asli" (mendukung mode tanpa voice).
+        float durasiPtt = _waktuMulaiPtt < 0f ? 0f : Time.time - _waktuMulaiPtt;
+        bool pttCukupLama = durasiPtt >= _minimumDurasiPttUntukFallback;
+
         string laporan = _pendingSpeechText;
-        if (string.IsNullOrWhiteSpace(laporan) && _modeTanpaVoiceUntukTempatRame && _adaKeywordPadaSesiPtt)
-            laporan = AmbilLaporanManualTanpaVoice();
+
+        // Fallback Mode Tanpa Voice: KALAU mode aktif & PTT cukup lama, langsung pakai laporan manual
+        // tanpa harus menunggu speech engine final. Ini menyelesaikan kasus speech text ngaco / kotor.
+        if (_modeTanpaVoiceUntukTempatRame && pttCukupLama)
+        {
+            string laporanManual = AmbilLaporanManualTanpaVoice();
+            if (!string.IsNullOrWhiteSpace(laporanManual))
+            {
+                if (string.IsNullOrWhiteSpace(laporan))
+                {
+                    Log("VOICE", $"Mode tanpa voice aktif: pakai laporan manual '<b>{laporanManual}</b>' (speech kosong).", "green");
+                    laporan = laporanManual;
+                }
+                else
+                {
+                    Log("VOICE", $"Mode tanpa voice aktif: prioritas laporan manual '<b>{laporanManual}</b>' di atas speech '<i>{laporan}</i>'.", "green");
+                    laporan = laporanManual;
+                }
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(laporan) && TryGetLevel1MicFallback(out string laporanLevel1))
             laporan = laporanLevel1;
+        if (string.IsNullOrWhiteSpace(laporan))
+            laporan = AmbilLaporanFallback();
 
         if (string.IsNullOrWhiteSpace(laporan))
         {
@@ -342,18 +366,26 @@ public class WalkieTalkieManager : MonoBehaviour
         bool laporanDiterima = GameLevelManager.Instance != null &&
                                GameLevelManager.Instance.OnVoiceKeywordTerdeteksi(laporan);
 
-        // Fallback agresif: kalau mode tanpa voice aktif dan speech text ditolak,
-        // coba lagi dengan laporan manual dari GLM (frasa lengkap level aktif).
-        if (!laporanDiterima && _modeTanpaVoiceUntukTempatRame && _adaKeywordPadaSesiPtt && GameLevelManager.Instance != null)
+        // Retry pertama: kalau ditolak & mode tanpa voice aktif, coba dengan laporan manual yang berbeda.
+        if (!laporanDiterima && _modeTanpaVoiceUntukTempatRame && pttCukupLama && GameLevelManager.Instance != null)
         {
             string laporanManual = AmbilLaporanManualTanpaVoice();
             if (!string.IsNullOrWhiteSpace(laporanManual) && laporanManual != laporan)
             {
-                Log("VOICE", $"Speech '<i>{laporan}</i>' ditolak. Retry dengan laporan manual: '<i>{laporanManual}</i>'", "orange");
+                Log("VOICE", $"Retry dengan laporan manual: '<i>{laporanManual}</i>'.", "orange");
                 laporan = laporanManual;
                 _lastKeyword = laporan;
                 laporanDiterima = GameLevelManager.Instance.OnVoiceKeywordTerdeteksi(laporan);
             }
+        }
+
+        // Retry final: kalau masih ditolak & mode tanpa voice aktif, force-accept dengan
+        // memberitahu GLM untuk bypass keyword matching (tetap respect syarat sequencing lain).
+        if (!laporanDiterima && _modeTanpaVoiceUntukTempatRame && pttCukupLama && GameLevelManager.Instance != null)
+        {
+            laporanDiterima = GameLevelManager.Instance.ForceAcceptVoiceUntukLevelAktif(laporan);
+            if (laporanDiterima)
+                Log("VOICE", $"Force-accept laporan '<b>{laporan}</b>' untuk Level {(int)GameLevelManager.Instance.CurrentLevel} (mode tanpa voice).", "green");
         }
 
         if (laporanDiterima)
@@ -405,6 +437,11 @@ public class WalkieTalkieManager : MonoBehaviour
         string laporan = GameLevelManager.Instance.GetLaporanVoiceDisplay(GameLevelManager.Instance.CurrentLevel);
         if (string.IsNullOrWhiteSpace(laporan))
         {
+            // Fallback: pakai kata kunci level aktif kalau laporan voice display kosong.
+            laporan = GameLevelManager.Instance.GetKataKunciVoiceUntukLevel(GameLevelManager.Instance.CurrentLevel);
+        }
+        if (string.IsNullOrWhiteSpace(laporan))
+        {
             Log("MANUAL", $"Skip: laporan kosong dari GLM (level={GameLevelManager.Instance.CurrentLevel}).", "orange");
             return string.Empty;
         }
@@ -422,14 +459,21 @@ public class WalkieTalkieManager : MonoBehaviour
         if (durasiPtt < _minimumDurasiPttUntukFallback)
             return string.Empty;
 
+        bool adaSuara = _debugMicInput && _debugMicPeak >= _ambangMicTerdengar;
+        bool adaTeksParsial = _adaKeywordPadaSesiPtt || !string.IsNullOrWhiteSpace(_pendingHypothesisText);
+        if (!adaSuara && !adaTeksParsial)
+            return string.Empty;
+
         if (!GameLevelManager.Instance.TryGetLevelData(GameLevelManager.Instance.CurrentLevel, out var data))
             return string.Empty;
 
-        string fallback = string.IsNullOrWhiteSpace(data.laporanVoiceLengkap) ? data.kataKunciVoice : data.laporanVoiceLengkap;
+        string fallback = GameLevelManager.Instance.GetLaporanVoiceDisplay(GameLevelManager.Instance.CurrentLevel);
+        if (string.IsNullOrWhiteSpace(fallback))
+            fallback = string.IsNullOrWhiteSpace(data.laporanVoiceLengkap) ? data.kataKunciVoice : data.laporanVoiceLengkap;
         if (string.IsNullOrWhiteSpace(fallback))
             return string.Empty;
 
-        Log("FALLBACK", $"Speech tidak menangkap frasa. Auto-submit laporan: '<b>{fallback}</b>'", "orange");
+        Log("FALLBACK", $"Mic terdengar tapi speech text kosong. Auto-submit laporan: '<b>{fallback}</b>'", "cyan");
         return fallback;
     }
 
@@ -460,6 +504,7 @@ public class WalkieTalkieManager : MonoBehaviour
     public bool SistemSiap => _sistemSiap;
     public bool RecognizerAktif => _recognizerAktif;
     public string LastKeyword => _lastKeyword;
+    public Transform WalkieTalkieInHandTransform => _walkieTalkieInHand != null ? _walkieTalkieInHand.transform : null;
 
     public void BeginPhysicalWalkiePTT()
     {
@@ -539,6 +584,9 @@ public class WalkieTalkieManager : MonoBehaviour
                 // Re-enable grab + socket interactors saat HT disembunyikan.
                 var grab = _walkieTalkieInHand.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
                 if (grab != null) grab.enabled = true;
+                // Re-enable semua collider supaya player bisa grab manual dari chest dock.
+                foreach (var col in _walkieTalkieInHand.GetComponentsInChildren<Collider>(true))
+                    if (col != null) col.enabled = true;
                 DisableSocketInteractors(_walkieTalkieInHand, false);
 
                 // Restore rigidbody supaya bisa di-grab/lepas normal.
@@ -553,6 +601,10 @@ public class WalkieTalkieManager : MonoBehaviour
                     rb.isKinematic = true;
                     rb.useGravity = false;
                 }
+
+                // Pastikan walkie active supaya tetap visible dan bisa di-grab.
+                if (!_walkieTalkieInHand.activeSelf)
+                    _walkieTalkieInHand.SetActive(true);
             }
         }
     }

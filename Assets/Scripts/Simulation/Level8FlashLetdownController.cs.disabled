@@ -1,0 +1,230 @@
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using Unity.XR.CoreUtils;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
+
+/// <summary>
+/// OLIVIA VR — Level8FlashLetdownController.cs
+///
+/// LEVEL 8 — Flash Letdown Vessel Train (3-Stage Pressure & Heat Recovery).
+/// Research-driven (Springer/Hatch "Optimizing Process Design of Flash Vessels",
+/// Nickel Institute, US Patent 6,482,250).
+///
+/// FLOW:
+///   1. DCS button 8 → fade teleport ke platform flash vessel train
+///   2. STAGE 1: putar interstage letdown valve FV1→FV2 → pressure 45→18 atm,
+///      buka steam valve FV1 → steam recovered, slurry pool FV1 turun
+///   3. STAGE 2: putar interstage letdown valve FV2→FV3 → pressure 18→6 atm,
+///      buka steam valve FV2 → steam recovered
+///   4. STAGE 3: buka steam valve FV3 → pressure 6→1 atm (atmospheric)
+///   5. LAPOR HT 1: "Flash letdown selesai, slurry atmospheric, suhu 100 derajat"
+///   6. SAMPLING: buka sample valve → cup terisi → analisa (Ni/Co tenor, free acid)
+///   7. LAPOR HT 2: "Sample diambil, Ni tenor 4.2 g/L, free acid 25 g/L, normal"
+///   8. Mission Complete Canvas: STAY / KEMBALI KE DCS (Level 9)
+///
+/// SOP Parameter:
+///   FV1: 45→18 atm, 250→210°C | FV2: 18→6 atm, 210→160°C | FV3: 6→1 atm, 160→100°C
+/// </summary>
+public class Level8FlashLetdownController : MonoBehaviour
+{
+    [Header("=== Player & Teleport ===")]
+    [SerializeField] private Transform _playerRigRoot;
+    [SerializeField] private Transform _teleportTarget;
+    [SerializeField] private float _fadeTransitionDuration = 2.5f;
+
+    [Header("=== Stage Pressure (atm) ===")]
+    [SerializeField] private float _fv1PressureStart = 45f;
+    [SerializeField] private float _fv1PressureEnd = 18f;
+    [SerializeField] private float _fv2PressureStart = 18f;
+    [SerializeField] private float _fv2PressureEnd = 6f;
+    [SerializeField] private float _fv3PressureStart = 6f;
+    [SerializeField] private float _fv3PressureEnd = 1f;
+
+    [Header("=== Stage Temperature (C) ===")]
+    [SerializeField] private float _fv1TempStart = 250f;
+    [SerializeField] private float _fv1TempEnd = 210f;
+    [SerializeField] private float _fv2TempEnd = 160f;
+    [SerializeField] private float _fv3TempEnd = 100f;
+
+    [Header("=== Valve Rotation ===")]
+    [SerializeField] private float _valveFullOpenDegrees = 720f;
+    [SerializeField] private float _valveTransitionDuration = 4f;
+
+    [Header("=== Sample Assay (hasil analisa) ===")]
+    [SerializeField] private float _niTenor = 4.2f;     // g/L nikel terlarut
+    [SerializeField] private float _coTenor = 0.35f;    // g/L kobalt terlarut
+    [SerializeField] private float _freeAcid = 25f;     // g/L H2SO4 sisa
+    [SerializeField] private float _density = 1.35f;    // SG
+    [SerializeField] private float _sampleFillDuration = 4f;
+
+    [Header("=== Audio ===")]
+    [Range(0f, 1f)] [SerializeField] private float _flashHissVolume = 0.45f;
+    [Range(0f, 1f)] [SerializeField] private float _steamRecoverVolume = 0.4f;
+
+    [Header("=== HUD Messages ===")]
+    [TextArea(2, 4)] [SerializeField] private string _msgStart =
+        "FLASH LETDOWN: Turunkan tekanan slurry bertahap. Mulai STAGE 1 — putar interstage valve FV1→FV2.";
+
+    // ===== Runtime State =====
+    private enum Phase
+    {
+        Idle,
+        MenungguDcs,
+        Teleport,
+        Stage1_Letdown,
+        Stage1_Steam,
+        Stage2_Letdown,
+        Stage2_Steam,
+        Stage3_Steam,
+        LaporLetdown,
+        Sampling,
+        LaporSample,
+        Selesai
+    }
+
+    private Phase _phase = Phase.Idle;
+    private bool _levelActive;
+    private PlayerHUD _hud;
+    private Coroutine _seqCoroutine;
+
+    // Voice report wait
+    private bool _waitingForVoiceReport;
+    private bool _voiceReportReceived;
+
+    // Stage progress
+    private int _currentStage; // 0..3
+    private bool _sampleTaken;
+
+    // Cached scene refs
+    private FlashStage[] _stages;
+    private Transform _sampleValveHandwheel;
+    private Renderer _sampleCupLiquid;
+    private GameObject _missionCompleteCanvas;
+
+    // Audio
+    private AudioSource _flashHissAudio;
+    private AudioSource _steamRecoverAudio;
+
+    private class FlashStage
+    {
+        public string label;
+        public Transform interstageValveHandwheel; // null untuk stage 3 (tidak ada interstage)
+        public Transform steamValveHandwheel;
+        public Renderer slurryPoolGhost;
+        public TextMesh pressurePanelText;       // legacy TextMesh kalau ada
+        public float pressureStart;
+        public float pressureEnd;
+        public float tempStart;
+        public float tempEnd;
+        // Runtime
+        public float currentPressure;
+        public float currentTemp;
+        public bool letdownDone;
+        public bool steamRecovered;
+        // Handwheel rotation cache
+        public float valveDegrees;
+        public Quaternion[] partBaseRot;
+        public Vector3[] partBasePos;
+        public Transform[] parts;
+        public Vector3 pivotWorld;
+        public Vector3 axisWorld;
+    }
+
+    private void Awake()
+    {
+        _hud = FindFirstObjectByType<PlayerHUD>();
+    }
+
+    private void OnEnable()
+    {
+        GameLevelManager.OnLevelStarted += OnLevelStarted;
+        GameLevelManager.OnDCSButtonPressed += OnDcsButtonPressed;
+        GameLevelManager.OnVoiceReportAccepted += OnVoiceReportAccepted;
+
+        if (GameLevelManager.Instance != null
+            && GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level8_Monitoring
+            && !_levelActive)
+        {
+            ActivateLevel();
+        }
+    }
+
+    private void OnDisable()
+    {
+        GameLevelManager.OnLevelStarted -= OnLevelStarted;
+        GameLevelManager.OnDCSButtonPressed -= OnDcsButtonPressed;
+        GameLevelManager.OnVoiceReportAccepted -= OnVoiceReportAccepted;
+        if (_seqCoroutine != null) StopCoroutine(_seqCoroutine);
+        StopAudio(_flashHissAudio);
+        StopAudio(_steamRecoverAudio);
+    }
+
+    private void Start()
+    {
+        if (GameLevelManager.Instance != null
+            && GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level8_Monitoring
+            && !_levelActive)
+        {
+            ActivateLevel();
+        }
+    }
+
+    private void OnLevelStarted(GameLevelManager.GameLevel level)
+    {
+        if (level == GameLevelManager.GameLevel.Level8_Monitoring)
+        {
+            ActivateLevel();
+        }
+        else
+        {
+            _levelActive = false;
+            _phase = Phase.Idle;
+            ResetVisuals();
+        }
+    }
+
+    private void ActivateLevel()
+    {
+        _levelActive = true;
+        AutoFindReferences();
+        BuildStages();
+        ResetState();
+        _phase = Phase.MenungguDcs;
+        Debug.Log("[Level8] Flash Letdown active — menunggu tombol DCS 8.");
+    }
+
+    private void OnDcsButtonPressed(int nomor)
+    {
+        if (!_levelActive || nomor != 8) return;
+        if (_phase != Phase.MenungguDcs) return;
+        StartSequence(LetdownSequenceCoroutine());
+    }
+
+    private void OnVoiceReportAccepted(string keyword)
+    {
+        if (!_levelActive) return;
+        if (_waitingForVoiceReport) _voiceReportReceived = true;
+    }
+
+    private IEnumerator WaitForVoiceReport(string hudMessage, float dur = 10f)
+    {
+        _waitingForVoiceReport = true;
+        _voiceReportReceived = false;
+        if (_hud != null) _hud.ShowNotifPublic(hudMessage, dur);
+        while (!_voiceReportReceived) yield return null;
+        _waitingForVoiceReport = false;
+    }
+
+    private void StartSequence(IEnumerator routine)
+    {
+        if (_seqCoroutine != null) StopCoroutine(_seqCoroutine);
+        _seqCoroutine = StartCoroutine(routine);
+    }
+}
+
+// ============================================================
+//  PARTIAL: Sequence + Update + Mechanics
+// ============================================================
+
+public partial class Level8FlashLetdownController_Sequence { } // placeholder to keep file valid if split

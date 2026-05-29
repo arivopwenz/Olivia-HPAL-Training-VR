@@ -14,6 +14,7 @@ using UnityEngine;
 public class DirectionArrowIndicator : MonoBehaviour
 {
     [Header("=== Referensi ===")]
+    [SerializeField] private bool _panahDinonaktifkan = false;
     [Tooltip("Kamera player. Panah di-render relatif ke kamera ini.")]
     [SerializeField] private Transform _camera;
     [Tooltip("Target world yang ditunjuk panah.")]
@@ -70,6 +71,12 @@ public class DirectionArrowIndicator : MonoBehaviour
 
     public void Show()
     {
+        if (_panahDinonaktifkan)
+        {
+            Hide();
+            return;
+        }
+
         _aktif = true;
         gameObject.SetActive(true);
         if (_camera == null && Camera.main != null)
