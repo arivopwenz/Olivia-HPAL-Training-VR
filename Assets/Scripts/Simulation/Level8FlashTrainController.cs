@@ -1,4 +1,4 @@
-using System.Collections;
+﻿using System.Collections;
 using System.Collections.Generic;
 using TMPro;
 using Unity.XR.CoreUtils;
@@ -41,7 +41,9 @@ public class Level8FlashTrainController : MonoBehaviour
     [SerializeField] private Transform _fv1HandwheelHub;
     [SerializeField] private Transform _fv2HandwheelHub;
     [SerializeField] private Transform _fv3HandwheelHub;
-    [SerializeField] private float _handwheelFullOpenDegrees = 3600f; // 10 putaran
+    [SerializeField] private float _handwheelFullOpenDegrees = 300f; // ~0.8 putaran (dipermudah lagi dari 540)
+    [Tooltip("Pengali sensitivitas gestural: gerakan tangan kecil -> putaran besar (makin mudah).")]
+    [SerializeField] private float _gesturalGain = 5f;
 
     [Header("=== Cascade Panel + Slurry Visualisation ===")]
     [SerializeField] private Renderer _fv1StatusStrip;
@@ -59,6 +61,29 @@ public class Level8FlashTrainController : MonoBehaviour
     [SerializeField] private Transform _fv2VaporRiser;
     [SerializeField] private Transform _fv3VaporRiser;
 
+    [Header("=== Steam Anchors (uap keluar TEPAT di sini) ===")]
+    [Tooltip("SteamRiser_Connect_-7 (uap FV1, paling besar)")]
+    [SerializeField] private Transform _steamAnchor1;
+    [Tooltip("SteamRiser_Connect_0 (uap FV2, lebih kecil)")]
+    [SerializeField] private Transform _steamAnchor2;
+    [Tooltip("SteamRiser_Connect_7 (uap FV3, paling kecil)")]
+    [SerializeField] private Transform _steamAnchor3;
+
+    [Header("=== Per-Vessel Spawn Points (teleport tiap vessel) ===")]
+    [Tooltip("SpawnPoint_Lv8 (di depan FV1)")]
+    [SerializeField] private Transform _spawnFv1;
+    [Tooltip("SpawnPoint_Lv8 (1) (di depan FV2)")]
+    [SerializeField] private Transform _spawnFv2;
+    [Tooltip("SpawnPoint_Lv8 (2) (di depan FV3)")]
+    [SerializeField] private Transform _spawnFv3;
+
+    [Header("=== Steam Intensity per Vessel (turun bertahap) ===")]
+    [Tooltip("FV1 paling besar & keras, FV2 sedang, FV3 paling kecil")]
+    [SerializeField] private float _steamMultFv1 = 1.0f;
+    [SerializeField] private float _steamMultFv2 = 0.6f;
+    [SerializeField] private float _steamMultFv3 = 0.32f;
+    [SerializeField] private float _interVesselFadeDuration = 1.8f;
+
     [Header("=== Sample System ===")]
     [SerializeField] private float _sampleCoolDuration = 6f;
     [SerializeField] private Color _sampleHotColor = new Color(1f, 0.2f, 0.1f);
@@ -67,7 +92,7 @@ public class Level8FlashTrainController : MonoBehaviour
     [Header("=== Audio ===")]
     [SerializeField] private AudioSource _steamReleaseAudio;
     [SerializeField] private AudioSource _alarmAudio;
-    [Range(0f, 1f)] [SerializeField] private float _steamReleaseVolume = 0.5f;
+    [Range(0f, 1f)] [SerializeField] private float _steamReleaseVolume = 0.95f;
 
     [Header("=== Keys (Debug) ===")]
     [SerializeField] private KeyCode _key1Open = KeyCode.Alpha1;
@@ -80,20 +105,24 @@ public class Level8FlashTrainController : MonoBehaviour
 
     [Header("=== HUD Messages ===")]
     [TextArea(2, 4)] [SerializeField] private string _msgStart =
-        "Flash Train: buka 3 letdown valve berurutan FV1 → FV2 → FV3.\nPutar handwheel kuning di setiap vessel (10 putaran clockwise).";
+        "FV1: uap panas menyembur deras! Putar handwheel kuning (CW) untuk MENUTUP valve sampai uap berhenti.\nSetelah tertutup, cairan mengalir ke FV2.";
     [TextArea(2, 4)] [SerializeField] private string _msgFv1Done =
-        "FV1 stable di 12 atm. Pindah ke FV2, buka letdown handwheel berikutnya.";
+        "FV1 tertutup, uap berhenti. Cairan mengalir ke FV2... berpindah ke FV2.";
     [TextArea(2, 4)] [SerializeField] private string _msgFv2Done =
-        "FV2 stable di 3 atm. Pindah ke FV3 atmospheric flash.";
+        "FV2 tertutup, uap lebih kecil berhenti. Cairan mengalir ke FV3... berpindah ke FV3.";
     [TextArea(2, 4)] [SerializeField] private string _msgFv3Done =
-        "FV3 stable di 1.05 atm. Slurry mengalir ke CCD.\nAmbil 3 sample bottle dari sample port masing-masing FV (Q/W/E).";
+        "FV3 tertutup. Flash train STABIL. Lapor HT (tahan T) untuk menyelesaikan level.";
+    [TextArea(2, 4)] [SerializeField] private string _msgFv2Intro =
+        "FV2: uap masih keluar (lebih kecil dari FV1). Putar handwheel untuk menutup valve.";
+    [TextArea(2, 4)] [SerializeField] private string _msgFv3Intro =
+        "FV3: uap tipis terakhir. Putar handwheel untuk menutup, lalu cairan lanjut ke CCD.";
     [TextArea(2, 4)] [SerializeField] private string _msgSamplingDone =
-        "3 sample collected. Submit ke lab dengan tekan [L].";
+        "3 sample terkumpul! Masuk ke LABORATORIUM QC (gedung di samping), lalu tekan [L] untuk analisa sample.";
     [TextArea(2, 4)] [SerializeField] private string _msgLabComplete =
         "Lab QC sukses, semua parameter dalam SOP. Lapor HT (tahan T) untuk akhir level.";
 
     // ========== Runtime ==========
-    private enum Phase { Idle, MenungguDcs, TeleportField, OpenFV1, OpenFV2, OpenFV3, Sampling, LabSubmit, MenungguLapor, Selesai }
+    private enum Phase { Idle, MenungguDcs, TeleportField, OpenAutoclaveValve, OpenFV1, OpenFV2, OpenFV3, Sampling, LabSubmit, MenungguLapor, Selesai }
     private Phase _phase = Phase.Idle;
     private bool _levelActive;
     private PlayerHUD _hud;
@@ -106,8 +135,60 @@ public class Level8FlashTrainController : MonoBehaviour
     private GameObject _missionCompleteCanvas;
     private GameObject _labQcCanvas;
 
+    // Vapor FX
+    private ParticleSystem _fv1VaporFX;
+    private ParticleSystem _fv2VaporFX;
+    private ParticleSystem _fv3VaporFX;
+
+    // Sample bottle visuals
+    private GameObject[] _sampleBottles = new GameObject[3];
+    private static readonly Color[] _sampleStageColors = {
+        new Color(1f, 0.25f, 0.1f),   // FV1 hot red
+        new Color(1f, 0.6f, 0.15f),   // FV2 mid orange
+        new Color(0.85f, 0.85f, 0.2f) // FV3 cool yellow
+    };
+
+    // Sample station (mekanik fisik: dekati 3 vessel, botol terisi)
+    private GameObject[] _sampleStations = new GameObject[3];
+    private GameObject[] _stationBottles = new GameObject[3];
+    private Transform[] _stationFillLiquid = new Transform[3];
+    private float[] _bottleFillProgress = new float[3];
+    private bool[] _bottleFilling = new bool[3];
+    private bool _samplingStationsBuilt;
+    private float _sampleProximityRadius = 2.8f;
+
+    // Lab building + analyzer
+    private GameObject _labBuilding;
+    private Transform[] _labSlotLiquids = new Transform[3];
+    private Transform _labAnalyzerRotor;
+    private Transform _labResultScreen;
+    private bool _labBuilt;
+    private bool _labSubmitted;
+    private Vector3 _labDoorPos;
+
     // Cached handwheel state
     private HandwheelState _hw1, _hw2, _hw3;
+
+    // Steam-closing rework runtime
+    private float[] _vaporBaseRate = new float[3];   // base emission rate captured per vessel
+    private float[] _steamMult = new float[3];        // per-vessel intensity multiplier
+    private bool _transitioning;                       // true selama fade+teleport antar vessel
+
+    // Autoclave -> Flash letdown valve (dibuka pemain di AWAL, sebelum FV1) + X-ray slurry
+    private Transform _autoclaveValveHub;              // AutoclaveToFlash_LetdownValve_Handwheel_Hub
+    private HandwheelState _hwAuto;                    // state handwheel valve autoclave
+    private FlashStage _autoStage = new FlashStage { stageName = "AUTOCLAVE LETDOWN", pressureStart = 47f, pressureTarget = 47f, tempStart = 250f, tempTarget = 250f };
+    private System.Collections.Generic.List<Renderer> _slurryFlowRenderers = new System.Collections.Generic.List<Renderer>();
+    private float _slurryFlowPhase;                    // untuk animasi scroll/pulse slurry
+    private bool _slurryFlowActive;
+    private AutoclaveSlurryFlowDriver _flowDriver;     // driver plug slurry (autoclave->flash)
+    private bool _flowReachedFlash;                    // flag dari driver saat front sampai flash
+    private bool _interimReportDone;                   // laporan interim WT diterima
+    private bool _waitingInterimReport;                // sedang menunggu laporan interim WT
+
+    // Gating laporan WT antar-langkah (lapor dulu sebelum lanjut)
+    private bool _awaitingStepReport;
+    private bool _stepReportReceived;
 
     [System.Serializable]
     public class FlashStage
@@ -137,10 +218,13 @@ public class Level8FlashTrainController : MonoBehaviour
 
         // XR grab tracking
         public bool grabbed;
+        public bool hovered;
         public Transform interactorAttach;
         public bool yawValid;
         public float yawLast;
-        public UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable grab;
+        // Pakai XRSimpleInteractable: deteksi "pegang" TANPA memindahkan objek.
+        // (XRGrabInteractable lama bikin handwheel ketarik ke tangan -> bug bunderan ikut).
+        public UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable grab;
     }
 
     private void Awake()
@@ -154,6 +238,8 @@ public class Level8FlashTrainController : MonoBehaviour
         GameLevelManager.OnLevelStarted += OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed += OnDcsButtonPressed;
         GameLevelManager.OnVoiceReportAccepted += OnVoiceReportAccepted;
+        // Laporan interim dalam Level 8 (sebelum tiap vessel) lewat WT.
+        WalkieTalkieManager.OnPTTDilepas += OnPttReleasedForStep;
     }
 
     private void OnDisable()
@@ -161,9 +247,17 @@ public class Level8FlashTrainController : MonoBehaviour
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed -= OnDcsButtonPressed;
         GameLevelManager.OnVoiceReportAccepted -= OnVoiceReportAccepted;
+        WalkieTalkieManager.OnPTTDilepas -= OnPttReleasedForStep;
         if (_seqCoroutine != null) StopCoroutine(_seqCoroutine);
         StopAudio(_steamReleaseAudio);
         StopAudio(_alarmAudio);
+    }
+
+    // Laporan WT antar-langkah: setiap kali player lepas PTT saat kita menunggu laporan step,
+    // anggap laporan diterima (frasa bebas) lalu lanjut.
+    private void OnPttReleasedForStep()
+    {
+        if (_levelActive && _awaitingStepReport) _stepReportReceived = true;
     }
 
     private void OnLevelStarted(GameLevelManager.GameLevel level)
@@ -176,7 +270,26 @@ public class Level8FlashTrainController : MonoBehaviour
         {
             _levelActive = false;
             _phase = Phase.Idle;
+            // Ganti level: matikan SEMUA animasi Level 8 (slurry autoclave->flash, uap, audio).
+            StopAllLevel8Animations();
         }
+    }
+
+    // Matikan semua animasi/FX Level 8 saat pindah level (anti-nyangkut di level belakang).
+    private void StopAllLevel8Animations()
+    {
+        if (_seqCoroutine != null) { StopCoroutine(_seqCoroutine); _seqCoroutine = null; }
+        _transitioning = false;
+        _waitingInterimReport = false;
+        if (_flowDriver != null) _flowDriver.StopFlow(true);   // hentikan + sembunyikan plug slurry
+        _slurryFlowActive = false;
+        ResolveSlurryFlowRenderers();
+        SetStaticSlurryVisible(false);
+        StopVaporFX(_fv1VaporFX);
+        StopVaporFX(_fv2VaporFX);
+        StopVaporFX(_fv3VaporFX);
+        StopAudio(_steamReleaseAudio);
+        StopAudio(_alarmAudio);
     }
 
     private void ActivateLevel()
@@ -188,6 +301,10 @@ public class Level8FlashTrainController : MonoBehaviour
         InitCascadePanels();
         _phase = Phase.MenungguDcs;
         for (int i = 0; i < 3; i++) _sampleTaken[i] = false;
+        CleanupSampleBottles();
+        CleanupVaporFX();
+        _labSubmitted = false;
+        if (_labBuilding != null) _labBuilding.SetActive(false);
         if (_missionCompleteCanvas != null) _missionCompleteCanvas.SetActive(false);
         if (_labQcCanvas != null) _labQcCanvas.SetActive(false);
         Debug.Log("[Level8] Flash Train activated. Phase=MenungguDcs.");
@@ -206,12 +323,71 @@ public class Level8FlashTrainController : MonoBehaviour
         float d = Mathf.Max(2f, _fadeTransitionDuration);
         if (_hud != null) _hud.PlayManualFade(d);
         yield return new WaitForSeconds(d * 0.5f);
+        // Teleport ke valve letdown autoclave (kalau ada), kalau tidak ke spawn FV1.
+        Transform firstTarget = _autoclaveValveHub != null ? _autoclaveValveHub : (_spawnFv1 != null ? _spawnFv1 : _teleportTargetField);
+        // Spawn berdiri ~2.5m dari valve menghadap valve.
+        _teleportTargetField = MakeStandSpot(firstTarget, _spawnFv1);
         TeleportPlayerToField();
         yield return new WaitForSeconds(d * 0.5f);
 
-        _phase = Phase.OpenFV1;
-        if (_hud != null) _hud.ShowNotifPublic(_msgStart, 8f);
         EnsureSteamReleaseAudio();
+
+        // AWAL: sembunyikan batang kuning statis + plug aliran (belum ada animasi sampai valve dibuka).
+        ResolveSlurryFlowRenderers();
+        SetStaticSlurryVisible(false);
+        if (_flowDriver != null) _flowDriver.StopFlow(true);
+        _slurryFlowActive = false;
+
+        // FASE AWAL: buka valve letdown autoclave -> flash. Slurry panas mulai mengalir di pipa X-ray.
+        if (_autoclaveValveHub != null)
+        {
+            _hwAuto = BuildHandwheelState(_autoclaveValveHub);
+            EnsureHandwheelInteractable(_hwAuto);
+            ResetStage(_autoStage);
+            _phase = Phase.OpenAutoclaveValve;
+            if (_hud != null) _hud.ShowNotifPublic(
+                "Buka valve letdown Autoclave→Flash: putar handwheel di atas valve (CW). Slurry panas 250°C akan mengalir ke Flash Vessel.", 9f);
+        }
+        else
+        {
+            // Fallback: kalau valve tidak ada, langsung ke FV1 (perilaku lama).
+            if (_hud != null) _hud.ShowNotifPublic(_msgStart, 8f);
+            EnterVesselPhase(0);
+        }
+    }
+
+    // Buat titik berdiri ~2.5m dari target (arah ke spawn fallback), menghadap target.
+    private Transform MakeStandSpot(Transform target, Transform fallback)
+    {
+        if (target == null) return fallback;
+        var existing = GameObject.Find("SpawnPoint_Lvl8_AutoValve_Runtime");
+        var sp = existing != null ? existing : new GameObject("SpawnPoint_Lvl8_AutoValve_Runtime");
+        Vector3 dir = new Vector3(1f, 0f, 0f); // berdiri di sisi +X valve (arah player umum)
+        // Berdiri ~4.2m dari valve supaya handwheel TIDAK menutupi seluruh layar (bug "bunderan
+        // gede nutupin view"). Tinggi feet diset agar mata (~1.6m di atas) sejajar pusat handwheel.
+        Vector3 pos = target.position + dir * 4.2f;
+        pos.y = Mathf.Max(0.1f, target.position.y - 1.6f);
+        sp.transform.position = pos;
+        Vector3 look = target.position - pos; look.y = 0f;
+        sp.transform.rotation = look.sqrMagnitude > 0.001f ? Quaternion.LookRotation(look.normalized, Vector3.up) : Quaternion.identity;
+        return sp.transform;
+    }
+
+    // Mulai fase satu vessel: uap keluar BESAR di steam riser-nya, audio sesuai intensitas vessel.
+    private void EnterVesselPhase(int idx)
+    {
+        _transitioning = false;
+        Transform anchor = idx == 0 ? _steamAnchor1 : idx == 1 ? _steamAnchor2 : _steamAnchor3;
+        float mult = idx == 0 ? _steamMultFv1 : idx == 1 ? _steamMultFv2 : _steamMultFv3;
+        _steamMult[idx] = mult;
+
+        if (idx == 0) { EnsureVaporFX(anchor, ref _fv1VaporFX); StartVaporFX(_fv1VaporFX); _phase = Phase.OpenFV1; _vaporBaseRate[0] = 45f; SetVaporIntensity(_fv1VaporFX, 45f, mult); }
+        else if (idx == 1) { EnsureVaporFX(anchor, ref _fv2VaporFX); StartVaporFX(_fv2VaporFX); _phase = Phase.OpenFV2; _vaporBaseRate[1] = 45f; SetVaporIntensity(_fv2VaporFX, 45f, mult); }
+        else { EnsureVaporFX(anchor, ref _fv3VaporFX); StartVaporFX(_fv3VaporFX); _phase = Phase.OpenFV3; _vaporBaseRate[2] = 45f; SetVaporIntensity(_fv3VaporFX, 45f, mult); }
+
+        // Audio uap: vessel pertama paling keras, makin kecil tiap vessel.
+        EnsureSteamReleaseAudio();
+        StartAudio(_steamReleaseAudio, Mathf.Max(0.05f, _steamReleaseVolume * mult));
     }
 
     private void Update()
@@ -219,9 +395,13 @@ public class Level8FlashTrainController : MonoBehaviour
         if (!_levelActive) return;
 
         // Track handwheel rotation untuk semua 3 vessel
+        if (_phase == Phase.OpenAutoclaveValve) UpdateAutoclaveValve();
         if (_phase == Phase.OpenFV1) UpdateHandwheel(_hw1, _fv1, _key1Open);
         if (_phase == Phase.OpenFV2) UpdateHandwheel(_hw2, _fv2, _key2Open);
         if (_phase == Phase.OpenFV3) UpdateHandwheel(_hw3, _fv3, _key3Open);
+
+        // Animasi slurry panas X-ray mengalir di pipa autoclave->flash.
+        UpdateSlurryFlowAnim();
 
         // Update slurry pool visibility based on stage progress
         UpdateSlurryPoolVisuals();
@@ -230,13 +410,15 @@ public class Level8FlashTrainController : MonoBehaviour
         // Check stage transitions
         CheckStageProgress();
 
-        // Sampling input (only in Sampling phase)
+        // Sampling: mekanik FISIK (dekati 3 station, ambil botol). Keyboard Q/W/E tetap sbg fallback.
         if (_phase == Phase.Sampling)
         {
+            UpdateSamplingProximity();
             if (Input.GetKeyDown(_keySample1)) TakeSample(0);
             if (Input.GetKeyDown(_keySample2)) TakeSample(1);
             if (Input.GetKeyDown(_keySample3)) TakeSample(2);
             if (Input.GetKeyDown(_keySubmitLab) && AllSamplesTaken()) SubmitLabQC();
+            UpdateSampleBottleAnimations();
         }
     }
 
@@ -244,52 +426,248 @@ public class Level8FlashTrainController : MonoBehaviour
     //  HANDWHEEL ROTATION (10-turn, world-axis stable)
     // ============================================================
 
+    // ============================================================
+    //  HANDWHEEL ROTATION (10-turn, world-axis stable)
+    // ============================================================
+
+    private void UpdateAutoclaveValve()
+    {
+        if (_transitioning) return;
+        var hw = _hwAuto;
+        if (hw == null || !hw.initialized)
+        {
+            _autoStage.openPercent = Mathf.Clamp01(_autoStage.openPercent + Time.deltaTime * 0.35f);
+        }
+        else
+        {
+            float deltaDeg = 0f;
+            if (Input.GetKey(_key1Open)) deltaDeg += 360f * Time.deltaTime; // fallback keyboard (key 1)
+            deltaDeg += GetGesturalDelta(hw);
+            if (Mathf.Abs(deltaDeg) > 0.0001f)
+            {
+                hw.degrees = Mathf.Clamp(hw.degrees + deltaDeg, 0f, _handwheelFullOpenDegrees);
+                ApplyHandwheelRotation(hw);
+                _autoStage.openPercent = Mathf.Clamp01(hw.degrees / _handwheelFullOpenDegrees);
+            }
+        }
+
+        // Valve penuh terbuka -> MULAI aliran slurry (plug muncul dari autoclave menuju flash).
+        if (_autoStage.openPercent >= 0.99f && !_transitioning)
+        {
+            StartSequence(AutoValveOpenedSequence());
+        }
+    }
+
+    // Setelah valve dibuka: slurry mengalir -> tunggu sampai sentuh flash vessel -> uap & suara
+    // build-up perlahan -> wajib lapor WT "autoclave dibuka menuju flash vessel" -> balasan -> pindah FV1.
+    private IEnumerator AutoValveOpenedSequence()
+    {
+        _transitioning = true;
+        if (_flowDriver != null) _flowDriver.StartFlow();
+        _slurryFlowActive = true;
+        if (_hud != null) _hud.ShowNotifPublic("Valve terbuka. Slurry panas 250°C mengalir dari Autoclave menuju Flash Vessel...", 6f);
+
+        // 1) Tunggu slurry SAMPAI ke flash vessel (front progress ~1.0).
+        float fallback = 0f;
+        while (_flowDriver != null && _flowDriver.FrontProgress01 < 0.98f && fallback < 12f)
+        {
+            fallback += Time.deltaTime;
+            yield return null;
+        }
+
+        // 2) Begitu slurry menyentuh FV1: uap PERLAHAN muncul + suara build-up (bukan langsung kencang).
+        if (_hud != null) _hud.ShowNotifPublic("Slurry mencapai Flash Vessel. Uap mulai keluar...", 5f);
+        EnsureVaporFX(_steamAnchor1, ref _fv1VaporFX); StartVaporFX(_fv1VaporFX);
+        _vaporBaseRate[0] = 45f;
+        EnsureSteamReleaseAudio();
+        float t = 0f, ramp = 4.5f;   // build-up 4.5 detik
+        while (t < ramp)
+        {
+            t += Time.deltaTime;
+            float k = Mathf.SmoothStep(0f, 1f, t / ramp);     // perlahan naik
+            SetVaporIntensity(_fv1VaporFX, _vaporBaseRate[0], k * _steamMultFv1);
+            StartAudio(_steamReleaseAudio, Mathf.Max(0.04f, _steamReleaseVolume * _steamMultFv1 * k));
+            yield return null;
+        }
+
+        // 3) Setelah suara kencang -> WAJIB lapor WT.
+        if (_hud != null) _hud.ShowNotifPublic("Uap stabil & kencang. Lapor HT (tahan T): 'Autoclave telah dibuka menuju Flash Vessel.'", 8f);
+        yield return WaitForInterimReport();
+
+        // 4) Balasan diterima -> fade + teleport ke FV1.
+        float d = Mathf.Max(1f, _interVesselFadeDuration);
+        if (_hud != null) _hud.PlayManualFade(d);
+        yield return new WaitForSeconds(d * 0.5f);
+        if (_spawnFv1 != null) { _teleportTargetField = _spawnFv1; TeleportPlayerToField(); }
+        yield return new WaitForSeconds(d * 0.5f);
+
+        // 5) Sebelum buka FV1 -> wajib lapor dulu, baru handwheel FV1 aktif.
+        yield return PreVesselReport(0);
+        EnterVesselPhase(0);
+        _seqCoroutine = null;
+    }
+
+    // Tunggu pemain lapor via WT (interim, TIDAK menyelesaikan level). Balasan NPC dimainkan.
+    private IEnumerator WaitForInterimReport()
+    {
+        _interimReportDone = false;
+        _waitingInterimReport = true;
+        // Subscribe sekali ke PTT release -> anggap laporan terkirim.
+        WalkieTalkieManager.OnPTTDilepas += OnInterimPtt;
+        float guard = 0f;
+        while (!_interimReportDone)
+        {
+            guard += Time.deltaTime;
+            yield return null;
+        }
+        WalkieTalkieManager.OnPTTDilepas -= OnInterimPtt;
+        _waitingInterimReport = false;
+        // Balasan NPC (pakai audio balasan level 8 kalau ada).
+        yield return PlayNpcReply();
+    }
+
+    private void OnInterimPtt()
+    {
+        if (_waitingInterimReport) _interimReportDone = true;
+    }
+
+    // Mainkan balasan NPC (audio HT asli + SFX static) untuk laporan interim.
+    private IEnumerator PlayNpcReply()
+    {
+        var wtm = WalkieTalkieManager.Instance;
+        if (wtm != null) wtm.MainkanBalasanInterim();   // SFX static + suara balasan level aktif
+        if (_hud != null) _hud.ShowNotifPublic("HT: \"Copy. Diterima.\"", 3f);
+        yield return new WaitForSeconds(2.2f);
+    }
+
+    // Lapor SEBELUM membuka tiap vessel: "Flash Vessel fase ke-N akan dibuka." -> balasan -> lanjut.
+    private IEnumerator PreVesselReport(int idx)
+    {
+        string[] fase = { "pertama", "kedua", "ketiga" };
+        string nm = idx >= 0 && idx < 3 ? fase[idx] : (idx + 1).ToString();
+        if (_hud != null) _hud.ShowNotifPublic($"Lapor HT (tahan T): 'Flash Vessel fase {nm} akan dibuka.'", 8f);
+        yield return WaitForInterimReport();
+        if (_hud != null) _hud.ShowNotifPublic($"Diterima. Putar handwheel Flash Vessel {idx + 1} untuk menutup uap.", 5f);
+    }
+    private float GetGesturalDelta(HandwheelState hw)
+    {
+        if ((hw.grabbed || hw.hovered) && hw.interactorAttach != null)
+        {
+            Vector3 axis = hw.axisWorld;
+            Vector3 handVec = hw.interactorAttach.up;
+            Vector3 projected = Vector3.ProjectOnPlane(handVec, axis);
+            if (projected.sqrMagnitude < 0.01f) { handVec = hw.interactorAttach.right; projected = Vector3.ProjectOnPlane(handVec, axis); }
+            if (projected.sqrMagnitude > 0.0001f)
+            {
+                projected.Normalize();
+                Vector3 refF = Vector3.ProjectOnPlane(Vector3.up, axis);
+                if (refF.sqrMagnitude < 0.0001f) refF = Vector3.ProjectOnPlane(Vector3.right, axis);
+                refF.Normalize();
+                float yawNow = Vector3.SignedAngle(refF, projected, axis);
+                if (!hw.yawValid) { hw.yawLast = yawNow; hw.yawValid = true; }
+                else { float d = Mathf.DeltaAngle(hw.yawLast, yawNow); hw.yawLast = yawNow; if (Mathf.Abs(d) > 35f) d = 0f; return d * Mathf.Max(1f, _gesturalGain); }
+            }
+        }
+        else hw.yawValid = false;
+        return 0f;
+    }
+
     private void UpdateHandwheel(HandwheelState hw, FlashStage stage, KeyCode debugKey)
     {
         if (hw == null || !hw.initialized) return;
 
-        // Keyboard debug: press to advance handwheel (R untuk speed up testing)
         float deltaDeg = 0f;
-        if (Input.GetKey(debugKey)) deltaDeg += 720f * Time.deltaTime; // 2 turn/sec dengan key
 
-        // XR rotation tracking via grabbed interactor
-        if (hw.grabbed && hw.interactorAttach != null)
+        // 1) Keyboard fallback (simulator/desktop): tahan tombol 1/2/3 untuk memutar BUKA (CW).
+        //    Tahan Shift+key untuk memutar TUTUP (CCW), tapi gak diizinkan di SOP — biarkan jalan satu arah.
+        if (Input.GetKey(debugKey)) deltaDeg += 360f * Time.deltaTime; // 1 putaran/detik
+
+        // 2) GESTURAL VR: track delta yaw tangan player saat hover/grab handwheel.
+        //    Pakai controller.up (vector "atas tangan") yang berubah saat player twist pergelangan
+        //    di sumbu forward. Project ke bidang disc handwheel.
+        if ((hw.grabbed || hw.hovered) && hw.interactorAttach != null)
         {
             Vector3 axis = hw.axisWorld;
-            Vector3 projected = Vector3.ProjectOnPlane(hw.interactorAttach.forward, axis).normalized;
-            if (projected.sqrMagnitude > 0.001f)
+            // Pilih vektor tangan yang punya komponen TERBESAR di bidang disc:
+            // .up dan .right keduanya tegak lurus .forward. Untuk disc vertikal (axis ≈ ±X),
+            // .up dan .right ada di bidang disc → twist pergelangan = perubahan keduanya.
+            Vector3 handVec = hw.interactorAttach.up;
+            Vector3 projected = Vector3.ProjectOnPlane(handVec, axis);
+            if (projected.sqrMagnitude < 0.01f)
             {
-                Vector3 reference = Vector3.ProjectOnPlane(Vector3.right, axis).normalized;
-                float yaw = Vector3.SignedAngle(reference, projected, axis);
+                handVec = hw.interactorAttach.right;
+                projected = Vector3.ProjectOnPlane(handVec, axis);
+            }
+            if (projected.sqrMagnitude > 0.0001f)
+            {
+                projected.Normalize();
+                Vector3 refForward = Vector3.ProjectOnPlane(Vector3.up, axis);
+                if (refForward.sqrMagnitude < 0.0001f) refForward = Vector3.ProjectOnPlane(Vector3.right, axis);
+                refForward.Normalize();
+                float yawNow = Vector3.SignedAngle(refForward, projected, axis);
+
                 if (!hw.yawValid)
                 {
-                    hw.yawLast = yaw;
+                    hw.yawLast = yawNow;
                     hw.yawValid = true;
                 }
                 else
                 {
-                    float yawDelta = -Mathf.DeltaAngle(hw.yawLast, yaw) * 1.6f;
-                    hw.yawLast = yaw;
-                    if (Mathf.Abs(yawDelta) < 0.05f || Mathf.Abs(yawDelta) > 35f)
-                        yawDelta = 360f * Time.deltaTime; // Auto-rotate fallback
-                    deltaDeg += yawDelta;
+                    float dYaw = Mathf.DeltaAngle(hw.yawLast, yawNow);
+                    hw.yawLast = yawNow;
+                    if (Mathf.Abs(dYaw) > 35f) dYaw = 0f;
+                    // Sign convention: SignedAngle dengan axis = -X (sumbu real handwheel),
+                    // putar tangan CW dari sudut pandang player (yang melihat dari +X) menghasilkan
+                    // dYaw POSITIF. Player expects CW = membuka valve → degrees naik.
+                    // _gesturalGain: gerakan kecil tangan -> putaran besar (makin gampang).
+                    deltaDeg += dYaw * Mathf.Max(1f, _gesturalGain);
                 }
             }
         }
+        else
+        {
+            // Lepas grab/hover: invalidate baseline supaya saat grab lagi, baseline diambil ulang.
+            hw.yawValid = false;
+        }
 
-        if (Mathf.Abs(deltaDeg) < 0.001f) return;
+        if (Mathf.Abs(deltaDeg) < 0.0001f) return;
 
         hw.degrees = Mathf.Clamp(hw.degrees + deltaDeg, 0f, _handwheelFullOpenDegrees);
         ApplyHandwheelRotation(hw);
 
         // Update stage open percent
         stage.openPercent = Mathf.Clamp01(hw.degrees / _handwheelFullOpenDegrees);
-        // Pressure & temperature lerp dari start ke target sesuai openPercent
         stage.pressureCurrent = Mathf.Lerp(stage.pressureStart, stage.pressureTarget, stage.openPercent);
         stage.tempCurrent = Mathf.Lerp(stage.tempStart, stage.tempTarget, stage.openPercent);
 
-        // Audio: play steam release saat sedang membuka
-        StartAudio(_steamReleaseAudio, _steamReleaseVolume * stage.openPercent);
+        // MEKANIK: memutar handwheel = MENUTUP valve uap. Makin diputar (openPercent naik),
+        // uap makin MENGECIL sampai habis, lalu cairan mengalir ke vessel berikutnya.
+        int idx = stage == _fv1 ? 0 : stage == _fv2 ? 1 : 2;
+        float vesselMult = _steamMult[idx] > 0f ? _steamMult[idx] : (idx == 0 ? _steamMultFv1 : idx == 1 ? _steamMultFv2 : _steamMultFv3);
+        float steamRemain = 1f - stage.openPercent;               // 1=uap penuh, 0=tertutup
+        ParticleSystem ps = idx == 0 ? _fv1VaporFX : idx == 1 ? _fv2VaporFX : _fv3VaporFX;
+        SetVaporIntensity(ps, _vaporBaseRate[idx], steamRemain * vesselMult);
+
+        // Audio: uap masih kuat saat valve terbuka, mengecil saat ditutup. Skala per vessel.
+        StartAudio(_steamReleaseAudio, Mathf.Max(0.05f, _steamReleaseVolume * vesselMult * steamRemain));
+    }
+
+    // Atur kuat-lemah uap: emission rate + start speed + size proportional ke intensitas.
+    private void SetVaporIntensity(ParticleSystem ps, float baseRate, float intensity)
+    {
+        if (ps == null) return;
+        intensity = Mathf.Clamp01(intensity);
+        var emission = ps.emission;
+        float rate = (baseRate > 0f ? baseRate : 45f) * intensity;
+        emission.rateOverTime = rate;
+        if (intensity <= 0.02f)
+        {
+            if (ps.isPlaying) ps.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+        }
+        else if (!ps.isPlaying)
+        {
+            ps.Play();
+        }
     }
 
     private void ApplyHandwheelRotation(HandwheelState hw)
@@ -308,6 +686,7 @@ public class Level8FlashTrainController : MonoBehaviour
 
     private void InitHandwheelStates()
     {
+        // Deck handwheel sudah dibuat di AutoFindReferences. Di sini tinggal bangun state + interactable.
         _hw1 = BuildHandwheelState(_fv1HandwheelHub);
         _hw2 = BuildHandwheelState(_fv2HandwheelHub);
         _hw3 = BuildHandwheelState(_fv3HandwheelHub);
@@ -316,43 +695,209 @@ public class Level8FlashTrainController : MonoBehaviour
         EnsureHandwheelInteractable(_hw3);
     }
 
+    // Handwheel runtime yang dibuat di deck (kalau handwheel asli posisinya tinggi/terhalang).
+    private Transform _deckHwRoot;
+
+    private void EnsureRuntimeDeckHandwheels()
+    {
+        // PAKAI HANDWHEEL ASLI dari FBX flash vessel v2 (sudah ada di scene, tepat di tiap vessel,
+        // dekat spawn point). Hub-nya: FV1_To_FV2_..._BypassHandwheel_Hub (Z~102),
+        // FV2_To_FV3_..._BypassHandwheel_Hub (Z~105), FV3_SteamValve_Handwheel_Hub (Z~108).
+        // Ini menghilangkan bug "handwheel jatuh / di tempat salah" dari runtime deck handwheel.
+        Transform hw1 = FindFlashHandwheelHub("FV1_To_FV2_InterstageLetdownValve_BypassHandwheel_Hub");
+        Transform hw2 = FindFlashHandwheelHub("FV2_To_FV3_InterstageLetdownValve_BypassHandwheel_Hub");
+        Transform hw3 = FindFlashHandwheelHub("FV3_SteamValve_Handwheel_Hub");
+
+        if (hw1 != null) _fv1HandwheelHub = hw1;
+        if (hw2 != null) _fv2HandwheelHub = hw2;
+        if (hw3 != null) _fv3HandwheelHub = hw3;
+
+        // Bersihkan deck handwheel runtime lama (X=-61) kalau ada — itu sumber bug "jatuh".
+        var oldDeck = GameObject.Find("L8_DeckHandwheels_Runtime");
+        if (oldDeck != null) SafeDestroy(oldDeck);
+
+        // Fallback terakhir: kalau hub FBX tidak ketemu, pakai L5 condensate handwheel lama.
+        if (_fv1HandwheelHub == null) _fv1HandwheelHub = FindCondensateHandwheelHub("(1)");
+        if (_fv2HandwheelHub == null) _fv2HandwheelHub = FindCondensateHandwheelHub("(2)");
+        if (_fv3HandwheelHub == null) _fv3HandwheelHub = FindCondensateHandwheelHub("(3)");
+    }
+
+    /// <summary>Cari Hub handwheel FBX flash vessel (nama persis) di area flash vessel.</summary>
+    private Transform FindFlashHandwheelHub(string exactName)
+    {
+        foreach (var tr in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (tr == null || !tr.gameObject.scene.IsValid()) continue;
+            if (tr.name != exactName) continue;
+            if (tr.position.x > -40f) continue; // area flash vessel
+            return tr;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Cari Hub handwheel L5_Condensate_Drain_Handwheel dengan suffix tertentu (mis "(1)")
+    /// yang ada di area flash vessel (X &lt; -40). Return Hub transform sebagai pivot.
+    /// </summary>
+    private Transform FindCondensateHandwheelHub(string suffix)
+    {
+        Transform best = null;
+        foreach (var tr in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (tr == null || !tr.gameObject.scene.IsValid()) continue;
+            if (!tr.name.StartsWith("L5_Condensate_Drain_Handwheel_Hub")) continue;
+            if (!tr.name.EndsWith(suffix)) continue;
+            if (tr.position.x > -40f) continue; // hanya yang di area flash vessel
+            best = tr;
+            break;
+        }
+        return best;
+    }
+
+    private Transform BuildDeckHandwheel(string name, Vector3 pos, Transform existingHub)
+    {
+        // Kalau sudah pernah dibuat, reuse.
+        var found = GameObject.Find(name);
+        Transform hubT;
+        if (found != null)
+        {
+            hubT = found.transform;
+        }
+        else
+        {
+            // Root hub (pivot rotasi) — identity rotation. Disc menghadap +X (arah player),
+            // wheel berputar di sumbu X dunia.
+            var hubGO = new GameObject(name);
+            hubGO.transform.SetParent(_deckHwRoot, false);
+            hubGO.transform.position = pos;
+            hubGO.transform.rotation = Quaternion.identity;
+
+            // Visual: rim (cylinder pipih, sumbu disc = X) + 4 spoke (bar di bidang YZ) + hub.
+            var rim = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            rim.name = "Rim";
+            rim.transform.SetParent(hubGO.transform, false);
+            // Cylinder default sumbu Y. Rotate 90 di Z => sumbu cylinder jadi X (disc menghadap X).
+            rim.transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+            // Scale: (radiusXZ, tebalY->X, radiusXZ). Tebal kecil di X, diameter besar.
+            rim.transform.localScale = new Vector3(1.1f, 0.10f, 1.1f);
+            var rimCol = rim.GetComponent<Collider>(); if (rimCol != null) SafeDestroy(rimCol);
+            ApplyHandwheelMaterial(rim.GetComponent<Renderer>());
+
+            for (int i = 0; i < 4; i++)
+            {
+                var spoke = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                spoke.name = "Spoke_" + i;
+                spoke.transform.SetParent(hubGO.transform, false);
+                // Spoke bar di bidang YZ (tegak lurus sumbu X). Putar di sumbu X.
+                spoke.transform.localRotation = Quaternion.Euler(45f * i, 0f, 0f);
+                spoke.transform.localPosition = Vector3.zero;
+                spoke.transform.localScale = new Vector3(0.09f, 0.09f, 2.0f);
+                var sc = spoke.GetComponent<Collider>(); if (sc != null) SafeDestroy(sc);
+                ApplyHandwheelMaterial(spoke.GetComponent<Renderer>());
+            }
+            var hubCenter = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            hubCenter.name = "Hub";
+            hubCenter.transform.SetParent(hubGO.transform, false);
+            hubCenter.transform.localScale = Vector3.one * 0.3f;
+            var hc = hubCenter.GetComponent<Collider>(); if (hc != null) SafeDestroy(hc);
+            ApplyHandwheelMaterial(hubCenter.GetComponent<Renderer>());
+
+            hubT = hubGO.transform;
+        }
+        return hubT;
+    }
+
+    private Material _handwheelMat;
+    private void ApplyHandwheelMaterial(Renderer r)
+    {
+        if (r == null) return;
+        if (_handwheelMat == null)
+        {
+            Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            _handwheelMat = new Material(sh);
+            // Oranye industri supaya jelas terlihat sebagai kontrol yang bisa diputar.
+            Color orange = new Color(0.95f, 0.45f, 0.05f);
+            if (_handwheelMat.HasProperty("_BaseColor")) _handwheelMat.SetColor("_BaseColor", orange);
+            if (_handwheelMat.HasProperty("_Color")) _handwheelMat.SetColor("_Color", orange);
+            if (_handwheelMat.HasProperty("_Metallic")) _handwheelMat.SetFloat("_Metallic", 0.3f);
+            if (_handwheelMat.HasProperty("_Smoothness")) _handwheelMat.SetFloat("_Smoothness", 0.5f);
+        }
+        r.sharedMaterial = _handwheelMat;
+    }
+
     private void EnsureHandwheelInteractable(HandwheelState hw)
     {
         if (hw == null || hw.hub == null) return;
-        // Pakai parent assembly sebagai target grab supaya seluruh handwheel ikut visual.
         Transform target = hw.hub;
+        var go = target.gameObject;
 
-        // Tambahkan SphereCollider kalau belum ada (untuk grab area).
-        if (target.GetComponent<Collider>() == null)
+        try
         {
-            var col = target.gameObject.AddComponent<SphereCollider>();
-            col.radius = 0.4f;
-            col.isTrigger = false;
+            // Collider untuk area select. NON-trigger supaya XR interactor (ray/sphere cast) bisa hit.
+            // Radius besar supaya gampang di-target di VR/simulator.
+            Collider col = target.GetComponent<Collider>();
+            if (col == null)
+            {
+                var sc = go.AddComponent<SphereCollider>();
+                sc.radius = 0.7f;
+                sc.isTrigger = false;
+                col = sc;
+            }
+
+            // BUANG XRGrabInteractable + Rigidbody kalau ada (sisa versi lama) supaya objek
+            // TIDAK ketarik mengikuti tangan. Handwheel hanya BERPUTAR di tempat.
+            var oldGrab = target.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+            if (oldGrab != null) Destroy(oldGrab);
+            var rb = target.GetComponent<Rigidbody>();
+            if (rb != null) Destroy(rb);
+
+            // XRSimpleInteractable: deteksi pegang TANPA memindahkan objek.
+            var simple = target.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>();
+            if (simple == null) simple = go.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>();
+            hw.grab = simple;
+            if (simple == null) return;
+
+            // PENTING: daftarkan collider ke interactable secara EKSPLISIT. Kalau collider
+            // ditambah via script, list 'colliders' interactable kosong (=0) -> XR interactor
+            // gak bisa select -> handwheel gak bisa diputar. Ini bug utama sebelumnya.
+            simple.colliders.Clear();
+            foreach (var c in go.GetComponents<Collider>())
+                if (c != null) simple.colliders.Add(c);
+            // Refresh registrasi collider di interaction manager.
+            simple.enabled = false;
+            simple.enabled = true;
+
+            simple.selectEntered.RemoveAllListeners();
+            simple.selectExited.RemoveAllListeners();
+            simple.hoverEntered.RemoveAllListeners();
+            simple.hoverExited.RemoveAllListeners();
+            simple.selectEntered.AddListener((args) =>
+            {
+                hw.grabbed = true;
+                hw.interactorAttach = args.interactorObject != null ? args.interactorObject.transform : null;
+                hw.yawValid = false;
+            });
+            simple.selectExited.AddListener((args) =>
+            {
+                hw.grabbed = false;
+                hw.interactorAttach = null;
+                hw.yawValid = false;
+            });
+            // Hover juga memutar (gampang: cukup arahkan ray ke handwheel, gak harus klik select).
+            simple.hoverEntered.AddListener((args) =>
+            {
+                hw.hovered = true;
+                hw.interactorAttach = args.interactorObject != null ? args.interactorObject.transform : hw.interactorAttach;
+            });
+            simple.hoverExited.AddListener((args) =>
+            {
+                hw.hovered = false;
+            });
         }
-
-        // Rigidbody kinematic supaya grab interactable bekerja tanpa physics push.
-        var rb = target.GetComponent<Rigidbody>() ?? target.gameObject.AddComponent<Rigidbody>();
-        rb.isKinematic = true;
-        rb.useGravity = false;
-
-        // XRGrabInteractable
-        hw.grab = target.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>()
-                ?? target.gameObject.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
-        hw.grab.enabled = true;
-        hw.grab.selectEntered.RemoveAllListeners();
-        hw.grab.selectExited.RemoveAllListeners();
-        hw.grab.selectEntered.AddListener((args) =>
+        catch (System.Exception e)
         {
-            hw.grabbed = true;
-            hw.interactorAttach = args.interactorObject != null ? args.interactorObject.transform : null;
-            hw.yawValid = false;
-        });
-        hw.grab.selectExited.AddListener((args) =>
-        {
-            hw.grabbed = false;
-            hw.interactorAttach = null;
-            hw.yawValid = false;
-        });
+            Debug.LogWarning($"[Level8] Gagal setup interactable untuk handwheel '{go.name}': {e.Message}. Handwheel tetap bisa diputar via keyboard 1/2/3.");
+        }
     }
 
     private HandwheelState BuildHandwheelState(Transform hub)
@@ -361,6 +906,92 @@ public class Level8FlashTrainController : MonoBehaviour
         var hw = new HandwheelState();
         hw.hub = hub;
         hw.pivotWorld = hub.position;
+
+        // Deck handwheel runtime (nama "L8_..._DeckHandwheel"): disc menghadap +X,
+        // jadi spin di sumbu X dunia. parts = hub saja (rim/spoke CHILD ikut berputar).
+        if (hub.name.StartsWith("L8_") && hub.name.Contains("DeckHandwheel"))
+        {
+            hw.axisWorld = Vector3.right;
+            hw.parts = new[] { hub };
+            hw.baseRotations = new[] { hub.rotation };
+            hw.basePositions = new[] { hub.position };
+            hw.degrees = 0f;
+            hw.initialized = true;
+            return hw;
+        }
+
+        // Handwheel FBX flash vessel v2: hub = FV*_..._BypassHandwheel_Hub / FV3_SteamValve_Handwheel_Hub.
+        // PENTING: origin GROUP jauh dari pusat disc (offset ~8m), jadi JANGAN putar group di originnya
+        // (nanti disc-nya ngorbit/"jatuh"). Putar tiap part (hub+ring+spoke) di PUSAT DISC (= hub.position),
+        // sumbu = world X (disc flat di bidang YZ). Ini bikin stir berputar di porosnya seperti roda.
+        if (hub.name.StartsWith("FV1_To_FV2") || hub.name.StartsWith("FV2_To_FV3") || hub.name.StartsWith("FV3_SteamValve"))
+        {
+            hw.axisWorld = Vector3.right;          // disc normal = X
+            hw.pivotWorld = hub.position;          // pusat disc (poros stir)
+
+            var fbxParts = new List<Transform>();
+            fbxParts.Add(hub);
+            Transform grp = hub.parent;
+            if (grp != null)
+            {
+                foreach (Transform sib in grp)
+                {
+                    if (sib == hub) continue;
+                    if (sib.name.Contains("OuterRing") || sib.name.Contains("Spoke") || sib.name.Contains("Hub"))
+                        fbxParts.Add(sib);
+                }
+            }
+            hw.parts = fbxParts.ToArray();
+            hw.baseRotations = new Quaternion[hw.parts.Length];
+            hw.basePositions = new Vector3[hw.parts.Length];
+            for (int i = 0; i < hw.parts.Length; i++)
+            {
+                hw.baseRotations[i] = hw.parts[i].rotation;
+                hw.basePositions[i] = hw.parts[i].position;
+            }
+            hw.degrees = 0f;
+            hw.initialized = true;
+            return hw;
+        }
+
+        // Handwheel asli L5_Condensate_Drain_Handwheel: disc berada di bidang YZ,
+        // hub.up menunjuk ±X (sumbu putar = world X). Ada 3 set dengan nama mirip di scene,
+        // jadi grup hanya sibling yang BERADA DI POSISI HUB YANG SAMA (jarak < 0.6m).
+        if (hub.name.StartsWith("L5_Condensate_Drain_Handwheel"))
+        {
+            Vector3 axisL5 = hub.up.normalized;
+            if (axisL5.sqrMagnitude < 0.001f) axisL5 = Vector3.right;
+            // Snap ke world X kalau dominan X.
+            if (Mathf.Abs(axisL5.x) > 0.9f) axisL5 = new Vector3(Mathf.Sign(axisL5.x), 0f, 0f);
+            hw.axisWorld = axisL5;
+
+            var partsL5 = new List<Transform>();
+            partsL5.Add(hub);
+            if (hub.parent != null)
+            {
+                foreach (Transform sib in hub.parent)
+                {
+                    if (sib == hub) continue;
+                    if (!sib.name.StartsWith("L5_Condensate_Drain_Handwheel")) continue;
+                    // Hanya part dari SET YANG SAMA (posisi dekat hub).
+                    if (Vector3.Distance(sib.position, hub.position) > 0.7f) continue;
+                    if (sib.name.Contains("OuterRing") || sib.name.Contains("Spoke") || sib.name.Contains("Hub"))
+                        partsL5.Add(sib);
+                }
+            }
+            hw.parts = partsL5.ToArray();
+            hw.baseRotations = new Quaternion[hw.parts.Length];
+            hw.basePositions = new Vector3[hw.parts.Length];
+            for (int i = 0; i < hw.parts.Length; i++)
+            {
+                hw.baseRotations[i] = hw.parts[i].rotation;
+                hw.basePositions[i] = hw.parts[i].position;
+            }
+            hw.degrees = 0f;
+            hw.initialized = true;
+            return hw;
+        }
+
         // Sumbu rotasi: handwheel orange field hub.up = (0,-1,0), berarti rotate di world Y axis.
         // Untuk bypass handwheel asli, hub.up bisa berbeda.
         Vector3 axis = hub.up.normalized;
@@ -404,33 +1035,65 @@ public class Level8FlashTrainController : MonoBehaviour
 
     private void CheckStageProgress()
     {
-        // FV1 → FV2 transition
+        if (_transitioning) return;
+
+        // MEKANIK BARU: putar handwheel sampai habis = uap FV1 TERTUTUP -> cairan mengalir ke FV2.
         if (_phase == Phase.OpenFV1 && _fv1.openPercent >= 0.99f)
         {
             _fv1.isStable = true;
             SetStatusStripColor(_fv1StatusStrip, Color.green);
-            _phase = Phase.OpenFV2;
-            if (_hud != null) _hud.ShowNotifPublic(_msgFv1Done, 6f);
+            StopVaporFX(_fv1VaporFX);
+            if (_hud != null) _hud.ShowNotifPublic(_msgFv1Done, 5f);
+            StartSequence(InterVesselTransition(1));
+            return;
         }
 
-        // FV2 → FV3 transition (interlock: FV1 must be stable)
+        // FV2 valve tertutup -> cairan mengalir ke FV3.
         if (_phase == Phase.OpenFV2 && _fv2.openPercent >= 0.99f && _fv1.isStable)
         {
             _fv2.isStable = true;
             SetStatusStripColor(_fv2StatusStrip, Color.green);
-            _phase = Phase.OpenFV3;
-            if (_hud != null) _hud.ShowNotifPublic(_msgFv2Done, 6f);
+            StopVaporFX(_fv2VaporFX);
+            if (_hud != null) _hud.ShowNotifPublic(_msgFv2Done, 5f);
+            StartSequence(InterVesselTransition(2));
+            return;
         }
 
-        // FV3 done → Sampling
+        // FV3 valve tertutup -> flash train selesai, cairan mengalir ke Step/Area berikutnya (CCD).
         if (_phase == Phase.OpenFV3 && _fv3.openPercent >= 0.99f && _fv2.isStable)
         {
             _fv3.isStable = true;
             SetStatusStripColor(_fv3StatusStrip, Color.green);
-            _phase = Phase.Sampling;
-            if (_hud != null) _hud.ShowNotifPublic(_msgFv3Done, 9f);
+            StopVaporFX(_fv3VaporFX);
             StopAudio(_steamReleaseAudio);
+            GameLevelManager.Instance?.NotifyLevel8FlashLetdownDone();
+            GameLevelManager.Instance?.NotifyLevel8SampleTaken();
+            _phase = Phase.MenungguLapor;
+            if (_hud != null) _hud.ShowNotifPublic(_msgFv3Done, 9f);
+            StartSequence(WaitForFinalReportCoroutine());
         }
+    }
+
+    // Jeda fade-out sebentar lalu spawn di SpawnPoint vessel berikutnya, mulai fase uap berikutnya.
+    private IEnumerator InterVesselTransition(int nextIdx)
+    {
+        _transitioning = true;
+        float d = Mathf.Max(1f, _interVesselFadeDuration);
+        if (_hud != null) _hud.PlayManualFade(d);
+        yield return new WaitForSeconds(d * 0.5f);
+
+        // Teleport ke spawn vessel berikutnya.
+        Transform target = nextIdx == 1 ? _spawnFv2 : _spawnFv3;
+        if (target != null) { _teleportTargetField = target; TeleportPlayerToField(); }
+
+        yield return new WaitForSeconds(d * 0.5f);
+
+        // WAJIB lapor WT dulu sebelum buka vessel berikutnya, baru handwheel aktif.
+        yield return PreVesselReport(nextIdx);
+
+        // Mulai fase vessel berikutnya: uap besar lagi (tapi lebih kecil dari sebelumnya), audio lebih pelan.
+        EnterVesselPhase(nextIdx);
+        _seqCoroutine = null;
     }
 
     // ============================================================
@@ -512,6 +1175,18 @@ public class Level8FlashTrainController : MonoBehaviour
         if (idx < 0 || idx >= 3) return;
         if (_sampleTaken[idx]) return;
         _sampleTaken[idx] = true;
+        _bottleFilling[idx] = false;
+        // Kalau dipanggil via keyboard (tanpa station fill), pastikan liquid botol station penuh.
+        if (_stationFillLiquid[idx] != null)
+        {
+            _stationFillLiquid[idx].localScale = new Vector3(0.82f, 1.7f, 0.82f);
+            _stationFillLiquid[idx].localPosition = new Vector3(0f, -0.95f + 1.7f * 0.5f, 0f);
+        }
+        else
+        {
+            // Tidak ada station (fallback lama) → spawn botol visual mengambang.
+            SpawnSampleBottleVisual(idx);
+        }
         string stageName = idx == 0 ? "FV1 HP (195°C)" : idx == 1 ? "FV2 MP (145°C)" : "FV3 LP (102°C)";
         if (_hud != null) _hud.ShowNotifPublic($"Sample {stageName} collected. ({CountSamples()}/3)", 4f);
         if (AllSamplesTaken())
@@ -520,7 +1195,7 @@ public class Level8FlashTrainController : MonoBehaviour
         }
     }
 
-    private bool AllSamplesTaken()
+    public bool AllSamplesTaken()
     {
         foreach (var s in _sampleTaken) if (!s) return false;
         return true;
@@ -533,9 +1208,545 @@ public class Level8FlashTrainController : MonoBehaviour
         return c;
     }
 
+    // ============================================================
+    //  VAPOR PARTICLE FX
+    // ============================================================
+
+    private void EnsureVaporFX(Transform riser, ref ParticleSystem ps)
+    {
+        if (ps != null) return;
+        // Anchor: pakai riser kalau ada, kalau tidak buat anchor sendiri (uap "di mana saja" sesuai permintaan).
+        Transform anchor = riser;
+        if (anchor == null)
+        {
+            var anchorGO = new GameObject("L8_VaporAnchor_Runtime");
+            anchorGO.transform.SetParent(transform, false);
+            anchorGO.transform.position = new Vector3(-63f, 13f, 105f);
+            anchor = anchorGO.transform;
+        }
+        var go = new GameObject("L8_VaporFX_" + anchor.name);
+        go.transform.SetParent(anchor, false);
+        go.transform.localPosition = Vector3.up * 0.3f;
+        ps = go.AddComponent<ParticleSystem>();
+        ps.Stop();
+        var main = ps.main;
+        main.startLifetime = 3.2f;
+        main.startSpeed = 2.0f;
+        main.startSize = 0.6f;      // lebih besar, uap tebal
+        main.startColor = new Color(1f, 1f, 0.92f, 0.65f);
+        main.simulationSpace = ParticleSystemSimulationSpace.World;
+        main.maxParticles = 140;
+        main.duration = 3f;
+        main.loop = true;
+        var emission = ps.emission;
+        emission.rateOverTime = 45f;  // lebih banyak partikel
+        var shape = ps.shape;
+        shape.shapeType = ParticleSystemShapeType.Cone;
+        shape.angle = 18f;
+        shape.radius = 0.18f;
+        var vel = ps.velocityOverLifetime;
+        vel.enabled = true;
+        vel.y = 1.6f;
+        var size = ps.sizeOverLifetime;
+        size.enabled = true;
+        size.size = new ParticleSystem.MinMaxCurve(1f, AnimationCurve.Linear(0f, 1f, 1f, 3.2f));
+        var colorGrad = ps.colorOverLifetime;
+        colorGrad.enabled = true;
+        Gradient grad = new Gradient();
+        grad.SetKeys(
+            new[] { new GradientColorKey(new Color(1f, 1f, 0.95f), 0f), new GradientColorKey(new Color(0.85f, 0.88f, 0.92f), 1f) },
+            new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.75f, 0.15f), new GradientAlphaKey(0f, 1f) }
+        );
+        colorGrad.color = grad;
+        var renderer = go.GetComponent<ParticleSystemRenderer>();
+        renderer.material = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit")
+            ?? Shader.Find("Particles/Standard Unlit")
+            ?? Shader.Find("Sprites/Default"));
+    }
+
+    private void StartVaporFX(ParticleSystem ps)
+    {
+        if (ps != null && !ps.isPlaying) ps.Play();
+    }
+
+    private void StopVaporFX(ParticleSystem ps)
+    {
+        if (ps != null && ps.isPlaying) ps.Stop();
+    }
+
+    private void CleanupVaporFX()
+    {
+        if (_fv1VaporFX != null) { StopVaporFX(_fv1VaporFX); Destroy(_fv1VaporFX.gameObject); _fv1VaporFX = null; }
+        if (_fv2VaporFX != null) { StopVaporFX(_fv2VaporFX); Destroy(_fv2VaporFX.gameObject); _fv2VaporFX = null; }
+        if (_fv3VaporFX != null) { StopVaporFX(_fv3VaporFX); Destroy(_fv3VaporFX.gameObject); _fv3VaporFX = null; }
+    }
+
+    // ============================================================
+    //  SAMPLE BOTTLE VISUAL
+    // ============================================================
+
+    private void SpawnSampleBottleVisual(int idx)
+    {
+        if (_sampleBottles[idx] != null) return;
+        Transform riser = idx == 0 ? _fv1VaporRiser : idx == 1 ? _fv2VaporRiser : _fv3VaporRiser;
+        Vector3 basePos = riser != null ? riser.position : transform.position;
+        Vector3 pos = basePos + new Vector3(idx * 1.5f - 1.5f, -0.5f, 0.5f);
+        var bottle = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+        bottle.name = $"L8_SampleBottle_FV{idx + 1}";
+        bottle.transform.position = pos;
+        bottle.transform.localScale = new Vector3(0.12f, 0.18f, 0.12f);
+        Destroy(bottle.GetComponent<Collider>());
+        var rend = bottle.GetComponent<Renderer>();
+        var mat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        mat.color = _sampleStageColors[idx];
+        mat.EnableKeyword("_EMISSION");
+        if (mat.HasProperty("_EmissionColor"))
+            mat.SetColor("_EmissionColor", _sampleStageColors[idx] * 1.5f);
+        if (mat.HasProperty("_BaseColor"))
+            mat.SetColor("_BaseColor", _sampleStageColors[idx]);
+        rend.sharedMaterial = mat;
+        _sampleBottles[idx] = bottle;
+        StartCoroutine(CoolSampleBottle(idx, mat));
+    }
+
+    private IEnumerator CoolSampleBottle(int idx, Material mat)
+    {
+        float elapsed = 0f;
+        Color hot = _sampleStageColors[idx];
+        Color cool = _sampleCoolColor;
+        while (elapsed < _sampleCoolDuration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / _sampleCoolDuration);
+            Color c = Color.Lerp(hot, cool, t);
+            if (mat != null)
+            {
+                mat.color = c;
+                if (mat.HasProperty("_EmissionColor"))
+                    mat.SetColor("_EmissionColor", c * Mathf.Lerp(1.5f, 0.3f, t));
+            }
+            yield return null;
+        }
+    }
+
+    private void CleanupSampleBottles()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (_sampleBottles[i] != null) { Destroy(_sampleBottles[i]); _sampleBottles[i] = null; }
+        }
+        CleanupSampleStations();
+    }
+
+    // ============================================================
+    //  SAMPLE STATION — mekanik fisik (dekati vessel, ambil botol)
+    // ============================================================
+
+    /// <summary>Dipanggil saat 3 valve sudah stabil. Bangun 3 sample station di depan tiap vessel.</summary>
+    private void BeginSamplingStations()
+    {
+        if (_samplingStationsBuilt) { for (int i=0;i<3;i++) if(_sampleStations[i]!=null) _sampleStations[i].SetActive(true); return; }
+        _samplingStationsBuilt = true;
+
+        // Z tiap vessel dari handwheel/ghost. Station ditaruh di depan handwheel (sisi player, X lebih besar).
+        Transform[] hubs = { _fv1HandwheelHub, _fv2HandwheelHub, _fv3HandwheelHub };
+        for (int i = 0; i < 3; i++)
+        {
+            float z = hubs[i] != null ? hubs[i].position.z : (96.7f + i * 4f);
+            float x = hubs[i] != null ? hubs[i].position.x + 2.0f : -52.5f; // sedikit ke sisi player
+            Vector3 stationPos = new Vector3(x, 0.0f, z);
+            _sampleStations[i] = BuildSampleStation(i, stationPos);
+        }
+        if (_hud != null)
+            _hud.ShowNotifPublic("Ambil 3 sample: DEKATI tiap flash vessel (botol di pedestal). Mendekat = botol terisi otomatis. Atau tekan Q/W/E.", 9f);
+
+        // Bangun gedung lab QC sekarang supaya player bisa lihat tujuannya.
+        BuildLabBuilding();
+    }
+
+    private GameObject BuildSampleStation(int idx, Vector3 pos)
+    {
+        var root = new GameObject($"L8_SampleStation_FV{idx + 1}");
+        root.transform.SetParent(transform, false);
+        root.transform.position = pos;
+
+        // Pedestal (kotak kecil tempat botol).
+        var pedestal = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        pedestal.name = "Pedestal";
+        pedestal.transform.SetParent(root.transform, false);
+        pedestal.transform.localPosition = new Vector3(0f, 0.5f, 0f);
+        pedestal.transform.localScale = new Vector3(0.5f, 1.0f, 0.5f);
+        var pedCol = pedestal.GetComponent<Collider>(); if (pedCol != null) Destroy(pedCol);
+        ApplyStationMaterial(pedestal.GetComponent<Renderer>(), new Color(0.25f, 0.27f, 0.32f));
+
+        // Botol (glass, transparan) di atas pedestal.
+        var bottle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        bottle.name = "Bottle";
+        bottle.transform.SetParent(root.transform, false);
+        bottle.transform.localPosition = new Vector3(0f, 1.25f, 0f);
+        bottle.transform.localScale = new Vector3(0.16f, 0.22f, 0.16f);
+        var botCol = bottle.GetComponent<Collider>(); if (botCol != null) Destroy(botCol);
+        var botRend = bottle.GetComponent<Renderer>();
+        var glass = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        SetupTransparent(glass, new Color(0.8f, 0.85f, 0.9f, 0.25f));
+        botRend.sharedMaterial = glass;
+        _stationBottles[idx] = bottle;
+
+        // Liquid di dalam botol (mulai kosong: scale Y 0).
+        var liquid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        liquid.name = "Liquid";
+        liquid.transform.SetParent(bottle.transform, false);
+        liquid.transform.localScale = new Vector3(0.82f, 0.001f, 0.82f);
+        liquid.transform.localPosition = new Vector3(0f, -0.95f, 0f); // anchor di dasar botol
+        var liqCol = liquid.GetComponent<Collider>(); if (liqCol != null) Destroy(liqCol);
+        var liqRend = liquid.GetComponent<Renderer>();
+        var liqMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        liqMat.color = _sampleStageColors[idx];
+        liqMat.EnableKeyword("_EMISSION");
+        if (liqMat.HasProperty("_EmissionColor")) liqMat.SetColor("_EmissionColor", _sampleStageColors[idx] * 1.2f);
+        if (liqMat.HasProperty("_BaseColor")) liqMat.SetColor("_BaseColor", _sampleStageColors[idx]);
+        liqRend.sharedMaterial = liqMat;
+        _stationFillLiquid[idx] = liquid.transform;
+
+        // Label panah/teks sederhana di atas (TextMesh) supaya jelas ini sample point.
+        var labelGO = new GameObject("Label");
+        labelGO.transform.SetParent(root.transform, false);
+        labelGO.transform.localPosition = new Vector3(0f, 1.9f, 0f);
+        var tm = labelGO.AddComponent<TextMesh>();
+        tm.text = $"SAMPLE\nFV{idx + 1}";
+        tm.fontSize = 48;
+        tm.characterSize = 0.025f;
+        tm.anchor = TextAnchor.MiddleCenter;
+        tm.alignment = TextAlignment.Center;
+        tm.color = new Color(0.4f, 1f, 0.7f);
+
+        return root;
+    }
+
+    private void ApplyStationMaterial(Renderer r, Color c)
+    {
+        if (r == null) return;
+        var m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
+        if (m.HasProperty("_Color")) m.SetColor("_Color", c);
+        if (m.HasProperty("_Metallic")) m.SetFloat("_Metallic", 0.4f);
+        r.sharedMaterial = m;
+    }
+
+    private void SetupTransparent(Material m, Color c)
+    {
+        m.color = c;
+        if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", c);
+        if (m.HasProperty("_Surface")) m.SetFloat("_Surface", 1f); // Transparent (URP)
+        m.SetFloat("_Mode", 3f);
+        m.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+        m.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+        m.SetInt("_ZWrite", 0);
+        m.DisableKeyword("_SURFACE_TYPE_OPAQUE");
+        m.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+        m.renderQueue = 3000;
+    }
+
+    /// <summary>Cek jarak player ke tiap station; kalau dekat & belum terisi → mulai isi botol.</summary>
+    private void UpdateSamplingProximity()
+    {
+        if (!_samplingStationsBuilt) return;
+        Vector3 head = GetPlayerHeadPosition();
+        for (int i = 0; i < 3; i++)
+        {
+            if (_sampleTaken[i] || _bottleFilling[i]) continue;
+            if (_sampleStations[i] == null) continue;
+            // Jarak HORIZONTAL saja (abaikan Y) supaya tinggi kamera tidak bikin gagal trigger.
+            Vector3 a = head; a.y = 0f;
+            Vector3 b = _sampleStations[i].transform.position; b.y = 0f;
+            float d = Vector3.Distance(a, b);
+            if (d <= _sampleProximityRadius)
+            {
+                _bottleFilling[i] = true;
+                if (_hud != null) _hud.ShowNotifPublic($"Mengambil sample FV{i + 1}... botol terisi.", 3f);
+            }
+        }
+    }
+
+    /// <summary>Animasi botol terisi liquid (scale Y naik), lalu tandai sample diambil.</summary>
+    private void UpdateSampleBottleAnimations()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (!_bottleFilling[i] || _sampleTaken[i]) continue;
+            _bottleFillProgress[i] += Time.deltaTime / 2.0f; // 2 detik untuk penuh
+            float t = Mathf.Clamp01(_bottleFillProgress[i]);
+            if (_stationFillLiquid[i] != null)
+            {
+                // Liquid naik dari dasar: scale Y 0 → 1.7, reposisi supaya anchor di dasar.
+                float h = Mathf.Lerp(0.001f, 1.7f, t);
+                _stationFillLiquid[i].localScale = new Vector3(0.82f, h, 0.82f);
+                _stationFillLiquid[i].localPosition = new Vector3(0f, -0.95f + h * 0.5f, 0f);
+            }
+            if (t >= 1f)
+            {
+                TakeSample(i); // tandai diambil + notif + cek semua
+            }
+        }
+    }
+
+    private void CleanupSampleStations()
+    {
+        _samplingStationsBuilt = false;
+        for (int i = 0; i < 3; i++)
+        {
+            if (_sampleStations[i] != null) { Destroy(_sampleStations[i]); _sampleStations[i] = null; }
+            _stationBottles[i] = null;
+            _stationFillLiquid[i] = null;
+            _bottleFillProgress[i] = 0f;
+            _bottleFilling[i] = false;
+        }
+    }
+
+    // ============================================================
+    //  LAB BUILDING (QC) — gedung + analyzer + animasi
+    // ============================================================
+
+    /// <summary>Bangun gedung lab QC dekat area flash train (runtime primitive, fallback dari Blender).</summary>
+    /// <summary>Bangun gedung lab QC. Pakai model Blender (FBX) kalau ada, fallback primitive.</summary>
+    private void BuildLabBuilding()
+    {
+        if (_labBuilt) { if (_labBuilding != null) _labBuilding.SetActive(true); return; }
+        _labBuilt = true;
+
+        // Posisi lab di sisi player (X lebih besar dari handwheel), Z di area flash train.
+        float baseZ = _fv2HandwheelHub != null ? _fv2HandwheelHub.position.z : 105f;
+        Vector3 labOrigin = new Vector3(-43f, 0f, baseZ + 6f);
+
+        // === Coba load model Blender FBX dulu ===
+        GameObject fbxPrefab = Resources.Load<GameObject>("QCLab"); // kalau ditaruh di Resources
+#if UNITY_EDITOR
+        if (fbxPrefab == null)
+            fbxPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/Lab/QCLab.fbx");
+#endif
+        if (fbxPrefab != null)
+        {
+            var inst = Instantiate(fbxPrefab);
+            inst.name = "L8_LabBuilding";
+            inst.transform.SetParent(transform, false);
+            // FBX dibuat di Blender dengan Z-up; importer Unity konversi ke Y-up. Posisikan di labOrigin.
+            inst.transform.position = labOrigin;
+            inst.transform.rotation = Quaternion.identity;
+            _labBuilding = inst;
+
+            // Wire fungsional dari child FBX (nama persis dari build_lab.py).
+            _labAnalyzerRotor = FindChildDeep(inst.transform, "Lab_Analyzer_Rotor");
+            _labResultScreen = FindChildDeep(inst.transform, "Lab_ResultScreen");
+            _labSlotLiquids[0] = FindChildDeep(inst.transform, "Lab_SlotLiquid_1");
+            _labSlotLiquids[1] = FindChildDeep(inst.transform, "Lab_SlotLiquid_2");
+            _labSlotLiquids[2] = FindChildDeep(inst.transform, "Lab_SlotLiquid_3");
+
+            // Liquid slot mulai kosong (scale Y kecil). Simpan base scale utk animasi isi.
+            for (int i = 0; i < 3; i++)
+            {
+                if (_labSlotLiquids[i] != null)
+                {
+                    var s = _labSlotLiquids[i].localScale;
+                    _labSlotLiquidBaseY[i] = s.y; // tinggi penuh dari model
+                    _labSlotLiquids[i].localScale = new Vector3(s.x, s.y * 0.02f, s.z);
+                }
+            }
+
+            // Layar hasil: tambah TextMesh anak supaya bisa update teks progress.
+            if (_labResultScreen != null)
+            {
+                var screenTextGO = new GameObject("ScreenText");
+                screenTextGO.transform.SetParent(_labResultScreen, false);
+                screenTextGO.transform.localPosition = new Vector3(0f, 0f, 0.7f);
+                screenTextGO.transform.localRotation = Quaternion.identity;
+                screenTextGO.transform.localScale = Vector3.one * 0.6f;
+                var scrTm = screenTextGO.AddComponent<TextMesh>();
+                scrTm.text = "QC ANALYZER\nStandby...";
+                scrTm.fontSize = 40; scrTm.characterSize = 0.05f; scrTm.anchor = TextAnchor.MiddleCenter;
+                scrTm.alignment = TextAlignment.Center; scrTm.color = new Color(0.4f, 0.9f, 0.7f);
+                _labScreenText = scrTm;
+            }
+
+            // Papan nama di atas pintu.
+            var sign = new GameObject("Lab_Sign");
+            sign.transform.SetParent(inst.transform, false);
+            sign.transform.localPosition = new Vector3(0f, 3.9f, 3.5f);
+            var stm = sign.AddComponent<TextMesh>();
+            stm.text = "LABORATORIUM QC";
+            stm.fontSize = 60; stm.characterSize = 0.04f; stm.anchor = TextAnchor.MiddleCenter;
+            stm.alignment = TextAlignment.Center; stm.color = new Color(0.2f, 0.9f, 1f);
+
+            _labDoorPos = labOrigin + new Vector3(0, 1f, 3.5f);
+            Debug.Log("[Level8] Lab building dari FBX Blender ter-load.");
+            return;
+        }
+
+        // === FALLBACK: build primitive kalau FBX tidak ada ===
+        BuildLabBuildingPrimitive(labOrigin);
+    }
+
+    private readonly float[] _labSlotLiquidBaseY = new float[3] { 1.7f, 1.7f, 1.7f };
+
+    private Transform FindChildDeep(Transform root, string name)
+    {
+        if (root == null) return null;
+        foreach (var tr in root.GetComponentsInChildren<Transform>(true))
+            if (tr.name == name) return tr;
+        return null;
+    }
+
+    private void BuildLabBuildingPrimitive(Vector3 labOrigin)
+    {
+        var root = new GameObject("L8_LabBuilding");
+        root.transform.SetParent(transform, false);
+        root.transform.position = labOrigin;
+        _labBuilding = root;
+
+        Color wallCol = new Color(0.82f, 0.84f, 0.88f);
+        Color floorCol = new Color(0.3f, 0.32f, 0.36f);
+        float W = 8f, D = 7f, H = 3.5f, t = 0.2f;
+
+        AddBox(root.transform, "Lab_Floor", new Vector3(0, 0.05f, 0), new Vector3(W, 0.1f, D), floorCol);
+        AddBox(root.transform, "Lab_Ceiling", new Vector3(0, H, 0), new Vector3(W, 0.1f, D), wallCol);
+        AddBox(root.transform, "Lab_Wall_Back", new Vector3(0, H/2, -D/2), new Vector3(W, H, t), wallCol);
+        AddBox(root.transform, "Lab_Wall_Left", new Vector3(-W/2, H/2, 0), new Vector3(t, H, D), wallCol);
+        AddBox(root.transform, "Lab_Wall_Right", new Vector3(W/2, H/2, 0), new Vector3(t, H, D), wallCol);
+        AddBox(root.transform, "Lab_Wall_Front_L", new Vector3(-W/2 + 1.5f, H/2, D/2), new Vector3(3f, H, t), wallCol);
+        AddBox(root.transform, "Lab_Wall_Front_R", new Vector3(W/2 - 1.5f, H/2, D/2), new Vector3(3f, H, t), wallCol);
+        AddBox(root.transform, "Lab_Wall_Front_Top", new Vector3(0, H - 0.5f, D/2), new Vector3(2.2f, 1f, t), wallCol);
+        _labDoorPos = labOrigin + new Vector3(0, 1f, D/2);
+
+        var sign = new GameObject("Lab_Sign");
+        sign.transform.SetParent(root.transform, false);
+        sign.transform.localPosition = new Vector3(0, H + 0.4f, D/2);
+        var stm = sign.AddComponent<TextMesh>();
+        stm.text = "LABORATORIUM QC";
+        stm.fontSize = 60; stm.characterSize = 0.04f; stm.anchor = TextAnchor.MiddleCenter;
+        stm.alignment = TextAlignment.Center; stm.color = new Color(0.2f, 0.9f, 1f);
+
+        AddBox(root.transform, "Lab_Table", new Vector3(0, 0.8f, -D/2 + 1.2f), new Vector3(4f, 0.15f, 1.2f), new Color(0.5f, 0.52f, 0.55f));
+        AddBox(root.transform, "Lab_Analyzer_Body", new Vector3(0, 1.5f, -D/2 + 1.2f), new Vector3(2.4f, 1.4f, 0.9f), new Color(0.15f, 0.18f, 0.25f));
+
+        var rotor = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        rotor.name = "Lab_Analyzer_Rotor";
+        rotor.transform.SetParent(root.transform, false);
+        rotor.transform.localPosition = new Vector3(0, 1.95f, -D/2 + 0.7f);
+        rotor.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        rotor.transform.localScale = new Vector3(0.5f, 0.08f, 0.5f);
+        var rotorCol = rotor.GetComponent<Collider>(); if (rotorCol != null) Destroy(rotorCol);
+        ApplyStationMaterial(rotor.GetComponent<Renderer>(), new Color(0.6f, 0.65f, 0.7f));
+        _labAnalyzerRotor = rotor.transform;
+
+        for (int i = 0; i < 3; i++)
+        {
+            float sx = -1f + i * 1f;
+            var slot = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            slot.name = $"Lab_Slot_{i + 1}";
+            slot.transform.SetParent(root.transform, false);
+            slot.transform.localPosition = new Vector3(sx, 0.95f, -D/2 + 1.5f);
+            slot.transform.localScale = new Vector3(0.18f, 0.22f, 0.18f);
+            var slotCol = slot.GetComponent<Collider>(); if (slotCol != null) Destroy(slotCol);
+            var slotMat = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            SetupTransparent(slotMat, new Color(0.8f, 0.85f, 0.9f, 0.25f));
+            slot.GetComponent<Renderer>().sharedMaterial = slotMat;
+
+            var liq = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            liq.name = "SlotLiquid";
+            liq.transform.SetParent(slot.transform, false);
+            liq.transform.localScale = new Vector3(0.82f, 0.001f, 0.82f);
+            liq.transform.localPosition = new Vector3(0, -0.95f, 0);
+            var lc = liq.GetComponent<Collider>(); if (lc != null) Destroy(lc);
+            var lm = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            lm.color = _sampleStageColors[i];
+            lm.EnableKeyword("_EMISSION");
+            if (lm.HasProperty("_EmissionColor")) lm.SetColor("_EmissionColor", _sampleStageColors[i] * 1.2f);
+            liq.GetComponent<Renderer>().sharedMaterial = lm;
+            _labSlotLiquids[i] = liq.transform;
+            _labSlotLiquidBaseY[i] = 1.7f;
+        }
+
+        var screen = AddBox(root.transform, "Lab_ResultScreen", new Vector3(0, 2.4f, -D/2 + 0.25f), new Vector3(3f, 1.4f, 0.08f), new Color(0.05f, 0.1f, 0.15f));
+        _labResultScreen = screen.transform;
+        var screenTextGO = new GameObject("ScreenText");
+        screenTextGO.transform.SetParent(screen.transform, false);
+        screenTextGO.transform.localPosition = new Vector3(0, 0, 0.6f);
+        screenTextGO.transform.localScale = Vector3.one * 0.06f;
+        var scrTm = screenTextGO.AddComponent<TextMesh>();
+        scrTm.text = "QC ANALYZER\nStandby...";
+        scrTm.fontSize = 40; scrTm.characterSize = 0.5f; scrTm.anchor = TextAnchor.MiddleCenter;
+        scrTm.alignment = TextAlignment.Center; scrTm.color = new Color(0.4f, 0.9f, 0.7f);
+        _labScreenText = scrTm;
+    }
+
+    private TextMesh _labScreenText;
+
+    private GameObject AddBox(Transform parent, string name, Vector3 localPos, Vector3 size, Color c)
+    {
+        var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        box.name = name;
+        box.transform.SetParent(parent, false);
+        box.transform.localPosition = localPos;
+        box.transform.localScale = size;
+        ApplyStationMaterial(box.GetComponent<Renderer>(), c);
+        return box;
+    }
+
+
+
     private void SubmitLabQC()
     {
+        if (_labSubmitted) return;
+        _labSubmitted = true;
         _phase = Phase.LabSubmit;
+        StartSequence(LabAnalysisCoroutine());
+    }
+
+    /// <summary>Animasi analyzer lab: isi 3 slot botol → rotor berputar → progress di layar → hasil → canvas.</summary>
+    private IEnumerator LabAnalysisCoroutine()
+    {
+        // Pastikan lab ada.
+        BuildLabBuilding();
+        if (_hud != null) _hud.ShowNotifPublic("Sample dimasukkan ke analyzer lab. Proses analisa berjalan...", 6f);
+
+        // 1) Isi 3 slot liquid (botol "dituang" ke analyzer) berurutan.
+        for (int i = 0; i < 3; i++)
+        {
+            if (_labSlotLiquids[i] == null) continue;
+            Vector3 baseScale = _labSlotLiquids[i].localScale;
+            Vector3 basePos = _labSlotLiquids[i].localPosition;
+            float fullY = _labSlotLiquidBaseY[i];
+            float t = 0f;
+            while (t < 0.6f)
+            {
+                t += Time.deltaTime;
+                float p = Mathf.Clamp01(t / 0.6f);
+                float h = Mathf.Lerp(fullY * 0.02f, fullY, p);
+                _labSlotLiquids[i].localScale = new Vector3(baseScale.x, h, baseScale.z);
+                // naik dari dasar: geser Y setengah pertambahan tinggi (cylinder pivot di tengah)
+                _labSlotLiquids[i].localPosition = basePos + new Vector3(0, (h - fullY * 0.02f) * 0.5f, 0);
+                yield return null;
+            }
+        }
+
+        // 2) Rotor analyzer berputar + progress bar di layar (5 detik).
+        EnsureSteamReleaseAudio(); // pakai audio yang ada utk "mesin jalan" (low)
+        float dur = 5f, e = 0f;
+        while (e < dur)
+        {
+            e += Time.deltaTime;
+            if (_labAnalyzerRotor != null)
+                _labAnalyzerRotor.Rotate(Vector3.up, 360f * Time.deltaTime, Space.Self);
+            if (_labScreenText != null)
+            {
+                int pct = Mathf.RoundToInt(Mathf.Clamp01(e / dur) * 100f);
+                int bars = Mathf.RoundToInt(pct / 10f);
+                _labScreenText.text = "ANALISA QC...\n[" + new string('#', bars) + new string('-', 10 - bars) + "] " + pct + "%";
+            }
+            yield return null;
+        }
+        if (_labScreenText != null) _labScreenText.text = "QC SELESAI\nSemua dalam SOP ✓";
+
+        // 3) Tampilkan canvas hasil detail + tombol ACCEPT.
         ShowLabQcCanvas();
     }
 
@@ -609,7 +1820,7 @@ public class Level8FlashTrainController : MonoBehaviour
     {
         if (_labQcCanvas != null) _labQcCanvas.SetActive(false);
         // Notify GLM bahwa sample sudah diambil + lab approved
-        GameLevelManager.Instance?.NotifyLevel7SampleTaken(); // pakai existing API kalau Level 8 belum punya
+        GameLevelManager.Instance?.NotifyLevel8SampleTaken();
         _phase = Phase.MenungguLapor;
         if (_hud != null) _hud.ShowNotifPublic(_msgLabComplete, 8f);
         StartSequence(WaitForFinalReportCoroutine());
@@ -622,7 +1833,25 @@ public class Level8FlashTrainController : MonoBehaviour
         while (!_voiceReportReceived) yield return null;
         _waitingForVoiceReport = false;
         _phase = Phase.Selesai;
-        ShowMissionCompleteCanvas();
+        // TANPA canvas tengah: langsung fade-out PELAN lalu lanjut ke level berikutnya (CCD).
+        StartSequence(FinishLevelWithSlowFade());
+    }
+
+    // Fade-out pelan lalu lanjut transisi resmi GLM (Level 8 -> Level 9/CCD).
+    private IEnumerator FinishLevelWithSlowFade()
+    {
+        // Matikan animasi Level 8 dulu (slurry, uap, audio) supaya bersih saat pindah.
+        if (_flowDriver != null) _flowDriver.StopFlow(true);
+        _slurryFlowActive = false;
+        StopVaporFX(_fv1VaporFX); StopVaporFX(_fv2VaporFX); StopVaporFX(_fv3VaporFX);
+        StopAudio(_steamReleaseAudio);
+
+        float fade = 3.5f;   // fade pelan
+        if (_hud != null) _hud.PlayManualFade(fade);
+        yield return new WaitForSeconds(fade * 0.6f);
+        var glm = GameLevelManager.Instance;
+        if (glm != null) glm.LanjutkanTransisiLevel8();
+        _seqCoroutine = null;
     }
 
     private void OnVoiceReportAccepted(string keyword)
@@ -662,7 +1891,7 @@ public class Level8FlashTrainController : MonoBehaviour
         AddUIButton(canvasGO.transform, "STAY (lihat proses)",
             new Vector2(0.05f, 0.05f), new Vector2(0.48f, 0.32f),
             new Color(0.2f, 0.4f, 0.7f), () => HideMissionComplete());
-        AddUIButton(canvasGO.transform, "KEMBALI KE DCS → LEVEL 9",
+        AddUIButton(canvasGO.transform, "KEMBALI KE DCS → LEVEL 9 (CCD)",
             new Vector2(0.52f, 0.05f), new Vector2(0.95f, 0.32f),
             new Color(0.3f, 0.7f, 0.4f), () => GoToNextLevel());
 
@@ -677,7 +1906,12 @@ public class Level8FlashTrainController : MonoBehaviour
     private void GoToNextLevel()
     {
         HideMissionComplete();
-        GameLevelManager.Instance?.MulaiLevel(GameLevelManager.GameLevel.Level9_FlashVessel);
+        var glm = GameLevelManager.Instance;
+        if (glm != null)
+        {
+            // Lanjutkan transisi yang ditahan (Level 8 -> Level 9) lewat flow resmi GLM.
+            glm.LanjutkanTransisiLevel8();
+        }
     }
 
     // ============================================================
@@ -800,6 +2034,69 @@ public class Level8FlashTrainController : MonoBehaviour
         _seqCoroutine = StartCoroutine(routine);
     }
 
+    // Hancurkan objek dengan aman baik di play mode maupun edit mode (mis. saat AutoFindReferences
+    // dipanggil dari editor/MCP). Destroy() biasa error "may not be called from edit mode".
+    private static void SafeDestroy(UnityEngine.Object obj)
+    {
+        if (obj == null) return;
+        if (Application.isPlaying) Destroy(obj);
+        else DestroyImmediate(obj);
+    }
+
+    // ============================================================
+    //  AUTOCLAVE -> FLASH X-RAY SLURRY FLOW
+    // ============================================================
+
+    private void ResolveSlurryFlowRenderers()
+    {
+        _slurryFlowRenderers.Clear();
+        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (t == null || !t.gameObject.scene.IsValid()) continue;
+            // Slurry STATIS di dalam pipa (tube + core + elbow). PLUG (bergerak) dikecualikan -> diatur driver.
+            if (t.name.StartsWith("AutoclaveToFlash_Slurry") && !t.name.Contains("Plug"))
+            {
+                var r = t.GetComponent<Renderer>();
+                if (r != null) _slurryFlowRenderers.Add(r);
+            }
+        }
+    }
+
+    // Sembunyikan / tampilkan slurry STATIS (batang kuning di dalam pipa).
+    private void SetStaticSlurryVisible(bool visible)
+    {
+        foreach (var r in _slurryFlowRenderers)
+            if (r != null && r.enabled != visible) r.enabled = visible;
+    }
+
+    private void SetSlurryFlowActive(bool on)
+    {
+        _slurryFlowActive = on;
+        // Slurry selalu terlihat (X-ray) tapi emisi/pulse hidup saat mengalir.
+        foreach (var r in _slurryFlowRenderers)
+        {
+            if (r == null) continue;
+            if (r.gameObject.activeSelf != true) r.gameObject.SetActive(true);
+        }
+    }
+
+    private void UpdateSlurryFlowAnim()
+    {
+        if (!_slurryFlowActive || _slurryFlowRenderers.Count == 0) return;
+        _slurryFlowPhase += Time.deltaTime * 2.2f;
+        // Pulse emisi (slurry panas mengalir) + scroll tekstur kalau ada.
+        float pulse = 0.7f + 0.3f * Mathf.Sin(_slurryFlowPhase * 3f);
+        Color hot = new Color(0.95f, 0.34f, 0.07f) * (1.6f * pulse);
+        foreach (var r in _slurryFlowRenderers)
+        {
+            if (r == null) continue;
+            var m = r.material;
+            if (m.HasProperty("_EmissionColor")) { m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", hot); }
+            if (m.HasProperty("_BaseMap")) m.SetTextureOffset("_BaseMap", new Vector2(0f, -_slurryFlowPhase * 0.5f));
+            if (m.HasProperty("_MainTex")) m.SetTextureOffset("_MainTex", new Vector2(0f, -_slurryFlowPhase * 0.5f));
+        }
+    }
+
     // ============================================================
     //  AUTO-FIND
     // ============================================================
@@ -812,34 +2109,7 @@ public class Level8FlashTrainController : MonoBehaviour
             if (rig != null) _playerRigRoot = rig.transform;
         }
 
-        if (_teleportTargetField == null)
-        {
-            // Coba SpawnPoint_Lvl8 atau buat runtime di depan FV1
-            var sp = GameObject.Find("SpawnPoint_Lvl8_FlashTrain");
-            if (sp == null) sp = GameObject.Find("SpawnPoint_Lvl8");
-            if (sp != null) _teleportTargetField = sp.transform;
-            else _teleportTargetField = CreateRuntimeSpawnPoint();
-        }
-
-        // Handwheels — prioritaskan handwheel orange yang user buat di field (di depan flash vessel),
-        // dengan fallback ke bypass handwheel pada vessel itu sendiri kalau tidak ada.
-        if (_fv1HandwheelHub == null)
-        {
-            _fv1HandwheelHub = FindFieldHandwheelByAssembly("IsolationValve_Assembly_03");
-            if (_fv1HandwheelHub == null) _fv1HandwheelHub = FindByNameInactive("FV1_To_FV2_InterstageLetdownValve_BypassHandwheel");
-        }
-        if (_fv2HandwheelHub == null)
-        {
-            _fv2HandwheelHub = FindFieldHandwheelByAssembly("IsolationValve_Assembly_02");
-            if (_fv2HandwheelHub == null) _fv2HandwheelHub = FindByNameInactive("FV2_To_FV3_InterstageLetdownValve_BypassHandwheel");
-        }
-        if (_fv3HandwheelHub == null)
-        {
-            _fv3HandwheelHub = FindFieldHandwheelByAssembly("LetdownValve_Assembly");
-            if (_fv3HandwheelHub == null) _fv3HandwheelHub = FindByNameInactive("FV3_SteamValve_Handwheel");
-        }
-
-        // Cascade panels
+        // Cascade panels (model aktif)
         if (_fv1StatusStrip == null) _fv1StatusStrip = FindRendererByName("FV1_PressureCascadePanel_StatusStrip");
         if (_fv2StatusStrip == null) _fv2StatusStrip = FindRendererByName("FV2_PressureCascadePanel_StatusStrip");
         if (_fv3StatusStrip == null) _fv3StatusStrip = FindRendererByName("FV3_PressureCascadePanel_StatusStrip");
@@ -847,7 +2117,7 @@ public class Level8FlashTrainController : MonoBehaviour
         if (_fv2PanelText == null) _fv2PanelText = FindTextMeshPro("FV2_PressureCascadePanel_Text");
         if (_fv3PanelText == null) _fv3PanelText = FindTextMeshPro("FV3_PressureCascadePanel_Text");
 
-        // Slurry ghost
+        // Slurry ghost (model aktif) — dipakai juga untuk menentukan Z deck handwheel.
         if (_fv1SlurryGhost == null) _fv1SlurryGhost = FindByNameInactive("FV1_XRay_SlurryPool_Ghost");
         if (_fv2SlurryGhost == null) _fv2SlurryGhost = FindByNameInactive("FV2_XRay_SlurryPool_Ghost");
         if (_fv3SlurryGhost == null) _fv3SlurryGhost = FindByNameInactive("FV3_XRay_SlurryPool_Ghost");
@@ -856,36 +2126,84 @@ public class Level8FlashTrainController : MonoBehaviour
         if (_fv1VaporRiser == null) _fv1VaporRiser = FindByNameInactive("FV1_TopVaporOutlet_Riser");
         if (_fv2VaporRiser == null) _fv2VaporRiser = FindByNameInactive("FV2_TopVaporOutlet_Riser");
         if (_fv3VaporRiser == null) _fv3VaporRiser = FindByNameInactive("FV3_TopVaporOutlet_Riser");
+
+        // Steam anchors: uap keluar TEPAT di SteamRiser_Connect_* (sesuai permintaan user).
+        if (_steamAnchor1 == null) _steamAnchor1 = FindByNameInactive("SteamRiser_Connect_-7");
+        if (_steamAnchor2 == null) _steamAnchor2 = FindByNameInactive("SteamRiser_Connect_0");
+        if (_steamAnchor3 == null) _steamAnchor3 = FindByNameInactive("SteamRiser_Connect_7");
+
+        // Per-vessel spawn points (teleport tiap vessel sebelum putar handwheel).
+        if (_spawnFv1 == null) _spawnFv1 = FindByNameInactive("SpawnPoint_Lv8");
+        if (_spawnFv2 == null) _spawnFv2 = FindByNameInactive("SpawnPoint_Lv8 (1)");
+        if (_spawnFv3 == null) _spawnFv3 = FindByNameInactive("SpawnPoint_Lv8 (2)");
+        // Spawn awal level = SpawnPoint_Lv8 (depan FV1).
+        if (_teleportTargetField == null) _teleportTargetField = _spawnFv1;
+
+        // Autoclave -> Flash letdown valve handwheel (dibuka pemain di AWAL) + X-ray slurry flow.
+        if (_autoclaveValveHub == null)
+            _autoclaveValveHub = FindByNameInactive("AutoclaveToFlash_LetdownValve_Handwheel_Hub");
+        ResolveSlurryFlowRenderers();
+        if (_flowDriver == null)
+            _flowDriver = FindFirstObjectByType<AutoclaveSlurryFlowDriver>(FindObjectsInactive.Include);
+
+        // Handwheel: buat 3 handwheel runtime di deck depan tiap vessel (jelas & terjangkau).
+        // Z diambil dari slurry ghost vessel masing-masing. Ini meng-override referensi handwheel.
+        EnsureRuntimeDeckHandwheels();
+
+        // Spawn: dihitung SETELAH deck handwheel ada, supaya player menghadap ke handwheel deck.
+        if (_teleportTargetField == null)
+            _teleportTargetField = CreateRuntimeSpawnPoint();
     }
 
     private Transform CreateRuntimeSpawnPoint()
     {
-        // Spawn di field flash train, dekat handwheel orange yang user buat (-20..-35, 1.5, 109.8)
-        // Player landing di Z lebih dekat = 108, hadap ke handwheel (Z+).
-        var hwFv1 = FindByNameInactive("IsolationValve_Assembly_03");
-        Vector3 pos;
-        if (hwFv1 != null)
+        // Hitung posisi spawn dari ketiga handwheel (yang akan diputar player).
+        // Player berdiri di depan barisan handwheel dan MENGHADAP ke arahnya.
+        Vector3 hwCenter;
+        var hubs = new System.Collections.Generic.List<Vector3>();
+        if (_fv1HandwheelHub != null) hubs.Add(_fv1HandwheelHub.position);
+        if (_fv2HandwheelHub != null) hubs.Add(_fv2HandwheelHub.position);
+        if (_fv3HandwheelHub != null) hubs.Add(_fv3HandwheelHub.position);
+        if (hubs.Count > 0)
         {
-            // Spawn 2.5m di depan handwheel, sedikit ke kanan supaya bisa lihat 3 handwheel.
-            pos = new Vector3(-27.6f, 0.75f, 108.0f);
+            hwCenter = Vector3.zero;
+            foreach (var h in hubs) hwCenter += h;
+            hwCenter /= hubs.Count;
         }
         else
         {
-            pos = new Vector3(-27.6f, 0.75f, 108.0f);
+            hwCenter = new Vector3(-67.68f, 15.6f, 104.6f); // fallback ke handwheel aktif diketahui
         }
 
-        var sp = new GameObject("SpawnPoint_Lvl8_FlashTrain_Runtime");
+        // Handwheel barisan di X~-67.7 (sisi belakang platform). Player berdiri ~3m ke arah +X
+        // (sisi depan, dekat cascade panel) menghadap ke handwheel (-X). Y sejajar handwheel.
+        float standY = Mathf.Max(0.1f, hwCenter.y - 1.5f);
+        Vector3 pos = new Vector3(hwCenter.x + 3.5f, standY, hwCenter.z);
+
+        Vector3 lookDir = hwCenter - pos;
+        if (lookDir.sqrMagnitude < 0.001f) lookDir = Vector3.left;
+        Quaternion rot = Quaternion.LookRotation(lookDir.normalized, Vector3.up);
+
+        // Reuse spawn lama kalau ada (reposisi + reorient).
+        var existing = GameObject.Find("SpawnPoint_Lvl8_FlashTrain_Runtime");
+        var sp = existing != null ? existing : new GameObject("SpawnPoint_Lvl8_FlashTrain_Runtime");
         sp.transform.position = pos;
-        // Hadap ke handwheel (Z+ direction)
-        sp.transform.rotation = Quaternion.LookRotation(Vector3.forward, Vector3.up);
+        sp.transform.rotation = rot;
         return sp.transform;
     }
 
     private Transform FindByNameInactive(string name)
     {
+        // Prioritaskan objek yang AKTIF (model flash vessel yang terlihat),
+        // baru fallback ke inactive (model lama disabled) kalau tidak ada yang aktif.
+        Transform inactiveMatch = null;
         foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
-            if (t != null && t.name == name && t.gameObject.scene.IsValid()) return t;
-        return null;
+        {
+            if (t == null || t.name != name || !t.gameObject.scene.IsValid()) continue;
+            if (t.gameObject.activeInHierarchy) return t; // active diutamakan
+            if (inactiveMatch == null) inactiveMatch = t;
+        }
+        return inactiveMatch;
     }
 
     /// <summary>
@@ -938,7 +2256,8 @@ public class Level8FlashTrainController : MonoBehaviour
         go.transform.SetParent(transform, false);
         _steamReleaseAudio = go.AddComponent<AudioSource>();
         _steamReleaseAudio.loop = true;
-        _steamReleaseAudio.spatialBlend = 0.4f;
+        _steamReleaseAudio.spatialBlend = 0f; // 2D supaya jelas terdengar keras (bukan tergantung jarak)
+        _steamReleaseAudio.volume = 0.95f;
         _steamReleaseAudio.clip = GenerateSteamHiss("L8Steam", 4f, 22050);
     }
 
@@ -980,6 +2299,21 @@ public class Level8FlashTrainController : MonoBehaviour
     public float Fv1Pressure => _fv1.pressureCurrent;
     public float Fv2Pressure => _fv2.pressureCurrent;
     public float Fv3Pressure => _fv3.pressureCurrent;
+    public bool Fv1Stable => _fv1 != null && _fv1.isStable;
+    public bool Fv2Stable => _fv2 != null && _fv2.isStable;
+    public bool Fv3Stable => _fv3 != null && _fv3.isStable;
+    public bool AutoclaveValveOpened => _autoStage != null && _autoStage.openPercent >= 0.99f;
+    public bool AllStagesStable => Fv1Stable && Fv2Stable && Fv3Stable;
+    public bool Sample2Taken => _sampleTaken != null && _sampleTaken.Length > 1 && _sampleTaken[1];
+    public bool Sample3Taken => _sampleTaken != null && _sampleTaken.Length > 2 && _sampleTaken[2];
+    public bool IsWaitingDcs => _levelActive && _phase == Phase.MenungguDcs;
+    public bool IsOpenFV1 => _phase == Phase.OpenFV1;
+    public bool IsOpenFV2 => _phase == Phase.OpenFV2;
+    public bool IsOpenFV3 => _phase == Phase.OpenFV3;
+    public bool IsSamplingPhase => _phase == Phase.Sampling;
+    public bool IsLabSubmitPhase => _phase == Phase.LabSubmit;
+    public bool IsWaitingVoice => _phase == Phase.MenungguLapor;
+    public bool IsCompleted => _phase == Phase.Selesai;
 
     [ContextMenu("Debug: Force Activate Level 8")]
     public void DebugActivate() => ActivateLevel();

@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 
 /// <summary>
 /// OLIVIA VR - UniversalTaskMarker.cs
@@ -192,32 +192,29 @@ public sealed class UniversalTaskMarker : MonoBehaviour
                 return ResolveLevel7Target();
 
             case GameLevelManager.GameLevel.Level8_Monitoring:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(8);
-                if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
-                return null;
+                return ResolveLevel8Target();
 
             case GameLevelManager.GameLevel.Level9_FlashVessel:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(9);
-                if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
-                return FindByName("FlashVessel_BlenderRig", "FlashVesselTrain_Redesign_Model");
+                // DIPENSIUNKAN: digabung ke Level 8. Tidak ada target.
+                return null;
 
             case GameLevelManager.GameLevel.Level10_CCD:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(10);
+                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(9);
                 if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
                 return FindByName("CCD_BlenderRig", "CCD_Field");
 
             case GameLevelManager.GameLevel.Level11_MHP:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(11);
+                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(10);
                 if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
                 return FindByName("Level11_PurificationMHP_BlenderRig", "MHP_SampleBottle");
 
             case GameLevelManager.GameLevel.Level12_TailingDischarge:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(12);
+                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(11);
                 if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
                 return FindByName("Tailing_Neutralization_Tank", "FilterPress");
 
             case GameLevelManager.GameLevel.Level13_TailingWaste:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(13);
+                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(12);
                 if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
                 return FindByName("Level13_DryStack_BlenderRig", "Level13_DryStack_StorageArea_BlenderRig");
 
@@ -296,6 +293,31 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
         return null;
     }
+    private Transform ResolveLevel8Target()
+    {
+        if (!_glm.SudahTekanTombolDcs) return FindDcsButton(8);
+
+        var l8 = FindFirstObjectByType<Level8FlashTrainController>(FindObjectsInactive.Exclude);
+        if (l8 != null && l8.LevelActive)
+        {
+            if (!l8.Fv1Stable)
+                return FindByName("FV1_To_FV2_InterstageLetdownValve_BypassHandwheel");
+            if (!l8.Fv2Stable)
+                return FindByName("FV2_To_FV3_InterstageLetdownValve_BypassHandwheel");
+            if (!l8.Fv3Stable)
+                return FindByName("FV3_SteamValve_Handwheel");
+            if (!l8.AllSamplesTaken())
+                return FindByName("FV1_XRay_SlurryPool_Ghost", "FlashLetdown_SampleStation_Backplate");
+            if (!l8.IsCompleted && !_glm.SudahLaporanHt)
+                return FindWalkieTalkie();
+            return null;
+        }
+
+        if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
+        return null;
+    }
+
+    
 
     // ============================================================
     //  HELPERS

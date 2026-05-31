@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using System;
 using System.Collections;
 using UnityEngine.SceneManagement;
@@ -104,6 +104,13 @@ public class GameLevelManager : MonoBehaviour
     [SerializeField] private GameLevel _currentLevel = GameLevel.Level0_Tutorial;
     [SerializeField] private bool _levelSedangBerjalan;
 
+#if UNITY_EDITOR
+    [Header("=== DEBUG: Mulai Langsung di Level Tertentu (Editor Only) ===")]
+    [Tooltip("Kalau dicentang, saat Play game langsung mulai di _debugStartLevel (skip level sebelumnya). Auto-equip APD + auto-press DCS.")]
+    [SerializeField] private bool _debugStartAtLevel = false;
+    [SerializeField] private GameLevel _debugStartLevel = GameLevel.Level8_Monitoring;
+#endif
+
     [Header("=== Parameter Real-Time ===")]
     [SerializeField] private float _flowRateSaatIni;
     [SerializeField] private float _acidRatioSaatIni;
@@ -153,7 +160,10 @@ public class GameLevelManager : MonoBehaviour
     private bool _level7SampleTaken;
     private bool _level8FlashLetdownDone;
     private bool _level8SampleTaken;
+    private bool _tundaTransisiLevel8 = true;
+    private bool _level8MenungguPilihan;
     private bool _level10CcdComplete;
+    private bool _level10SamplePLSAccepted;
     private bool _level11MhpComplete;
     private bool _level12TailingFilterComplete;
     private bool _level13DryStackComplete;
@@ -193,8 +203,40 @@ public class GameLevelManager : MonoBehaviour
         if (_currentLevel == GameLevel.Level0_Tutorial && sceneName.Contains("Level1"))
             _currentLevel = GameLevel.Level1_APD;
 
+#if UNITY_EDITOR
+        if (_debugStartAtLevel)
+        {
+            StartCoroutine(DebugStartAtLevelCoroutine(_debugStartLevel));
+            return;
+        }
+#endif
+
         MulaiLevel(_currentLevel);
     }
+
+#if UNITY_EDITOR
+    private System.Collections.IEnumerator DebugStartAtLevelCoroutine(GameLevel target)
+    {
+        // Tunggu 1 frame supaya semua controller sempat OnEnable + subscribe ke event.
+        yield return null;
+        Log("DEBUG", $"Debug start aktif: langsung mulai di {target}.", "yellow");
+        switch (target)
+        {
+            case GameLevel.Level3_OreSlurry: DebugSkipKeLevel3(); break;
+            case GameLevel.Level4_SlurryPump: DebugSkipKeLevel4(); break;
+            case GameLevel.Level5_SteamValve: DebugSkipKeLevel5(); break;
+            case GameLevel.Level6_AcidInjection: DebugSkipKeLevel6(); break;
+            case GameLevel.Level7_Autoclave: DebugSkipKeLevel7(); break;
+            case GameLevel.Level8_Monitoring: DebugSkipKeLevel8(); break;
+            case GameLevel.Level9_FlashVessel: DebugSkipKeLevel9(); break;
+            default:
+                AutoEquipApdLengkap();
+                MulaiLevel(target);
+                if (NomorTombolDcsLevelIni > 0) TryOnDCSTombolDitekan(NomorTombolDcsLevelIni);
+                break;
+        }
+    }
+#endif
 
     private void InisialisasiDataLevel()
     {
@@ -320,14 +362,14 @@ public class GameLevelManager : MonoBehaviour
         TambahLevel(new LevelData
         {
             level = GameLevel.Level8_Monitoring,
-            namaLevel = "Level 8 - Flash Letdown Train",
-            deskripsiQuest = "Turunkan tekanan slurry bertahap lewat 3 flash vessel, recover steam, lalu ambil sample.",
+            namaLevel = "Level 8 - Flash Vessel & Letdown",
+            deskripsiQuest = "Turunkan tekanan slurry bertahap lewat 3 flash vessel (FV1→FV2→FV3) dengan handwheel, recover steam, lalu lapor flash train stabil.",
             nomorTombolDCS = 8,
             butuhVoiceReport = true,
-            kataKunciVoice = "sample diambil",
+            kataKunciVoice = "flash train stable",
             kataKunciVoiceAwal = "flash letdown selesai",
             laporanVoiceAwal = "DCS, flash letdown selesai. Slurry sudah atmospheric, suhu seratus derajat.",
-            laporanVoiceLengkap = "DCS, sample diambil. Ni tenor empat koma dua gram per liter, free acid dua puluh lima gram per liter, kondisi normal.",
+            laporanVoiceLengkap = "DCS, flash train stable. Tekanan turun bertahap dari empat puluh tujuh menjadi satu koma nol lima atmosfer. Slurry siap dialirkan ke CCD.",
             audioBalasanNPC = "audio_level8_balasan",
             targetSuhu = 100f,
             targetTekanan = 1f,
@@ -336,11 +378,14 @@ public class GameLevelManager : MonoBehaviour
 
         TambahLevel(new LevelData
         {
+            // DIPENSIUNKAN: Level 9 lama (Flash Vessel single-stage) digabung ke Level 8.
+            // Tetap ada di enum untuk kompatibilitas serialisasi, tapi tidak masuk alur (di-skip
+            // di transisi). nomorTombolDCS = 0 supaya tidak butuh tombol & tidak muncul.
             level = GameLevel.Level9_FlashVessel,
-            namaLevel = "Level 9 - Flash Vessel",
-            deskripsiQuest = "Buka letdown valve, amati flash vessel, dan pastikan tekanan turun stabil.",
-            nomorTombolDCS = 9,
-            butuhVoiceReport = true,
+            namaLevel = "Level 9 - (digabung ke Level 8)",
+            deskripsiQuest = "Level ini sudah digabung ke Level 8 (Flash Vessel & Letdown).",
+            nomorTombolDCS = 0,
+            butuhVoiceReport = false,
             kataKunciVoice = "flash vessel normal",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
@@ -352,11 +397,11 @@ public class GameLevelManager : MonoBehaviour
         TambahLevel(new LevelData
         {
             level = GameLevel.Level10_CCD,
-            namaLevel = "Level 10 - CCD Activation",
-            deskripsiQuest = "Aktifkan rangkaian CCD, amati pemisahan padat-cair, lalu laporkan.",
-            nomorTombolDCS = 10,
+            namaLevel = "Level 9 - CCD Activation & PLS Sampling",
+            deskripsiQuest = "Aktifkan rangkaian CCD, ambil 3 sample PLS dari overflow thickener, submit ke lab QC, lalu lapor.",
+            nomorTombolDCS = 9,
             butuhVoiceReport = true,
-            kataKunciVoice = "ccd aktif",
+            kataKunciVoice = "ccd aktif pls lulus qc",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
             laporanVoiceLengkap = "DCS, sistem CCD aktif. Pemisahan padat dan cair berjalan stabil.",
@@ -366,9 +411,9 @@ public class GameLevelManager : MonoBehaviour
         TambahLevel(new LevelData
         {
             level = GameLevel.Level11_MHP,
-            namaLevel = "Level 11 - Neutralization & MHP Sampling",
+            namaLevel = "Level 10 - Neutralization & MHP Sampling",
             deskripsiQuest = "Netralisasi larutan hasil CCD, bentuk MHP, lalu ambil sampel produk.",
-            nomorTombolDCS = 11,
+            nomorTombolDCS = 10,
             butuhVoiceReport = true,
             kataKunciVoice = "mhp terbentuk",
             kataKunciVoiceAwal = "",
@@ -381,9 +426,9 @@ public class GameLevelManager : MonoBehaviour
         TambahLevel(new LevelData
         {
             level = GameLevel.Level12_TailingDischarge,
-            namaLevel = "Level 12 - Tailing Neutralization & Filter Press",
+            namaLevel = "Level 11 - Tailing Neutralization & Filter Press",
             deskripsiQuest = "Netralisasi tailing, jalankan filter press, dan pastikan cake siap dikirim ke dry stack.",
-            nomorTombolDCS = 12,
+            nomorTombolDCS = 11,
             butuhVoiceReport = true,
             kataKunciVoice = "limbah dialirkan",
             kataKunciVoiceAwal = "",
@@ -396,9 +441,9 @@ public class GameLevelManager : MonoBehaviour
         TambahLevel(new LevelData
         {
             level = GameLevel.Level13_TailingWaste,
-            namaLevel = "Level 13 - Dry Stack Tailing",
+            namaLevel = "Level 12 - Dry Stack Tailing",
             deskripsiQuest = "Polishing pH tailing ke 8.5, tekan cake sampai moisture di bawah 25%, lalu amankan ke dry stack.",
-            nomorTombolDCS = 13,
+            nomorTombolDCS = 12,
             butuhVoiceReport = true,
             kataKunciVoice = "tailing aman",
             kataKunciVoiceAwal = "",
@@ -411,7 +456,7 @@ public class GameLevelManager : MonoBehaviour
         TambahLevel(new LevelData
         {
             level = GameLevel.Level14_Emergency,
-            namaLevel = "Level 14 - Darurat K3",
+            namaLevel = "Level 13 - Darurat K3",
             deskripsiQuest = "Deteksi kebocoran/pressure critical, laporkan emergency via HT, lalu tekan tombol ESD merah.",
             nomorTombolDCS = 14,
             butuhVoiceReport = true,
@@ -500,9 +545,9 @@ public class GameLevelManager : MonoBehaviour
                 data.aliasTambahanPerBaris = "autoclave stable\ntemperature pressure rpm";
                 break;
             case GameLevel.Level8_Monitoring:
-                data.kataKunciVoice = "parameter stabil";
-                data.laporanVoiceLengkap = "DCS, parameter stabil. Suhu, tekanan, dan RPM kembali dalam batas SOP.";
-                data.aliasTambahanPerBaris = "parameter stable\noperation stable";
+                data.kataKunciVoice = "flash train stable";
+                data.laporanVoiceLengkap = "DCS, flash train stable. Tekanan turun bertahap dari empat puluh tujuh menjadi satu koma nol lima atmosfer. Slurry siap dialirkan ke CCD.";
+                data.aliasTambahanPerBaris = "flash train stable\nflash letdown selesai\nslurry siap ke ccd";
                 break;
             case GameLevel.Level9_FlashVessel:
                 data.kataKunciVoice = "flash vessel normal";
@@ -510,9 +555,10 @@ public class GameLevelManager : MonoBehaviour
                 data.aliasTambahanPerBaris = "flash vessel normal\npressure release safe";
                 break;
             case GameLevel.Level10_CCD:
-                data.kataKunciVoice = "ccd aktif";
-                data.laporanVoiceLengkap = "DCS, sistem CCD aktif. Pemisahan padat dan cair berjalan stabil.";
-                data.aliasTambahanPerBaris = "ccd active\nseparation started";
+                data.kataKunciVoice = "ccd aktif pls lulus qc";
+                data.laporanVoiceLengkap = "DCS, sistem CCD aktif dan PLS overflow lulus QC lab. Free acid delapan belas gram per liter, Ni lima koma dua, siap ke neutralisasi.";
+                data.aliasTambahanPerBaris = "ccd active pls clear\nseparation started qc done\nccd aktif pls lulus";
+                break;
                 break;
             case GameLevel.Level11_MHP:
                 data.kataKunciVoice = "mhp terbentuk";
@@ -609,6 +655,14 @@ public class GameLevelManager : MonoBehaviour
             return;
         }
 
+        // MERGE Level 8 & 9: Level 9 lama (Flash Vessel single-stage) sudah digabung ke Level 8.
+        // Setiap kali ada yang mencoba masuk Level9_FlashVessel, langsung lompat ke CCD (Level10).
+        if (level == GameLevel.Level9_FlashVessel)
+        {
+            Log("LEVEL", "Level 9 lama (Flash Vessel) sudah digabung ke Level 8. Lanjut ke CCD.", "yellow");
+            level = GameLevel.Level10_CCD;
+        }
+
         _currentLevel = level;
         _levelSedangBerjalan = true;
         _voiceReportSudahDilakukan = false;
@@ -630,7 +684,9 @@ public class GameLevelManager : MonoBehaviour
         _level7SampleTaken = false;
         _level8FlashLetdownDone = false;
         _level8SampleTaken = false;
+        _level8MenungguPilihan = false;
         _level10CcdComplete = false;
+        _level10SamplePLSAccepted = false;
         _level11MhpComplete = false;
         _level12TailingFilterComplete = false;
         _level13DryStackComplete = false;
@@ -680,12 +736,36 @@ public class GameLevelManager : MonoBehaviour
         Log("LEVEL SELESAI", $"<b>{_dataLevel[level].namaLevel}</b> selesai! Skor: <b>{skor:F0}/100</b>", "green");
         OnLevelComplete?.Invoke(level, (int)skor);
 
+        // Level 8: tahan transisi otomatis. Mission Complete canvas (STAY / KEMBALI KE DCS)
+        // yang akan memicu transisi via LanjutkanTransisiLevel8(). Mencegah level loncat
+        // ke Level 9 saat canvas pilihan masih tampil.
+        if (level == GameLevel.Level8_Monitoring && _tundaTransisiLevel8)
+        {
+            _level8MenungguPilihan = true;
+            Log("LEVEL 8", "Flash Train selesai. Pilih STAY atau KEMBALI KE DCS di canvas.", "green");
+            return;
+        }
+
         int levelBerikutnya = (int)level + 1;
         if (levelBerikutnya <= 14)
             StartCoroutine(TransisiKeLevel(level, (GameLevel)levelBerikutnya));
         else
             SelesaikanSemua();
     }
+
+    /// <summary>
+    /// Dipanggil oleh Level 8 Mission Complete canvas saat player memilih "KEMBALI KE DCS".
+    /// Melanjutkan transisi ke Level 9 yang sebelumnya ditahan.
+    /// </summary>
+    public void LanjutkanTransisiLevel8()
+    {
+        if (!_level8MenungguPilihan) return;
+        _level8MenungguPilihan = false;
+        StartCoroutine(TransisiKeLevel(GameLevel.Level8_Monitoring, GameLevel.Level10_CCD));
+    }
+
+    /// <summary>Set true supaya transisi Level 8 -> 9 ditahan sampai player pilih di canvas.</summary>
+    public void TundaTransisiLevel8(bool tunda) { _tundaTransisiLevel8 = tunda; }
 
     private IEnumerator TransisiKeLevel(GameLevel levelSebelum, GameLevel levelBerikutnya)
     {
@@ -818,6 +898,12 @@ public class GameLevelManager : MonoBehaviour
         if (_currentLevel == GameLevel.Level10_CCD && !_level10CcdComplete)
         {
             Log("VOICE", "CCD belum stabil. Tunggu pemisahan padat-cair selesai dulu sebelum laporan HT.", "orange");
+            return false;
+        }
+
+        if (_currentLevel == GameLevel.Level10_CCD && _level10CcdComplete && !_level10SamplePLSAccepted)
+        {
+            Log("VOICE", "Ambil sample PLS dari CCD overflow dan submit ke lab QC dulu sebelum laporan HT.", "orange");
             return false;
         }
 
@@ -1381,6 +1467,7 @@ public class GameLevelManager : MonoBehaviour
         if (_currentLevel == GameLevel.Level8_Monitoring && !_level8FlashLetdownDone) return Reject("Flash letdown belum selesai.");
         if (_currentLevel == GameLevel.Level9_FlashVessel && Mathf.Abs(_tekananSaatIni - data.targetTekanan) > 1.5f) return Reject("Flash vessel belum stabil.");
         if (_currentLevel == GameLevel.Level10_CCD && !_level10CcdComplete) return Reject("CCD belum stabil.");
+        if (_currentLevel == GameLevel.Level10_CCD && _level10CcdComplete && !_level10SamplePLSAccepted) return Reject("Sample PLS QC belum lulus.");
         if (_currentLevel == GameLevel.Level11_MHP && !_level11MhpComplete) return Reject("MHP belum siap.");
         if (_currentLevel == GameLevel.Level12_TailingDischarge && !_level12TailingFilterComplete) return Reject("Tailing treatment belum selesai.");
         if (_currentLevel == GameLevel.Level13_TailingWaste && !_level13DryStackComplete) return Reject("Dry stack belum aman.");
@@ -1596,6 +1683,18 @@ public class GameLevelManager : MonoBehaviour
         _level10CcdComplete = true;
         Log("LEVEL 10", "CCD separation stable. Final HT report is now allowed.", "green");
     }
+
+    public void NotifyLevel10SamplePLSAccepted()
+    {
+        if (_currentLevel != GameLevel.Level10_CCD)
+            return;
+        if (_level10SamplePLSAccepted) return;
+        _level10SamplePLSAccepted = true;
+        Log("LEVEL 10", "Sample PLS overflow CCD lulus QC lab. Free acid OK, Ni > 4.5 g/L. Lapor HT diizinkan.", "green");
+    }
+
+    public bool Level10CCDComplete => _level10CcdComplete;
+    public bool Level10SamplePLSAccepted => _level10SamplePLSAccepted;
 
     public void NotifyLevel11MHPComplete()
     {
@@ -1864,9 +1963,10 @@ public class GameLevelManager : MonoBehaviour
                 break;
 
             case GameLevel.Level8_Monitoring:
-                yield return "parameter stabil";
-                yield return "parameter stable";
-                yield return "operation stable";
+                yield return "flash train stable";
+                yield return "flash letdown selesai";
+                yield return "slurry siap ke ccd";
+                yield return "flash train stable";
                 break;
 
             case GameLevel.Level9_FlashVessel:
@@ -1875,7 +1975,9 @@ public class GameLevelManager : MonoBehaviour
                 break;
 
             case GameLevel.Level10_CCD:
+                yield return "ccd aktif pls lulus qc";
                 yield return "ccd aktif";
+                yield return "ccd active pls clear";
                 yield return "ccd active";
                 yield return "separation started";
                 break;
@@ -2126,6 +2228,39 @@ public class GameLevelManager : MonoBehaviour
         NotifyLevel7SafetyDrillDone();
         NotifyLevel7SampleTaken();
         Log("DEBUG", "Semua tahap inspeksi Level 7 ter-flag. Tinggal lapor HT.", "green");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 8 (Flash Vessel & Letdown)")]
+    private void DebugSkipKeLevel8()
+    {
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level8_Monitoring);
+        // Tekan tombol DCS 8 secara otomatis supaya controller langsung mulai sequence (teleport + buka valve).
+        TryOnDCSTombolDitekan(8);
+        Log("DEBUG", "Skip ke Level 8 (Flash Vessel & Letdown). Player ter-teleport ke depan FV1. Putar 3 handwheel (FV1->FV2->FV3) atau tekan 1/2/3, ambil sample Q/W/E, tekan L submit lab, lapor HT.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Auto-Complete Level 8 (semua flag)")]
+    private void DebugAutoCompleteLevel8()
+    {
+        if (_currentLevel != GameLevel.Level8_Monitoring)
+        {
+            Log("DEBUG", "Bukan di Level 8. Skip dulu via 'Skip ke Level 8'.", "yellow");
+            return;
+        }
+        NotifyLevel8FlashLetdownDone();
+        NotifyLevel8SampleTaken();
+        Log("DEBUG", "Flash letdown + sample Level 8 ter-flag. Tinggal lapor HT.", "green");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 9 (CCD)")]
+    private void DebugSkipKeLevel9()
+    {
+        // Level 9 (display) = CCD (enum Level10_CCD) setelah merge Level 8 & 9 lama.
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level10_CCD);
+        TryOnDCSTombolDitekan(9);
+        Log("DEBUG", "Skip ke Level 9 (CCD). Tombol DCS 9 sudah ditekan otomatis. Aktifkan CCD lalu lapor HT 'CCD aktif'.", "yellow");
     }
 
     /// <summary>

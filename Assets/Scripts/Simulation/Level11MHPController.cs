@@ -127,7 +127,7 @@ public class Level11MHPController : MonoBehaviour
 
     private void OnDcsButtonPressed(int number)
     {
-        if (!_levelActive || number != 11 || _processStarted)
+        if (!_levelActive || number != 10 || _processStarted)
             return;
 
         _processStarted = true;

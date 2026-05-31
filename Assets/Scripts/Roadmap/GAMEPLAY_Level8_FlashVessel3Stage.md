@@ -1,5 +1,8 @@
 # GAMEPLAY Level 8 — Flash Vessel 3-Stage Pressure Letdown + PLS Sampling
 
+> **CATATAN MERGE (2026-05-29):** Level 8 (Flash Train 3-stage) dan Level 9 lama (Flash Vessel single-stage) sudah DIGABUNG jadi satu level: **Level 8 - Flash Vessel & Letdown**. Level 9 lama dipensiunkan (controller `Level9FlashVesselController` di-disable, enum `Level9_FlashVessel` di-skip otomatis di `MulaiLevel`). Urutan display level setelahnya digeser: CCD = Level 9, MHP = Level 10, Tailing = Level 11, Dry Stack = Level 12, Darurat = Level 13. Angka enum internal TIDAK diubah (kompatibilitas serialisasi scene).
+
+
 ## Referensi Industrial (HPAL Real World)
 
 Setelah autoclave (Level 7), slurry keluar pada **250°C / 47-50 atm**. Tekanan dan suhu TIDAK BOLEH diturunkan langsung ke atmosfer karena:
@@ -248,3 +251,67 @@ Di plant nyata, operator baru **tidak pernah diizinkan** startup flash train sen
 2. **Level 8 di GLM** = `GameLevel.Level8_Monitoring` (nama enum lama, tapi controller baru = FlashTrain)
 3. **Transisi dari Level 7**: setelah Mission Complete Level 7, player pilih "KEMBALI KE DCS" → `MulaiLevel(Level8_Monitoring)`
 4. **Transisi ke Level 9**: setelah Mission Complete Level 8 → `MulaiLevel(Level9_FlashVessel)` (CCD)
+
+
+---
+
+## REVISI BESAR (2026-05-29 Part 7) — Feedback User: Grab Bug, Sample Mechanic, Lab Building
+
+### Bug & Permintaan dari User
+1. **Grab bug**: saat grab handwheel, "bunderan tengah gauge" malah ikut ketarik ke mana-mana (XRGrabInteractable secara fisik memindahkan objek mengikuti tangan). HARUS: handwheel cuma BERPUTAR di tempat, tidak pindah posisi.
+2. **Setelah putar pertama**: tekanan turun + uap panas keluar. Sound effect harus DIKERASKAN. Tambah uap (vapor FX) di lokasi bebas.
+3. **Putaran gauge/handwheel diperlambat**: jangan kencang. Cukup **5 putaran** (1800°), pelan.
+4. **Sample mechanic SALAH**: sekarang cuma tekan Q/W/E. HARUS: player **mendekat ke 3 tabung flash vessel**, ambil sample pakai **botol/wadah**, dengan **animasi ambil sample** (botol gerak ke port → terisi liquid → berubah warna).
+5. **Lingkaran tengah gauge ikut ke mana-mana** = sama dengan bug #1.
+6. **Lab uji belum ada**: minta dibangun **gedung lab lengkap + ruangan** via Blender MCP, plus mekanisme uji sample + animasi menarik.
+
+### Solusi Teknis (Plan)
+- **Grab fix**: ganti `XRGrabInteractable` → `XRSimpleInteractable` (deteksi select tanpa memindahkan objek). Rotasi 100% dikontrol manual oleh controller (ApplyHandwheelRotation). Pastikan part grouping HANYA hub+ring+spoke handwheel itu sendiri (exclude gauge/needle).
+- **Rotasi**: `_handwheelFullOpenDegrees` 3600 → **1800** (5 putaran). `autoSpeed` saat grab diperlambat (mis. 220°/dtk ≈ 8 detik full).
+- **Vapor + sound**: vapor FX di top vapor riser tiap FV + saat valve mulai kebuka. `_steamReleaseVolume` dinaikkan, ditambah whoosh saat stage stabil.
+- **Sample mechanic baru**: setelah 3 valve stabil → muncul **3 sample station** di dekat tiap flash vessel (sample port + botol). Player dekati → grab botol / tekan → animasi botol naik ke port, terisi liquid (warna per stage: FV1 merah panas → FV2 oranye → FV3 kuning, lalu cooling → biru-teal aman). 3 botol terkumpul → bawa ke lab.
+- **Lab building (Blender MCP)**: gedung lab QC — ruangan tertutup, meja analisa, rak sample, layar hasil, pintu. Player masuk → taruh 3 botol di rak analyzer → animasi mesin analisa (spin, lampu, progress bar) → hasil QC muncul di layar → ACCEPT → lapor HT.
+
+### Status Asset Handwheel
+- PAKAI handwheel asli `L5_Condensate_Drain_Handwheel (1)/(2)/(3)` di (-54.74, 1.48, 102/105/108). Sudah di-map FV1/FV2/FV3.
+
+### Catatan Blender
+- Blender MCP addon HARUS running untuk bangun gedung lab. Kalau belum konek, lab dibangun via ProBuilder/primitive Unity sebagai fallback.
+
+
+---
+
+## REVISI FINAL Opsi A (2026-05-30 Part 9)
+
+### Keputusan Redesign (research-based)
+Berdasarkan research flowsheet HPAL (Nickel Institute, Moa Bay, Coral Bay, Taganito, BC Campus hydrometallurgy textbook): sample PLS untuk lab QC final SEBENARNYA diambil di **OVERFLOW CCD** (Level 9), bukan flash vessel. Flash vessel discharge masih slurry padat+cair, suhu 100-195°C, tidak representatif untuk Ni/Co assay.
+
+### Level 8 SEKARANG (post-redesign)
+Fokus: **operasi 3 handwheel valve letdown** (gestural rotation) + monitoring P/T turun + lapor HT.
+
+**Yang dihapus**:
+- Sample station fisik di flash vessel (BeginSamplingStations diset tidak terpanggil)
+- Lab building (sekarang ada di Level 9)
+- Phase Sampling, LabSubmit (skip)
+
+**Flow baru**:
+1. DCS 8 → teleport ke handwheel
+2. **Putar handwheel FV1 (gestural)**: arahkan tangan VR ke handwheel, putar pergelangan searah jarum jam → handwheel ikut. P 47→12 atm.
+3. Putar handwheel FV2 → P 12→3 atm (interlock FV1 stable).
+4. Putar handwheel FV3 → P 3→1.05 atm (atmospheric).
+5. FV3 stable → otomatis ke phase MenungguLapor.
+6. Lapor HT (tahan T): "flash train stable, slurry siap ke CCD".
+7. Mission Complete canvas → lanjut ke Level 9 (CCD).
+
+### Mekanik Handwheel Gestural (UpdateHandwheel)
+- Track delta yaw tangan player (interactor.forward) saat hover/grab handwheel.
+- `dYaw = Mathf.DeltaAngle(yawLast, yawNow)`. Inverse jadi `deltaDeg = -dYaw` supaya CW di sumbu = membuka valve.
+- Filter outlier > 35°/frame (anti-glitch).
+- Reset baseline (yawValid=false) saat lepas hover/grab.
+- Tidak ada auto-rotate. Player bener-bener ngontrol arah & kecepatan.
+- Total full open = 1800° (5 putaran).
+- Keyboard fallback: tahan 1/2/3 untuk rotasi simulator (360°/dtk).
+
+### Voice Report
+- kataKunciVoice: "flash train stable" (alias: "flash letdown selesai", "slurry siap ke ccd")
+- laporanVoiceLengkap: "DCS, flash train stable. Tekanan turun bertahap dari empat puluh tujuh menjadi satu koma nol lima atmosfer. Slurry siap dialirkan ke CCD."

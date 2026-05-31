@@ -1,4 +1,4 @@
-using UnityEngine;
+﻿using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System;
@@ -644,9 +644,9 @@ public class PlayerHUD : MonoBehaviour
         {
             "LEVEL 0 - TUTORIAL", "LEVEL 1 - APD SAFETY", "LEVEL 2 - DCS PREPARATION",
             "LEVEL 3 - ORE & SLURRY", "LEVEL 4 - SLURRY PUMP", "LEVEL 5 - STEAM VALVE",
-            "LEVEL 6 - ACID INJECTION", "LEVEL 7 - AUTOCLAVE", "LEVEL 8 - MONITORING DCS",
-            "LEVEL 9 - FLASH VESSEL", "LEVEL 10 - CCD", "LEVEL 11 - MHP SAMPLING",
-            "LEVEL 12 - TAILING DISCHARGE", "LEVEL 13 - TAILING WASTE", "LEVEL 14 - DARURAT K3"
+            "LEVEL 6 - ACID INJECTION", "LEVEL 7 - AUTOCLAVE", "LEVEL 8 - FLASH VESSEL & LETDOWN",
+            "LEVEL 9 - (digabung ke Level 8)", "LEVEL 9 - CCD", "LEVEL 10 - MHP SAMPLING",
+            "LEVEL 11 - TAILING & FILTER PRESS", "LEVEL 12 - DRY STACK TAILING", "LEVEL 13 - DARURAT K3"
         };
 
         int idx = (int)level;
@@ -831,42 +831,52 @@ public class PlayerHUD : MonoBehaviour
             txtParameterInfo.text = string.Join("\n", lines);
             return;
         }
-
-        // Level 8: Monitoring
+        // Level 8: Flash Vessel & Letdown (Opsi A — sample dipindah ke Level 9 CCD)
         if (level == GameLevelManager.GameLevel.Level8_Monitoring)
         {
-            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 8");
-            lines.Add($"{Check(_voiceReportSelesai)} Monitor parameter: suhu, tekanan, RPM");
-            lines.Add($"{Check(_voiceReportSelesai)} Stabilkan semua parameter ke SOP");
-            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'parameter stabil'");
+            var l8 = FindFirstObjectByType<Level8FlashTrainController>(FindObjectsInactive.Exclude);
+            if (l8 != null && l8.LevelActive)
+            {
+                lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 8");
+                lines.Add($"{Check(l8.AutoclaveValveOpened)} Buka valve letdown Autoclave → slurry mengalir ke Flash Vessel");
+                lines.Add($"{Check(l8.AutoclaveValveOpened)} Lapor HT: 'Autoclave dibuka menuju Flash Vessel'");
+                lines.Add($"{Check(l8.Fv1Stable)} Lapor + tutup uap FV1 (putar handwheel)");
+                lines.Add($"{Check(l8.Fv2Stable)} Lapor + tutup uap FV2");
+                lines.Add($"{Check(l8.Fv3Stable)} Lapor + tutup uap FV3");
+                lines.Add($"{Check(_voiceReportSelesai)} Lapor HT akhir: 'flash train stable'");
+            }
+            else
+            {
+                lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 8");
+                lines.Add("[ ] Buka letdown FV1, FV2, FV3 berurutan");
+                lines.Add("[ ] Lapor HT");
+            }
             txtParameterInfo.text = string.Join("\n", lines);
             return;
         }
 
-        // Level 9: Flash Vessel
-        if (level == GameLevelManager.GameLevel.Level9_FlashVessel)
-        {
-            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 9");
-            lines.Add($"{Check(_voiceReportSelesai)} Buka letdown valve ke flash vessel");
-            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'tekanan turun, flash vessel aktif'");
-            txtParameterInfo.text = string.Join("\n", lines);
-            return;
-        }
+        
 
-        // Level 10: CCD
+        // Level 9 lama (Flash Vessel) DIPENSIUNKAN — digabung ke Level 8. Tidak ada checklist.
+
+        // Level 9 (display) = CCD (enum Level10_CCD)
         if (level == GameLevelManager.GameLevel.Level10_CCD)
         {
-            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 10");
-            lines.Add($"{Check(_voiceReportSelesai)} Aktifkan CCD separator");
-            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'CCD aktif, pemisahan berjalan'");
+            var glm = GameLevelManager.Instance;
+            bool ccdStable = glm != null && glm.Level10CCDComplete;
+            bool plsLulus = glm != null && glm.Level10SamplePLSAccepted;
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 9");
+            lines.Add($"{Check(ccdStable)} Aktifkan CCD separator + amati pemisahan");
+            lines.Add($"{Check(plsLulus)} Ambil 3 sample PLS overflow + submit lab QC");
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'CCD aktif, PLS lulus QC'");
             txtParameterInfo.text = string.Join("\n", lines);
             return;
         }
 
-        // Level 11: MHP
+        // Level 10 (display) = MHP (enum Level11_MHP)
         if (level == GameLevelManager.GameLevel.Level11_MHP)
         {
-            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 11");
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 10");
             lines.Add($"{Check(_voiceReportSelesai)} Ambil sampel MHP");
             lines.Add($"{Check(_voiceReportSelesai)} Verifikasi pH 5.5 dan warna hijau");
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'MHP presipitasi berhasil'");
@@ -874,10 +884,10 @@ public class PlayerHUD : MonoBehaviour
             return;
         }
 
-        // Level 12: Tailing Discharge
+        // Level 11 (display) = Tailing Discharge (enum Level12_TailingDischarge)
         if (level == GameLevelManager.GameLevel.Level12_TailingDischarge)
         {
-            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 12");
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 11");
             lines.Add($"{Check(_voiceReportSelesai)} Netralisasi tailing (pH naik ke 7.5)");
             lines.Add($"{Check(_voiceReportSelesai)} Filter press: moisture < 25%");
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'tailing netral, filter press OK'");
@@ -885,10 +895,10 @@ public class PlayerHUD : MonoBehaviour
             return;
         }
 
-        // Level 13: Tailing Waste / Dry Stack
+        // Level 12 (display) = Dry Stack (enum Level13_TailingWaste)
         if (level == GameLevelManager.GameLevel.Level13_TailingWaste)
         {
-            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 13");
+            lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 12");
             lines.Add($"{Check(_voiceReportSelesai)} Tambah limestone (pH naik ke 8.5)");
             lines.Add($"{Check(_voiceReportSelesai)} Verifikasi moisture cake < 25%");
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'dry stack aman, pH 8.5'");
@@ -896,7 +906,7 @@ public class PlayerHUD : MonoBehaviour
             return;
         }
 
-        // Level 14: Emergency
+        // Level 13 (display) = Emergency (enum Level14_Emergency)
         if (level == GameLevelManager.GameLevel.Level14_Emergency)
         {
             lines.Add("[ ] Deteksi alarm gas / kebocoran");

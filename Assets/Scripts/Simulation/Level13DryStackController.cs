@@ -150,7 +150,7 @@ public class Level13DryStackController : MonoBehaviour
 
     private void OnDcsButtonPressed(int number)
     {
-        if (!_levelActive || number != 13 || _processStarted)
+        if (!_levelActive || number != 12 || _processStarted)
             return;
 
         _processStarted = true;

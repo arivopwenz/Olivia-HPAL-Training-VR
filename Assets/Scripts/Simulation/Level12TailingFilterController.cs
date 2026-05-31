@@ -130,7 +130,7 @@ public class Level12TailingFilterController : MonoBehaviour
 
     private void OnDcsButtonPressed(int number)
     {
-        if (!_levelActive || number != 12 || _processStarted)
+        if (!_levelActive || number != 11 || _processStarted)
             return;
 
         _processStarted = true;

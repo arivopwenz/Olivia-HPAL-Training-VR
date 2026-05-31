@@ -864,15 +864,25 @@ public class Level7AutoclaveController : MonoBehaviour
         }
         Material mat = new Material(shader);
         mat.name = "M_L7_SlurryFill_Runtime";
-        // Slurry purple agak transparan supaya rotor di dalam tetap visible.
-        Color slurry = new Color(0.55f, 0.18f, 0.65f);
-        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", slurry);
-        if (mat.HasProperty("_Color")) mat.SetColor("_Color", slurry);
-        if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", new Color(0.65f, 0.25f, 0.75f));
-        if (mat.HasProperty("_EmissionIntensity")) mat.SetFloat("_EmissionIntensity", 0.5f);
-        if (mat.HasProperty("_SurfaceGlow")) mat.SetFloat("_SurfaceGlow", 1.8f);
-        if (mat.HasProperty("_SurfaceWidth")) mat.SetFloat("_SurfaceWidth", 0.3f);
-        if (mat.HasProperty("_Alpha")) mat.SetFloat("_Alpha", 0.65f); // transparan: 65% opacity
+        // HPAL slurry/PLS = cairan asam panas, render sebagai air 3D translucent realistic
+        // (biru-teal, gradient gelap di dalam, permukaan glowing). Bukan solid ungu.
+        Color shallow = new Color(0.16f, 0.55f, 0.62f);   // warna dekat permukaan (terang teal)
+        Color deep = new Color(0.03f, 0.17f, 0.27f);      // warna dalam (gelap biru)
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", shallow);
+        if (mat.HasProperty("_Color")) mat.SetColor("_Color", shallow);
+        if (mat.HasProperty("_DeepColor")) mat.SetColor("_DeepColor", deep);
+        if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", new Color(0.12f, 0.45f, 0.55f));
+        if (mat.HasProperty("_EmissionIntensity")) mat.SetFloat("_EmissionIntensity", 0.25f);
+        if (mat.HasProperty("_SurfaceGlow")) mat.SetFloat("_SurfaceGlow", 2.5f);
+        if (mat.HasProperty("_SurfaceWidth")) mat.SetFloat("_SurfaceWidth", 0.45f);
+        if (mat.HasProperty("_DepthRange")) mat.SetFloat("_DepthRange", 8f);
+        if (mat.HasProperty("_FresnelPower")) mat.SetFloat("_FresnelPower", 3f);
+        if (mat.HasProperty("_SpecPower")) mat.SetFloat("_SpecPower", 64f);
+        if (mat.HasProperty("_SpecIntensity")) mat.SetFloat("_SpecIntensity", 1.4f);
+        if (mat.HasProperty("_RippleScale")) mat.SetFloat("_RippleScale", 6f);
+        if (mat.HasProperty("_RippleSpeed")) mat.SetFloat("_RippleSpeed", 0.8f);
+        if (mat.HasProperty("_RippleStrength")) mat.SetFloat("_RippleStrength", 0.06f);
+        if (mat.HasProperty("_Alpha")) mat.SetFloat("_Alpha", 0.7f); // translucent
         if (mat.HasProperty("_FillY")) mat.SetFloat("_FillY", -1000f);
         mat.EnableKeyword("_EMISSION");
         // Force render queue Transparent.
@@ -1715,9 +1725,10 @@ public class Level7AutoclaveController : MonoBehaviour
         // Rotate slurry mesh perlahan di sumbu Y dunia (mengikuti rotor swirl)
         _swirlAngle += _swirlRPM * 6f * Time.deltaTime;
         // Alih-alih rotate mesh (karena bisa keluar dari shell), kita modulasi emission warna untuk efek swirl ringan.
-        float pulseR = 0.55f + 0.15f * Mathf.Sin(_swirlAngle * Mathf.Deg2Rad);
-        float pulseG = 0.20f;
-        float pulseB = 0.65f + 0.10f * Mathf.Cos(_swirlAngle * Mathf.Deg2Rad * 1.3f);
+        // Warna swirl tetap di range air biru-teal (bukan ungu) supaya cairan terlihat seperti air realistic.
+        float pulseR = 0.10f + 0.06f * Mathf.Sin(_swirlAngle * Mathf.Deg2Rad);
+        float pulseG = 0.42f + 0.08f * Mathf.Sin(_swirlAngle * Mathf.Deg2Rad * 0.7f);
+        float pulseB = 0.55f + 0.10f * Mathf.Cos(_swirlAngle * Mathf.Deg2Rad * 1.3f);
         if (_slurryFillMaterial.HasProperty("_EmissionColor"))
             _slurryFillMaterial.SetColor("_EmissionColor", new Color(pulseR, pulseG, pulseB) * _swirlIntensity);
     }
