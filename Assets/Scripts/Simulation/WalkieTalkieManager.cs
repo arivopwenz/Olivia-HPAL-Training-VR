@@ -98,55 +98,22 @@ public class WalkieTalkieManager : MonoBehaviour
     // (static hiss "ksshk" + nada balasan radio) supaya HT TETAP bersuara tanpa setup manual.
     private void EnsureAudioFallback()
     {
+        // Hanya pastikan ada AudioSource. Clip suara HT (static buka/tutup + balasan NPC) di-DRAG-N-DROP di inspector;
+        // tidak ada lagi sound effect prosedural buatan.
         if (_audioSourceRadio == null)
         {
             var go = new GameObject("HT_Radio_AudioSource");
             go.transform.SetParent(transform, false);
             _audioSourceRadio = go.AddComponent<AudioSource>();
             _audioSourceRadio.playOnAwake = false;
-            _audioSourceRadio.spatialBlend = 0f; // 2D, langsung di telinga player (radio)
+            _audioSourceRadio.spatialBlend = 0f;
             _audioSourceRadio.volume = 0.85f;
         }
-        if (_suaraStaticBuka == null) _suaraStaticBuka = GenStatic(0.22f, 24500, true);
-        if (_suaraStaticTutup == null) _suaraStaticTutup = GenStatic(0.18f, 24501, false);
-        // balasan NPC default (nada radio "beep-boop") kalau slot kosong.
-        for (int i = 0; i < _audioBalasanNPC.Length; i++)
-            if (_audioBalasanNPC[i] == null) _audioBalasanNPC[i] = GenRadioReply(0.9f, 23000 + i);
     }
 
-    private static AudioClip GenStatic(float dur, int seed, bool rising)
-    {
-        int sr = 22050; int n = Mathf.CeilToInt(dur * sr); var data = new float[n];
-        var rnd = new System.Random(seed);
-        for (int i = 0; i < n; i++)
-        {
-            float t = (float)i / n;
-            float env = rising ? Mathf.Clamp01(t * 3f) * (1f - t) * 2f : (1f - t);
-            data[i] = ((float)rnd.NextDouble() * 2f - 1f) * 0.5f * env;
-        }
-        var c = AudioClip.Create("HT_Static_" + seed, n, 1, sr, false); c.SetData(data, 0); return c;
-    }
 
-    private static AudioClip GenRadioReply(float dur, int seed)
-    {
-        // "Copy" radio voice-ish: 2 burst nada termodulasi + sedikit noise band (kedengeran kayak radio).
-        int sr = 22050; int n = Mathf.CeilToInt(dur * sr); var data = new float[n];
-        var rnd = new System.Random(seed);
-        for (int i = 0; i < n; i++)
-        {
-            float t = (float)i / n;
-            // dua suku kata
-            float syl = (t < 0.42f) ? 1f : (t > 0.5f && t < 0.95f ? 1f : 0f);
-            float baseHz = (t < 0.42f) ? 320f : 260f;
-            float vib = Mathf.Sin(2f * Mathf.PI * 14f * t) * 12f; // getar suara
-            float tone = Mathf.Sin(2f * Mathf.PI * (baseHz + vib) * t * dur);
-            float tone2 = Mathf.Sin(2f * Mathf.PI * (baseHz * 1.5f) * t * dur) * 0.4f;
-            float noise = ((float)rnd.NextDouble() * 2f - 1f) * 0.10f;
-            float env = syl * Mathf.Clamp01(Mathf.Sin(t * Mathf.PI)) ;
-            data[i] = (tone + tone2 + noise) * 0.28f * env;
-        }
-        var c = AudioClip.Create("HT_Reply_" + seed, n, 1, sr, false); c.SetData(data, 0); return c;
-    }
+
+
 
 
     private void Update()

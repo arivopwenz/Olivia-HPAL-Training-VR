@@ -163,8 +163,8 @@ public sealed class GlobalTaskArrowDirector : MonoBehaviour
                 return null;
 
             case GameLevelManager.GameLevel.Level3_OreSlurry:
-                // Level 3 sub-phase logic: arrow ke walkie talkie kalau lagi nunggu lapor.
-                return GetWalkieTalkieTarget();
+                // Level 3: panah dimatikan (mengganggu observasi conveyor/tank).
+                return null;
 
             case GameLevelManager.GameLevel.Level4_SlurryPump:
                 return GetWalkieTalkieTarget();

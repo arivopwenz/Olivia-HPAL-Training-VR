@@ -76,6 +76,11 @@ public sealed class WalkieTalkieWearableSocket : MonoBehaviour
 
         foreach (Renderer renderer in _walkie.GetComponentsInChildren<Renderer>(true))
             if (renderer != null) renderer.enabled = true;
+
+        // HT harus tetap bisa di-grab manual oleh player saat ter-dock di dada.
+        if (_grab != null) _grab.enabled = true;
+        foreach (Collider col in _walkie.GetComponentsInChildren<Collider>(true))
+            if (col != null) col.enabled = true;
     }
 
     private void ResolveWalkie()

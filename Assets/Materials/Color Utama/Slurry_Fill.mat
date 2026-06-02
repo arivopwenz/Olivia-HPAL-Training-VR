@@ -46,23 +46,24 @@ Material:
     - _BaseMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0.055182986}
+        m_Offset: {x: 0, y: 0.888159}
     - _MainTex:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0.28343377}
+        m_Offset: {x: 0, y: 0.0059999977}
     m_Ints: []
     m_Floats:
     - _DstBlend: 10
     - _DstBlendAlpha: 10
-    - _Metallic: 0.05
-    - _Smoothness: 0.7
+    - _Glossiness: 0.55
+    - _Metallic: 0
+    - _Smoothness: 0.55
     - _SrcBlend: 1
     - _Surface: 1
     - _ZWrite: 0
     m_Colors:
-    - _BaseColor: {r: 0.42, g: 0.18, b: 0.55, a: 0.95}
-    - _Color: {r: 0.41999996, g: 0.17999998, b: 0.54999995, a: 0.95}
-    - _EmissionColor: {r: 0.168, g: 0.072000004, b: 0.22000001, a: 0.38}
+    - _BaseColor: {r: 0.34, g: 0.27, b: 0.19, a: 1}
+    - _Color: {r: 0.33999997, g: 0.26999995, b: 0.18999997, a: 1}
+    - _EmissionColor: {r: 0.04, g: 0.03, b: 0.02, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

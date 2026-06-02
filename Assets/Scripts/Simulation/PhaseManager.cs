@@ -279,27 +279,28 @@ public class PhaseManager : MonoBehaviour
 
     private void PakaiApd(ApdItem apd)
     {
+        // Walkie Talkie = alat yang dipegang & dipakai berulang. JANGAN dikunci/disembunyikan supaya tetap bisa di-grab manual.
+        bool isWalkie = apd == _walkieTalkie;
         if (apd.sudahDipakai)
         {
-            SembunyikanApdDiMeja(apd.namaApd);
+            if (!isWalkie) SembunyikanApdDiMeja(apd.namaApd);
             return;
         }
         apd.sudahDipakai = true;
         OnApdItemWorn?.Invoke(apd.namaApd);
-        Log("APD", $"✓ <b>{apd.namaApd}</b> terpasang! ({JumlahAPDTerpasang}/{TOTAL_APD})", "green");
+        Log("APD", $"\u2713 <b>{apd.namaApd}</b> terpasang! ({JumlahAPDTerpasang}/{TOTAL_APD})", "green");
 
-        // Disable grab pada object APD ini supaya tidak bisa diambil ulang.
-        KuncIGrabAPD(apd.namaApd, true);
-        SembunyikanApdDiMeja(apd.namaApd);
+        if (!isWalkie)
+        {
+            // Disable grab pada object APD ini supaya tidak bisa diambil ulang.
+            KuncIGrabAPD(apd.namaApd, true);
+            SembunyikanApdDiMeja(apd.namaApd);
+        }
 
         if (APDLengkapSempurna)
         {
-            // Hanya invoke OnAPD7Lengkap saat Level 1 supaya tidak trigger ulang di level lain
-            // (misal saat masker re-equip ke dada di Level 2+ yang bisa memicu PakaiApd lagi).
             bool diLevel1 = GameLevelManager.Instance != null &&
                             GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level1_APD;
-            // Extra guard: kalau dipanggil pertama kali sebelum GLM siap, tetap allow.
-            // Tapi kalau sudah lewat Level 1 dan ini bukan first-time-trigger, skip.
             if (diLevel1 && !_apd7LengkapSudahPernahTrigger)
             {
                 _apd7LengkapSudahPernahTrigger = true;
@@ -507,6 +508,11 @@ public class PhaseManager : MonoBehaviour
             StartCoroutine(PastikanMaskerDadaBeberapaFrame());
         }
 
+        // HT: tandai sudah diambil supaya WalkieTalkieWearableSocket auto-dock ke dada (tetap bisa di-grab manual).
+        OnWalkieTalkieTaken();
+        // Kacamata: otomatis terpasang di wajah & ikut player tiap naik level (Level 2+).
+        PindahkanKacamataKeWajah();
+
         // Auto-move gloves to waist socket before Level 5+ field levels
         if (_otomatisSimpanGloveSaatLevelField && !isGlovesWorn
             && level >= GameLevelManager.GameLevel.Level5_SteamValve)
@@ -668,6 +674,43 @@ public class PhaseManager : MonoBehaviour
         PastikanMaskerAdaDiSocketBaju();
         OnRespiratorStored();
         Log("RESPIRATOR AUTO", "Respirator dipindahkan ke socket dada kanan agar terlihat bersama socket Walkie Talkie.", "cyan");
+    }
+
+    private void PindahkanKacamataKeWajah()
+    {
+        Transform glasses = CariTransformScene("Glassess");
+        Transform socket = CariTransformScene("Socket_Glasess");
+        if (glasses == null || socket == null) return;
+
+        var grab = glasses.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+        if (grab != null && grab.isSelected && grab.interactionManager != null)
+            foreach (var it in new System.Collections.Generic.List<UnityEngine.XR.Interaction.Toolkit.Interactors.IXRSelectInteractor>(grab.interactorsSelecting))
+                grab.interactionManager.SelectExit(it, grab);
+
+        var stab = glasses.GetComponent<ApdDisplayItemStabilizer>();
+        if (stab != null) stab.enabled = false;
+
+        Vector3 ws = glasses.lossyScale;
+        glasses.SetParent(socket, false);
+        glasses.localPosition = Vector3.zero;
+        glasses.localRotation = Quaternion.identity;
+        SetWorldScale(glasses, ws);
+        glasses.gameObject.SetActive(true);
+        foreach (Renderer r in glasses.GetComponentsInChildren<Renderer>(true)) if (r != null) r.enabled = true;
+        if (grab != null) grab.enabled = false;
+        foreach (Collider c in glasses.GetComponentsInChildren<Collider>(true)) if (c != null) c.enabled = false;
+
+        if (!isGlassesWorn) OnGlassesWorn();
+        else MulaiFadeApdSetelahDipakai("Glassess");
+    }
+
+    private Transform CariTransformScene(string nama)
+    {
+        var go = GameObject.Find(nama);
+        if (go == null)
+            foreach (var g in Resources.FindObjectsOfTypeAll<GameObject>())
+                if (g.name == nama && g.scene.IsValid()) { go = g; break; }
+        return go != null ? go.transform : null;
     }
 
     private void SetWorldScale(Transform target, Vector3 worldScale)

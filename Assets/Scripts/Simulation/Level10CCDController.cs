@@ -35,6 +35,14 @@ public class Level10CCDController : MonoBehaviour
     private Renderer[] _feedwellCores = new Renderer[3];         // inti slurry feedwell (keruh)
     private Renderer[] _settlingZones = new Renderer[3];         // zona pengendapan (x-ray)
     private Renderer[] _underflowPools = new Renderer[3];        // lumpur underflow di dasar
+
+    // Pipa proses (CCD -> MHP / Filter Press) yang dibuat di Blender. Flow tube di-animasikan
+    // (emissive pulse + scroll) untuk menunjukkan PLS & slurry mengalir keluar dari CCD.
+    private Renderer _plsFlowPipe;        // PLS overflow -> Level 10 Pemurnian (hijau)
+    private Renderer _underflowFlowPipe;  // underflow solids -> Tailing Filter Press (coklat)
+    private MaterialPropertyBlock _flowMpb;
+    private float _flowPhase;
+    private bool _pipeFlowsActive;
     private MaterialPropertyBlock _mpb;
     private readonly Color _turbidSlurry = new Color(0.42f, 0.30f, 0.20f, 0.92f);  // coklat keruh awal
     private readonly Color _clearPls = new Color(0.30f, 0.62f, 0.70f, 0.70f);      // PLS jernih kehijauan
@@ -102,6 +110,7 @@ public class Level10CCDController : MonoBehaviour
         if (!_levelActive)
         {
             SetProcessVisuals(false);
+            StopProcessPipeFlows();
             StopSequence();
             StopAudio(_driveAudio);
             return;
@@ -113,6 +122,7 @@ public class Level10CCDController : MonoBehaviour
         _solidsSettlingCurrent = 0f;
         _clarityCurrent = 0f;
         AutoFindReferences();   // re-resolve real model refs (recover NULL dari scene lama)
+        StopProcessPipeFlows(); // flow tube tersembunyi sampai pemisahan CCD selesai
         FixBakedLabels();       // ganti teks baked yang ter-cermin dengan overlay readable
         SetProcessVisuals(false);
 
@@ -186,6 +196,9 @@ public class Level10CCDController : MonoBehaviour
         StartAudio(_separationCompleteAudio, _completeVolume);
         _questComplete = true;
         GameLevelManager.Instance?.NotifyLevel10CCDComplete();
+
+        // Pemisahan selesai → 2 aliran mulai: PLS jernih ke Pemurnian/MHP, padatan underflow ke Filter Press.
+        StartProcessPipeFlows();
 
         if (_hud != null)
             _hud.ShowNotifPublic(_msgComplete);
@@ -304,6 +317,62 @@ public class Level10CCDController : MonoBehaviour
         if (_underflowPumpMotors != null)
             foreach (var p in _underflowPumpMotors)
                 if (p != null) p.Rotate(Vector3.forward, 480f * dt, Space.Self);
+
+        AnimateProcessPipeFlow(dt);
+    }
+
+    // Aktifkan 2 aliran pipa keluar CCD: PLS jernih -> Pemurnian/MHP, padatan underflow -> Filter Press.
+    // Flow tube default disembunyikan; di sini kita tampilkan + nyalakan animasi.
+    private void StartProcessPipeFlows()
+    {
+        _pipeFlowsActive = true;
+        if (_plsFlowPipe != null)
+        {
+            _plsFlowPipe.enabled = true;
+            if (_plsFlowPipe.sharedMaterial != null) _plsFlowPipe.sharedMaterial.EnableKeyword("_EMISSION");
+        }
+        if (_underflowFlowPipe != null)
+        {
+            _underflowFlowPipe.enabled = true;
+            if (_underflowFlowPipe.sharedMaterial != null) _underflowFlowPipe.sharedMaterial.EnableKeyword("_EMISSION");
+        }
+    }
+
+    private void StopProcessPipeFlows()
+    {
+        _pipeFlowsActive = false;
+        if (_plsFlowPipe != null) _plsFlowPipe.enabled = false;
+        if (_underflowFlowPipe != null) _underflowFlowPipe.enabled = false;
+    }
+
+    // Pulsa emissive flow tube pipa untuk menunjukkan PLS (hijau) mengalir ke Pemurnian
+    // dan slurry underflow (coklat) mengalir ke Filter Press. Aktif saat CCD jalan.
+    private void AnimateProcessPipeFlow(float dt)
+    {
+        if (!_pipeFlowsActive) return;
+        if (_plsFlowPipe == null && _underflowFlowPipe == null) return;
+        if (_flowMpb == null) _flowMpb = new MaterialPropertyBlock();
+        _flowPhase += dt * 2.2f;
+        float pulse = 0.55f + 0.45f * Mathf.Sin(_flowPhase);              // 0.1..1.0
+        // PLS hijau
+        if (_plsFlowPipe != null)
+        {
+            _plsFlowPipe.GetPropertyBlock(_flowMpb);
+            Color c = new Color(0.32f, 0.60f, 0.26f) * (0.6f + pulse);
+            _flowMpb.SetColor("_EmissionColor", c);
+            _flowMpb.SetColor("_BaseColor", new Color(0.42f, 0.62f, 0.30f, 1f));
+            _plsFlowPipe.SetPropertyBlock(_flowMpb);
+        }
+        // Slurry coklat (fase berbeda biar tidak sinkron)
+        if (_underflowFlowPipe != null)
+        {
+            float pulse2 = 0.55f + 0.45f * Mathf.Sin(_flowPhase + 1.6f);
+            _underflowFlowPipe.GetPropertyBlock(_flowMpb);
+            Color c = new Color(0.32f, 0.20f, 0.12f) * (0.5f + pulse2);
+            _flowMpb.SetColor("_EmissionColor", c);
+            _flowMpb.SetColor("_BaseColor", new Color(0.34f, 0.22f, 0.15f, 1f));
+            _underflowFlowPipe.SetPropertyBlock(_flowMpb);
+        }
     }
 
     // t: 0 (mulai, slurry keruh penuh) -> 1 (stabil, padatan mengendap, PLS jernih).
@@ -719,6 +788,16 @@ public class Level10CCDController : MonoBehaviour
         var p1 = FindDeepChild(rigRoot, "UnderflowPump_1_Motor"); if (p1 != null) pumps.Add(p1);
         var p2 = FindDeepChild(rigRoot, "UnderflowPump_2_Motor"); if (p2 != null) pumps.Add(p2);
         _underflowPumpMotors = pumps.ToArray();
+
+        // --- Pipa proses Blender (CCD -> MHP / Filter Press): cari flow tube untuk animasi ---
+        var pipesRoot = GameObject.Find("CCD_Process_Pipes");
+        if (pipesRoot != null)
+        {
+            var plsFlow = FindDeepChild(pipesRoot.transform, "PLS_Flow");
+            var underFlow = FindDeepChild(pipesRoot.transform, "Underflow_Flow");
+            _plsFlowPipe = plsFlow != null ? plsFlow.GetComponent<Renderer>() : null;
+            _underflowFlowPipe = underFlow != null ? underFlow.GetComponent<Renderer>() : null;
+        }
     }
 
     private Renderer GetRenderer(Transform rigRoot, string name)

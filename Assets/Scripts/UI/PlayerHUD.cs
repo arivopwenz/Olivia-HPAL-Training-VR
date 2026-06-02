@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 using UnityEngine.UI;
 using TMPro;
 using System;
@@ -876,10 +876,18 @@ public class PlayerHUD : MonoBehaviour
         // Level 10 (display) = MHP (enum Level11_MHP)
         if (level == GameLevelManager.GameLevel.Level11_MHP)
         {
+            var l10 = FindFirstObjectByType<Level11MHPController>(FindObjectsInactive.Exclude);
             lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 10");
-            lines.Add($"{Check(_voiceReportSelesai)} Ambil sampel MHP");
-            lines.Add($"{Check(_voiceReportSelesai)} Verifikasi pH 5.5 dan warna hijau");
-            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'MHP presipitasi berhasil'");
+            if (l10 != null && l10.LevelActive)
+            {
+                lines.Add($"{Check(l10.Stage1Done)} Dosing LIMESTONE (CaCO3) -> pH 3.5 (buang Fe/Al)");
+                lines.Add($"{Check(l10.Stage2Done)} Dosing KAPUR Ca(OH)2 -> pH 5.0 (buang Al/Cr)");
+                lines.Add($"{Check(l10.Stage3Done)} Dosing MgO -> pH 7.5 (endap MHP Ni-Co hijau)");
+                lines.Add($"{Check(l10.SampleTaken)} Ambil sampel MHP di stasiun sampling");
+                lines.Add($"{Check(l10.LabAccepted)} Lab QC: assay Ni/Co lulus SOP (ACCEPT)");
+                lines.Add($"{Check(l10.BaggingDone)} Bagging & dispatch produk MHP ke refinery");
+            }
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'MHP terbentuk'");
             txtParameterInfo.text = string.Join("\n", lines);
             return;
         }
@@ -887,10 +895,16 @@ public class PlayerHUD : MonoBehaviour
         // Level 11 (display) = Tailing Discharge (enum Level12_TailingDischarge)
         if (level == GameLevelManager.GameLevel.Level12_TailingDischarge)
         {
+            var l11 = FindFirstObjectByType<Level12TailingFilterController>(FindObjectsInactive.Exclude);
             lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 11");
-            lines.Add($"{Check(_voiceReportSelesai)} Netralisasi tailing (pH naik ke 7.5)");
-            lines.Add($"{Check(_voiceReportSelesai)} Filter press: moisture < 25%");
-            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'tailing netral, filter press OK'");
+            if (l11 != null && l11.LevelActive)
+            {
+                lines.Add($"{Check(l11.NeutralizeDone)} Dosing LIMESTONE/KAPUR -> pH 8.0 (netralkan asam)");
+                lines.Add($"{Check(l11.FilterPressDone)} Jalankan FILTER PRESS -> cake moisture < 25%");
+                lines.Add($"{Check(l11.Inspected)} Inspeksi cake di konveyor");
+                lines.Add($"{Check(l11.ComplianceAccepted)} Compliance QC: pH/moisture/filtrat lulus (ACCEPT)");
+            }
+            lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'limbah dialirkan'");
             txtParameterInfo.text = string.Join("\n", lines);
             return;
         }
@@ -898,9 +912,15 @@ public class PlayerHUD : MonoBehaviour
         // Level 12 (display) = Dry Stack (enum Level13_TailingWaste)
         if (level == GameLevelManager.GameLevel.Level13_TailingWaste)
         {
+                        var l12 = FindFirstObjectByType<Level13DryStackController>(FindObjectsInactive.Exclude);
             lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 12");
-            lines.Add($"{Check(_voiceReportSelesai)} Tambah limestone (pH naik ke 8.5)");
-            lines.Add($"{Check(_voiceReportSelesai)} Verifikasi moisture cake < 25%");
+            if (l12 != null && l12.LevelActive)
+            {
+                lines.Add($"{Check(l12.StackingDone)} Timbun + padatkan cake di terraced lift");
+                lines.Add($"{Check(l12.ClosureDone)} Closure: rehab cap + piezometer aman");
+                lines.Add($"{Check(l12.Inspected)} Inspeksi DSTF");
+                lines.Add($"{Check(l12.ComplianceAccepted)} Compliance QC: geomembrane/piezo/rembesan (ACCEPT)");
+            }
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'dry stack aman, pH 8.5'");
             txtParameterInfo.text = string.Join("\n", lines);
             return;

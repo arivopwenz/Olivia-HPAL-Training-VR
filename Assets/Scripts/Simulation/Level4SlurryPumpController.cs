@@ -119,6 +119,7 @@ public class Level4SlurryPumpController : MonoBehaviour
     private MaterialPropertyBlock _mpb;
     private bool _highlightPumpAktif;
     private bool _highlightPreheaterAktif;
+    private ProcessPipeFlowAnimator _slurryToPreheaterFlow;
     private AudioSource _audioSource;
     private AudioSource _pumpAudioSource;
     private GameObject _liquidFillRuntime;
@@ -435,6 +436,13 @@ public class Level4SlurryPumpController : MonoBehaviour
 
     private void SetLevel4PipeFlow(bool active)
     {
+        if (_slurryToPreheaterFlow == null)
+        {
+            var sf = GameObject.Find("SlurryToPreheater_SlurryFlow");
+            if (sf != null) _slurryToPreheaterFlow = sf.GetComponent<ProcessPipeFlowAnimator>();
+        }
+        if (_slurryToPreheaterFlow != null) _slurryToPreheaterFlow.SetFlowing(active);
+
         if (_pipeNetwork == null)
         {
             if (!isActiveAndEnabled || !gameObject.activeInHierarchy)

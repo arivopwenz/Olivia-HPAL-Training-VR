@@ -1,4 +1,4 @@
-﻿using UnityEngine;
+using UnityEngine;
 
 /// <summary>
 /// OLIVIA VR - UniversalTaskMarker.cs
@@ -175,7 +175,7 @@ public sealed class UniversalTaskMarker : MonoBehaviour
             case GameLevelManager.GameLevel.Level3_OreSlurry:
                 if (!_glm.SudahTekanTombolDcs) return FindDcsButton(3);
                 if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
-                return FindByName("SlurryTank", "Slurry_Tank", "Level3_SlurryWaterTanks_Industrial_UV_Auto");
+                return null; // panah/marker Level 3 dimatikan (ganggu observasi)
 
             case GameLevelManager.GameLevel.Level4_SlurryPump:
                 if (!_glm.SudahTekanTombolDcs) return FindDcsButton(4);

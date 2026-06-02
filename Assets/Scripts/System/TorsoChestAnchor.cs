@@ -122,8 +122,8 @@ public class TorsoChestAnchor : MonoBehaviour
     {
         if (_offsetY < -0.34f) _offsetY = -0.32f;
         if (_offsetDepan < 0.20f) _offsetDepan = 0.22f;
-        _smoothPos = 0f;
-        _smoothRot = 0f;
+        if (_smoothPos < 0.0001f) _smoothPos = 0.06f;  // SMOOTH (jangan patah-patah)
+        if (_smoothRot < 0.0001f) _smoothRot = 0.10f;
     }
 
     public void ForceSyncNow()

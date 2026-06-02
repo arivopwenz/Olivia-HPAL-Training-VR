@@ -1,93 +1,83 @@
 using System.Collections;
+using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 
 /// <summary>
-/// OLIVIA VR - Level13DryStackController.cs
+/// OLIVIA VR - Level13DryStackController.cs  (Display "Level 12" — Dry Stack Tailing)
 ///
-/// Final tailing showcase: the player starts local tailing polishing, watches
-/// limestone dosing lift pH to the environmental range, final filter press
-/// lowers moisture below 25%, and tailing cake is secured in dry stack storage.
+/// Gameplay INTERAKTIF & INFORMATIF (HPAL nikel — pembuangan limbah AKHIR):
+/// Cake tailing yang sudah dinetralkan (pH ~8.5) + di-dewater (moisture < 25%) dari Filter Press
+/// dibuang ke DRY STACK TAILINGS FACILITY (DSTF): di-spread & DIPADATKAN dalam terraced lift di
+/// atas GEOMEMBRANE LINER, membentuk timbunan UNSATURATED yang stabil (TANPA bendungan/kolam =
+/// anti-jebol, beda dari wet tailings dam). Lalu di-CLOSURE (geomembrane cap + tanah + revegetasi)
+/// + MONITORING piezometer & rembesan ke polishing pond -> WWTP.
+///   Tahap 1 STACKING  : timbun + padatkan cake -> terraced bench naik (DryStack progress 0->100%)
+///   Tahap 2 CLOSURE   : rehab cap (geomembrane/grass) + piezometer AMAN + rembesan jernih
+/// Operator menekan tombol per tahap (XR ray/poke ATAU keyboard SPACE/1), lalu inspeksi (proximity)
+/// -> Compliance QC pop-up -> ACCEPT -> lapor HT 'dry stack aman'.
 /// </summary>
 public class Level13DryStackController : MonoBehaviour
 {
     [Header("=== Player & Teleport ===")]
     [SerializeField] private Transform _playerRigRoot;
-    [SerializeField] private Transform _teleportTargetField;
+    [SerializeField] private Transform _teleportTargetDcs;
 
-    [Header("=== Machine References ===")]
-    [SerializeField] private GameObject _dryStackField;
-    [SerializeField] private Transform _agitatorRoot;
-    [SerializeField] private Transform _limestoneBag;
-    [SerializeField] private GameObject _limestonePourStream;
-    [SerializeField] private GameObject _polishedTailingFlow;
-    [SerializeField] private GameObject _filtrateChannel;
-    [SerializeField] private Transform _phMonitorNeedle;
-    [SerializeField] private GameObject _phStatusGreen;
-    [SerializeField] private GameObject _phStatusRed;
-    [SerializeField] private GameObject _environmentalBeaconGreen;
-    [SerializeField] private GameObject _environmentalBeaconRed;
-    [SerializeField] private GameObject _dryStackSafeCover;
-    [SerializeField] private GameObject[] _cakeBlocks;
-    [SerializeField] private GameObject[] _dryStackPiles;
-    [SerializeField] private Transform[] _filterPlates;
-    [SerializeField] private Transform[] _conveyorRollers;
-    [SerializeField] private ParticleSystem _limestoneDustFx;
-    [SerializeField] private ParticleSystem _dryStackDustFx;
+    [Header("=== DSTF References ===")]
+    [SerializeField] private GameObject _rig;                  // Level13_DryStack_BlenderRig
+    [SerializeField] private GameObject _containPad;           // GDS_ContainPad (ground)
+    [SerializeField] private GameObject _geomembrane;          // GDS_Geomembrane
+    [SerializeField] private GameObject[] _dryStackPiles;      // DryStack_Pile_00..05
+    [SerializeField] private GameObject _safeCover;            // DryStack_SafeCover (rehab cap)
+    [SerializeField] private GameObject[] _piezoCaps;          // GDS_PiezoCap_0..3
+    [SerializeField] private GameObject _polishPondWater;      // GDS_PolishPond_Water
+    [SerializeField] private ParticleSystem _dustFx;           // DryStack_Dust_FX
 
-    [Header("=== Process Settings ===")]
-    [SerializeField] private float _fadeDuration = 2.0f;
-    [SerializeField] private float _fieldObservationDelay = 0.8f;
-    [SerializeField] private float _neutralizationDuration = 7.5f;
-    [SerializeField] private float _filterPressDuration = 8.5f;
-    [SerializeField] private float _stackingDuration = 6.5f;
-    [SerializeField] private float _pHStart = 7.5f;
-    [SerializeField] private float _pHTarget = 8.5f;
-    [SerializeField] private float _pHTolerance = 0.5f;
-    [SerializeField] private float _moistureStart = 34f;
-    [SerializeField] private float _moistureTarget = 22f;
-    [SerializeField] private float _agitatorRpm = 24f;
-
-    [Header("=== Runtime Status ===")]
-    [SerializeField] private float _pHCurrent = 7.5f;
-    [SerializeField] private float _cakeMoistureCurrent = 34f;
-    [SerializeField] private float _dryStackProgress;
+    [Header("=== Settings ===")]
+    [SerializeField] private float _fadeDuration = 2.5f;
+    [SerializeField] private float _stackDuration = 7f;
+    [SerializeField] private float _closureDuration = 6f;
+    [SerializeField] private float _inspectRadius = 12f;
 
     [Header("=== Audio ===")]
-    [SerializeField] private AudioSource _limeAudio;
-    [SerializeField] private AudioSource _pressAudio;
-    [SerializeField] private AudioSource _conveyorAudio;
-    [SerializeField] private AudioSource _completeAudio;
-    [Range(0f, 1f)] [SerializeField] private float _limeVolume = 0.30f;
-    [Range(0f, 1f)] [SerializeField] private float _pressVolume = 0.38f;
-    [Range(0f, 1f)] [SerializeField] private float _conveyorVolume = 0.34f;
-    [Range(0f, 1f)] [SerializeField] private float _completeVolume = 0.30f;
+    [SerializeField] private AudioSource _stackAudio, _readyAudio;
 
-    [Header("=== HUD Messages ===")]
-    [TextArea(2, 4)] [SerializeField] private string _msgStart =
-        "Level 13: Area dry stack tailing. Tekan tombol 13/local start untuk polishing pH dan pengamanan limbah B3.";
-    [TextArea(2, 4)] [SerializeField] private string _msgNeutralizing =
-        "Kapur/limestone masuk. Pantau pH naik ke rentang aman 8.0 sampai 9.0.";
-    [TextArea(2, 4)] [SerializeField] private string _msgFiltering =
-        "Final filter press aktif. Plat merapat, filtrate keluar, moisture cake turun di bawah 25%.";
-    [TextArea(2, 4)] [SerializeField] private string _msgStacking =
-        "Cake tailing bergerak ke dry stack storage. Area B3 terkunci dan containment aman.";
-    [TextArea(2, 4)] [SerializeField] private string _msgComplete =
-        "Dry stack aman. Lapor HT: 'tailing aman'.";
+    private const float PhValue = 8.5f;        // sudah dinetralkan di Level 11
+    private const float MoistValue = 22f;      // sudah di-dewater di Level 11 (< 25%)
 
     private PlayerHUD _hud;
-    private Coroutine _sequenceCoroutine;
-    private bool _levelActive;
-    private bool _processStarted;
-    private bool _questComplete;
+    private GameLevelManager _glm;
+    private Coroutine _seq;
+    private bool _levelActive, _processStarted, _busy;
+    private int _stage;                 // 0=stacking, 1=closure, 2=inspeksi, 3=compliance, 4=report
+    private float _dryStackProgress;
+    private bool _stackingDone, _closureDone, _inspected, _complianceAccepted, _questComplete;
+
+    private GameObject _btn; private TextMesh _btnLabel;
+    private GameObject _infoPanel; private TextMesh _infoText;
+    private GameObject _qcCanvas; private System.Action _pendingClick;
+    private MaterialPropertyBlock _mpb;
+    private static readonly int IdBase = Shader.PropertyToID("_BaseColor");
+    private static readonly int IdColor = Shader.PropertyToID("_Color");
+
+    // ---- Public props for HUD ----
+    public bool LevelActive => _levelActive;
+    public bool StackingDone => _stackingDone;
+    public bool ClosureDone => _closureDone;
+    public bool Inspected => _inspected;
+    public bool ComplianceAccepted => _complianceAccepted;
+    public bool QuestComplete => _questComplete;
+    public float DryStackProgress => _dryStackProgress;
+    public float PHCurrent => PhValue;
+    public float CakeMoistureCurrent => MoistValue;
 
     private void Awake()
     {
         _hud = FindFirstObjectByType<PlayerHUD>();
+        _glm = GameLevelManager.Instance;
         AutoFindReferences();
         EnsureAudio();
-        SetProcessVisuals(false);
-        UpdatePHVisuals(0f);
+        SetStackVisuals(false);
     }
 
     private void OnEnable()
@@ -100,548 +90,371 @@ public class Level13DryStackController : MonoBehaviour
     {
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed -= OnDcsButtonPressed;
-        StopSequence();
-        StopAllProcessAudio();
+        if (_seq != null) StopCoroutine(_seq);
+        Stop(_stackAudio);
     }
 
     private void OnLevelStarted(GameLevelManager.GameLevel level)
     {
         _levelActive = level == GameLevelManager.GameLevel.Level13_TailingWaste;
-        if (!_levelActive)
-        {
-            SetProcessVisuals(false);
-            StopSequence();
-            StopAllProcessAudio();
-            return;
-        }
-
-        _processStarted = false;
-        _questComplete = false;
-        _pHCurrent = _pHStart;
-        _cakeMoistureCurrent = _moistureStart;
-        _dryStackProgress = 0f;
-        PushPHToManager();
-        SetProcessVisuals(false);
-        UpdatePHVisuals(0f);
-
-        if (_hud != null)
-            _hud.ShowNotifPublic(_msgStart);
-
-        TeleportPlayer(_teleportTargetField);
-    }
-
-    private void Update()
-    {
-        if (!_levelActive || !_processStarted)
-            return;
-
-        if (_agitatorRoot != null)
-            _agitatorRoot.Rotate(Vector3.up, _agitatorRpm * 6f * Time.deltaTime, Space.World);
-
-        if (_conveyorRollers == null)
-            return;
-
-        for (int i = 0; i < _conveyorRollers.Length; i++)
-        {
-            if (_conveyorRollers[i] != null)
-                _conveyorRollers[i].Rotate(Vector3.right, 220f * Time.deltaTime, Space.Self);
-        }
+        if (!_levelActive) { SetStackVisuals(false); ShowButton(false); ShowInfo(false); HideQc(); Stop(_stackAudio); return; }
+        _glm = GameLevelManager.Instance;
+        _processStarted = false; _busy = false; _stage = 0; _dryStackProgress = 0f;
+        _stackingDone = _closureDone = _inspected = _complianceAccepted = _questComplete = false;
+        SetStackVisuals(false); ShowButton(false); ShowInfo(false); HideQc();
+        if (_hud != null) _hud.ShowNotifPublic("Level 12: Cake tailing siap dibuang ke DRY STACK. Tekan DCS 12 untuk mulai.");
+        TeleportTo(_teleportTargetDcs != null ? _teleportTargetDcs.position : Vector3.zero, Vector3.forward, _teleportTargetDcs == null);
     }
 
     private void OnDcsButtonPressed(int number)
     {
-        if (!_levelActive || number != 12 || _processStarted)
-            return;
-
+        if (!_levelActive || number != 12 || _processStarted) return;
         _processStarted = true;
-        _sequenceCoroutine = StartCoroutine(RunDryStackSequence());
+        _seq = StartCoroutine(StartFieldSequence());
     }
 
-    private IEnumerator RunDryStackSequence()
+    private IEnumerator StartFieldSequence()
     {
-        if (_hud != null)
-            _hud.PlayManualFade(_fadeDuration);
-
+        if (_hud != null) _hud.PlayManualFade(_fadeDuration);
         yield return new WaitForSeconds(_fadeDuration * 0.5f);
-        TeleportPlayer(_teleportTargetField);
-        yield return new WaitForSeconds(_fadeDuration * 0.5f + _fieldObservationDelay);
-
-        if (_hud != null)
-            _hud.ShowNotifPublic(_msgNeutralizing);
-
-        SetProcessVisuals(true);
-        StartAudio(_limeAudio, _limeVolume);
-
-        float elapsed = 0f;
-        while (elapsed < _neutralizationDuration)
-        {
-            elapsed += Time.deltaTime;
-            float t = Mathf.Clamp01(elapsed / _neutralizationDuration);
-            float smooth = SmoothStep(t);
-            _pHCurrent = Mathf.Lerp(_pHStart, _pHTarget, smooth);
-            _dryStackProgress = Mathf.Lerp(0f, 32f, t);
-            PushPHToManager();
-            UpdatePHVisuals(t);
-            UpdateLimestoneDosing(t);
-            yield return null;
-        }
-
-        _pHCurrent = _pHTarget;
-        PushPHToManager();
-        UpdatePHVisuals(1f);
-        if (_limestonePourStream != null) _limestonePourStream.SetActive(false);
-        StopDust(_limestoneDustFx);
-        StopAudio(_limeAudio);
-
-        if (_hud != null)
-            _hud.ShowNotifPublic(_msgFiltering);
-
-        if (_polishedTailingFlow != null) _polishedTailingFlow.SetActive(true);
-        if (_filtrateChannel != null) _filtrateChannel.SetActive(true);
-        StartAudio(_pressAudio, _pressVolume);
-
-        elapsed = 0f;
-        while (elapsed < _filterPressDuration)
-        {
-            elapsed += Time.deltaTime;
-            float t = Mathf.Clamp01(elapsed / _filterPressDuration);
-            _cakeMoistureCurrent = Mathf.Lerp(_moistureStart, _moistureTarget, SmoothStep(t));
-            _dryStackProgress = Mathf.Lerp(32f, 70f, t);
-            AnimateFilterPlates(t);
-            UpdateCakeBlocks(t * 0.75f);
-            UpdateDust(_dryStackDustFx, 0.2f + t * 0.35f);
-            yield return null;
-        }
-
-        _cakeMoistureCurrent = _moistureTarget;
-        StopAudio(_pressAudio);
-
-        if (_hud != null)
-            _hud.ShowNotifPublic(_msgStacking);
-
-        StartAudio(_conveyorAudio, _conveyorVolume);
-
-        elapsed = 0f;
-        while (elapsed < _stackingDuration)
-        {
-            elapsed += Time.deltaTime;
-            float t = Mathf.Clamp01(elapsed / _stackingDuration);
-            _dryStackProgress = Mathf.Lerp(70f, 100f, t);
-            UpdateCakeBlocks(0.75f + t * 0.25f);
-            UpdateDryStackPiles(t);
-            UpdateDust(_dryStackDustFx, 0.45f + t * 0.35f);
-            yield return null;
-        }
-
-        _dryStackProgress = 100f;
-        UpdateCakeBlocks(1f);
-        UpdateDryStackPiles(1f);
-        if (_dryStackSafeCover != null) _dryStackSafeCover.SetActive(true);
-        if (_environmentalBeaconRed != null) _environmentalBeaconRed.SetActive(false);
-        if (_environmentalBeaconGreen != null) _environmentalBeaconGreen.SetActive(true);
-        StopAudio(_conveyorAudio);
-        StopDust(_dryStackDustFx);
-
-        _questComplete = Mathf.Abs(_pHCurrent - _pHTarget) <= _pHTolerance && _cakeMoistureCurrent <= 25f;
-        GameLevelManager.Instance?.NotifyLevel13DryStackComplete();
-        StartAudio(_completeAudio, _completeVolume);
-
-        if (_hud != null)
-            _hud.ShowNotifPublic(_msgComplete);
-
-        Debug.Log("[Level13] Dry stack tailing secured. pH=" + _pHCurrent.ToString("F1") +
-                  " moisture=" + _cakeMoistureCurrent.ToString("F0") + "%");
-        _sequenceCoroutine = null;
+        EnsurePadGround();
+        TeleportTo(new Vector3(20f, 0.9f, 207f), new Vector3(0f, 0f, 1f), false); // di DSTF, hadap timbunan
+        yield return new WaitForSeconds(_fadeDuration * 0.5f + 0.5f);
+        SetStackVisuals(true);
+        BuildOperatorStation();
+        _stage = 0;
+        BeginStage();
+        _seq = null;
     }
 
-    private float SmoothStep(float t)
+    private void Update()
     {
-        t = Mathf.Clamp01(t);
-        return t * t * (3f - 2f * t);
+        if (!_levelActive || !_processStarted) return;
+        if (_busy && _dustFx != null && !_dustFx.isPlaying) _dustFx.Play();
+
+        if (!_busy && _stage <= 1 && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Alpha1))) TryAction();
+        if (_stage == 2 && !_inspected) UpdateInspectProximity();
+        if (_stage == 3 && !_complianceAccepted)
+        {
+            if (_qcCanvas == null && Input.GetKeyDown(KeyCode.L)) ShowQc();
+            if (_qcCanvas != null && _qcCanvas.activeSelf && _pendingClick != null && Input.GetKeyDown(KeyCode.Return))
+            { var a = _pendingClick; _pendingClick = null; a(); }
+        }
+        UpdateInfo();
     }
 
-    private void SetProcessVisuals(bool active)
+    // ============================================================ STAGES
+    private void BeginStage()
     {
-        if (_limestonePourStream != null) _limestonePourStream.SetActive(active);
-        if (_polishedTailingFlow != null) _polishedTailingFlow.SetActive(false);
-        if (_filtrateChannel != null) _filtrateChannel.SetActive(false);
-        if (_dryStackSafeCover != null) _dryStackSafeCover.SetActive(false);
-        if (_phStatusGreen != null) _phStatusGreen.SetActive(false);
-        if (_phStatusRed != null) _phStatusRed.SetActive(true);
-        if (_environmentalBeaconGreen != null) _environmentalBeaconGreen.SetActive(false);
-        if (_environmentalBeaconRed != null) _environmentalBeaconRed.SetActive(true);
-
-        if (_cakeBlocks != null)
+        ShowInfo(true); ShowButton(true);
+        if (_stage == 0)
         {
-            for (int i = 0; i < _cakeBlocks.Length; i++)
-                if (_cakeBlocks[i] != null)
-                    _cakeBlocks[i].SetActive(false);
+            if (_btnLabel != null) _btnLabel.text = "STACK & COMPACT\n[ tekan / SPACE ]";
+            if (_hud != null) _hud.ShowNotifPublic("TAHAP 1: timbun + padatkan cake kering di terraced lift (di atas geomembrane). Tekan tombol.", 6f);
         }
-
-        if (_dryStackPiles != null)
+        else if (_stage == 1)
         {
-            for (int i = 0; i < _dryStackPiles.Length; i++)
-                if (_dryStackPiles[i] != null)
-                    _dryStackPiles[i].SetActive(false);
-        }
-
-        StopDust(_limestoneDustFx);
-        StopDust(_dryStackDustFx);
-    }
-
-    private void UpdatePHVisuals(float t)
-    {
-        if (_phMonitorNeedle != null)
-        {
-            Vector3 euler = _phMonitorNeedle.localEulerAngles;
-            euler.z = Mathf.Lerp(-35f, 35f, SmoothStep(t));
-            _phMonitorNeedle.localEulerAngles = euler;
-        }
-
-        bool safe = _pHCurrent >= 8f && _pHCurrent <= 9f;
-        if (_phStatusGreen != null) _phStatusGreen.SetActive(safe);
-        if (_phStatusRed != null) _phStatusRed.SetActive(!safe);
-    }
-
-    private void UpdateLimestoneDosing(float t)
-    {
-        if (_limestoneBag != null)
-        {
-            Vector3 euler = _limestoneBag.localEulerAngles;
-            euler.z = Mathf.Lerp(-12f, -34f, Mathf.Sin(t * Mathf.PI));
-            _limestoneBag.localEulerAngles = euler;
-        }
-
-        UpdateDust(_limestoneDustFx, 0.35f + t * 0.5f);
-    }
-
-    private void AnimateFilterPlates(float t)
-    {
-        if (_filterPlates == null || _filterPlates.Length == 0)
-            return;
-
-        float squeeze = Mathf.Lerp(1f, 0.55f, SmoothStep(t));
-        float center = (_filterPlates.Length - 1) * 0.5f;
-        for (int i = 0; i < _filterPlates.Length; i++)
-        {
-            if (_filterPlates[i] == null)
-                continue;
-
-            Vector3 local = _filterPlates[i].localPosition;
-            local.x = (i - center) * 0.21f * squeeze;
-            _filterPlates[i].localPosition = local;
+            if (_btnLabel != null) _btnLabel.text = "CLOSURE / REHAB\n[ tekan / SPACE ]";
+            if (_hud != null) _hud.ShowNotifPublic("TAHAP 2: tutup sel (geomembrane cap + revegetasi) + cek piezometer & rembesan. Tekan tombol.", 6f);
         }
     }
 
-    private void UpdateCakeBlocks(float t)
+    private void TryAction()
     {
-        if (_cakeBlocks == null)
-            return;
-
-        for (int i = 0; i < _cakeBlocks.Length; i++)
-        {
-            if (_cakeBlocks[i] == null)
-                continue;
-
-            bool visible = t > 0.12f + i * 0.06f;
-            _cakeBlocks[i].SetActive(visible);
-            if (!visible)
-                continue;
-
-            Transform tr = _cakeBlocks[i].transform;
-            Vector3 local = tr.localPosition;
-            float travel = Mathf.Clamp01((t - 0.12f - i * 0.06f) / 0.65f);
-            local.x = Mathf.Lerp(-2.15f + i * 0.55f, 2.25f, travel);
-            local.y = Mathf.Lerp(0.92f, 0.84f, travel);
-            tr.localPosition = local;
-        }
+        if (_busy || _stage > 1) return;
+        _busy = true; ShowButton(false);
+        _seq = StartCoroutine(_stage == 0 ? StackRoutine() : ClosureRoutine());
     }
 
-    private void UpdateDryStackPiles(float t)
+    private IEnumerator StackRoutine()
     {
-        if (_dryStackPiles == null)
-            return;
-
-        for (int i = 0; i < _dryStackPiles.Length; i++)
+        Start(_stackAudio, 0.34f);
+        if (_dustFx != null) _dustFx.Play();
+        int shown = 0;
+        float t = 0f;
+        while (t < _stackDuration)
         {
-            if (_dryStackPiles[i] == null)
-                continue;
-
-            bool visible = t > i * 0.12f;
-            _dryStackPiles[i].SetActive(visible);
-            if (visible)
+            t += Time.deltaTime; float e = Smooth(Mathf.Clamp01(t / _stackDuration));
+            _dryStackProgress = e * 100f;
+            if (_dryStackPiles != null)
             {
-                float pop = Mathf.Clamp01((t - i * 0.12f) / 0.2f);
-                Vector3 scale = _dryStackPiles[i].transform.localScale;
-                scale.y = Mathf.Lerp(0.05f, 0.35f, SmoothStep(pop));
-                _dryStackPiles[i].transform.localScale = scale;
+                int want = Mathf.RoundToInt(e * _dryStackPiles.Length);
+                for (; shown < want && shown < _dryStackPiles.Length; shown++)
+                { if (_dryStackPiles[shown] != null) { _dryStackPiles[shown].SetActive(true); Tint(_dryStackPiles[shown], new Color(0.46f, 0.39f, 0.29f)); } }
             }
+            yield return null;
         }
+        _dryStackProgress = 100f;
+        if (_dustFx != null) _dustFx.Stop();
+        Stop(_stackAudio); Start(_readyAudio, 0.3f);
+        _stackingDone = true; _busy = false; _stage = 1;
+        BeginStage();
+        _seq = null;
     }
 
-    private void UpdateDust(ParticleSystem particle, float intensity)
+    private IEnumerator ClosureRoutine()
     {
-        if (particle == null)
-            return;
-
-        if (!particle.isPlaying)
-            particle.Play();
-
-        var emission = particle.emission;
-        emission.rateOverTime = Mathf.Lerp(0f, 55f, Mathf.Clamp01(intensity));
-    }
-
-    private void StopDust(ParticleSystem particle)
-    {
-        if (particle != null)
-            particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-    }
-
-    private void PushPHToManager()
-    {
-        if (GameLevelManager.Instance != null)
-            GameLevelManager.Instance.SetPH(_pHCurrent);
-    }
-
-    private void StopSequence()
-    {
-        if (_sequenceCoroutine == null)
-            return;
-
-        StopCoroutine(_sequenceCoroutine);
-        _sequenceCoroutine = null;
-    }
-
-    private void TeleportPlayer(Transform target)
-    {
-        if (target == null)
-            return;
-
-        if (_playerRigRoot == null)
-            AutoFindReferences();
-
-        if (_playerRigRoot == null)
-            return;
-
-        XROrigin xrOrigin = _playerRigRoot.GetComponent<XROrigin>();
-        if (xrOrigin == null)
+        Start(_stackAudio, 0.22f);
+        float t = 0f;
+        while (t < _closureDuration)
         {
-            Debug.LogWarning("[Level13] XROrigin component not found. Teleport skipped.");
-            return;
+            t += Time.deltaTime; float e = Smooth(Mathf.Clamp01(t / _closureDuration));
+            if (_polishPondWater != null) Tint(_polishPondWater, Color.Lerp(new Color(0.4f, 0.35f, 0.22f), new Color(0.22f, 0.46f, 0.5f), e)); // keruh -> jernih
+            yield return null;
         }
+        if (_safeCover != null) { _safeCover.SetActive(true); Tint(_safeCover, new Color(0.32f, 0.5f, 0.22f)); } // rehab grass cap
+        if (_piezoCaps != null) foreach (var p in _piezoCaps) Tint(p, new Color(0.15f, 0.65f, 0.2f)); // piezometer AMAN
+        Stop(_stackAudio); Start(_readyAudio, 0.3f);
+        _closureDone = true; _busy = false; _stage = 2;
+        ShowButton(false);
+        if (_hud != null) _hud.ShowNotifPublic("Sel tertutup + revegetasi. Jalan ke TIMBUNAN untuk inspeksi akhir.", 7f);
+        _seq = null;
+    }
 
-        CharacterController controller = _playerRigRoot.GetComponent<CharacterController>();
-        bool controllerWasEnabled = controller != null && controller.enabled;
-        if (controllerWasEnabled)
-            controller.enabled = false;
+    // ============================================================ INSPEKSI
+    private void UpdateInspectProximity()
+    {
+        Transform stack = FindChild("DryStack_Storage") ?? FindChild("DryStack_Pile_00");
+        Vector3 target = stack != null ? stack.position : new Vector3(20f, 0.4f, 230f);
+        Vector3 head = GetPlayerHead();
+        if (Vector2.Distance(new Vector2(head.x, head.z), new Vector2(target.x, target.z)) <= _inspectRadius)
+        {
+            _inspected = true; _stage = 3; Start(_readyAudio, 0.3f);
+            if (_hud != null) _hud.ShowNotifPublic("Inspeksi DSTF OK. Tekan [L] untuk COMPLIANCE QC (geomembrane/piezometer/rembesan).", 7f);
+        }
+    }
 
-        Vector3 cameraTarget = target.position + Vector3.up * xrOrigin.CameraYOffset;
-        xrOrigin.MoveCameraToWorldLocation(cameraTarget);
-        xrOrigin.MatchOriginUpCameraForward(Vector3.up, target.forward);
+    // ============================================================ COMPLIANCE QC
+    private void ShowQc()
+    {
+        Vector3 head = GetPlayerHead();
+        Transform cam = GetCam();
+        Vector3 fwd = cam != null ? cam.forward : Vector3.forward; fwd.y = 0f; fwd.Normalize();
+        Vector3 pos = head + fwd * 1.9f; pos.y = head.y - 0.05f;
 
-        if (controllerWasEnabled)
-            controller.enabled = true;
+        _qcCanvas = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        _qcCanvas.name = "L12_DryStack_ComplianceQC";
+        Object.Destroy(_qcCanvas.GetComponent<Collider>());
+        _qcCanvas.transform.position = pos; _qcCanvas.transform.localScale = new Vector3(1.9f, 1.18f, 1f);
+        _qcCanvas.GetComponent<Renderer>().sharedMaterial = OpaqueMat(new Color(0.06f, 0.09f, 0.07f));
+
+        var txt = MakeText(_qcCanvas.transform, new Vector3(0f, 0f, -0.02f), 0.048f, TextAnchor.MiddleCenter, new Color(0.85f, 1f, 0.9f));
+        txt.text =
+            "=== COMPLIANCE QC — DRY STACK TAILINGS FACILITY ===\n" +
+            "Moisture cake : 22 %  -> UNSATURATED (stabil, anti-jebol)\n" +
+            "pH tailing    : 8.5   (baku mutu 6-9)\n" +
+            "Geomembrane liner : INTACT (cegah seepage ke tanah)\n" +
+            "Piezometer (4 titik) : pore pressure RENDAH -> AMAN\n" +
+            "Rembesan -> Polishing Pond -> WWTP : jernih\n" +
+            "Closure cap + revegetasi : SELESAI\n" +
+            "VERDICT: DSTF AMAN LINGKUNGAN — TANPA bendungan/kolam";
+
+        var btn = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        btn.name = "L12_QC_Accept";
+        btn.transform.SetParent(_qcCanvas.transform, false);
+        btn.transform.localPosition = new Vector3(0f, -0.42f, -0.05f);
+        btn.transform.localScale = new Vector3(0.42f, 0.16f, 0.06f);
+        btn.GetComponent<Renderer>().sharedMaterial = OpaqueMat(new Color(0.15f, 0.55f, 0.25f));
+        var bt = MakeText(btn.transform, new Vector3(0f, 0f, -0.6f), 0.16f, TextAnchor.MiddleCenter, Color.white);
+        bt.text = "ACCEPT [Enter]";
+        StartCoroutine(AttachXrButton(btn, OnAccept));
+        _pendingClick = OnAccept;
+        BillboardTo(_qcCanvas.transform, head);
+    }
+
+    private void OnAccept()
+    {
+        if (_complianceAccepted) return;
+        _complianceAccepted = true; _stage = 4; _questComplete = true;
+        HideQc();
+        _glm?.NotifyLevel13DryStackComplete();
+        if (_hud != null) _hud.ShowNotifPublic("DSTF lulus compliance. Lapor HT (tahan T): 'dry stack aman, pH 8.5'.", 8f);
+    }
+
+    private void HideQc() { if (_qcCanvas != null) { Object.Destroy(_qcCanvas); _qcCanvas = null; } _pendingClick = null; }
+
+    // ============================================================ OPERATOR STATION
+    private void BuildOperatorStation()
+    {
+        if (_btn != null) return;
+        Vector3 consolePos = new Vector3(20f, 2.4f, 209.2f);
+        _btn = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        _btn.name = "L12_ActionButton";
+        _btn.transform.SetParent(transform, false);
+        _btn.transform.position = consolePos;
+        _btn.transform.localScale = new Vector3(0.7f, 0.3f, 0.16f);
+        _btn.GetComponent<Renderer>().sharedMaterial = OpaqueMat(new Color(0.55f, 0.42f, 0.18f));
+        _btnLabel = MakeText(_btn.transform, new Vector3(0f, 0f, -0.6f), 0.11f, TextAnchor.MiddleCenter, Color.black);
+        _btnLabel.text = "MULAI";
+        StartCoroutine(AttachXrButton(_btn, TryAction));
+
+        _infoPanel = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        _infoPanel.name = "L12_InfoPanel";
+        Object.Destroy(_infoPanel.GetComponent<Collider>());
+        _infoPanel.transform.SetParent(transform, false);
+        _infoPanel.transform.position = consolePos + new Vector3(0f, 1.2f, 0.1f);
+        _infoPanel.transform.localScale = new Vector3(2.0f, 1.2f, 1f);
+        _infoPanel.GetComponent<Renderer>().sharedMaterial = OpaqueMat(new Color(0.05f, 0.08f, 0.06f));
+        _infoText = MakeText(_infoPanel.transform, new Vector3(0f, 0f, -0.02f), 0.05f, TextAnchor.MiddleCenter, new Color(0.82f, 1f, 0.9f));
+        ShowButton(false); ShowInfo(false);
+    }
+
+    private void UpdateInfo()
+    {
+        if (_infoText == null || _infoPanel == null || !_infoPanel.activeSelf) return;
+        string body;
+        if (_stage == 0)
+            body = "PEMBUANGAN LIMBAH AKHIR — TAHAP 1/2 DRY STACKING\n" +
+                   "Cake kering (moisture < 25%) di-spread + DIPADATKAN\n" +
+                   "dalam terraced lift di atas GEOMEMBRANE LINER\n" +
+                   "Hasil: timbunan UNSATURATED -> stabil, anti-jebol\n" +
+                   "(beda dari wet tailings dam yang berisiko)";
+        else if (_stage == 1)
+            body = "TAHAP 2/2 — CLOSURE & MONITORING\n" +
+                   "Penutupan sel: geomembrane cap + tanah + REVEGETASI\n" +
+                   "Monitoring: PIEZOMETER (pore pressure rendah)\n" +
+                   "Rembesan dikumpulkan -> Polishing Pond -> WWTP";
+        else
+            body = "DRY STACK SELESAI\nTimbunan stabil + sel tertutup + revegetasi\nLanjut: inspeksi + compliance QC";
+        _infoText.text = body + $"\n--------------------------------\nPROGRESS : {_dryStackProgress:0} %   |   pH : {PhValue:0.0}   |   MOISTURE : {MoistValue:0} %";
+        BillboardTo(_infoPanel.transform, GetPlayerHead());
+    }
+
+    private void ShowButton(bool on) { if (_btn != null) _btn.SetActive(on); }
+    private void ShowInfo(bool on) { if (_infoPanel != null) _infoPanel.SetActive(on); }
+
+    // ============================================================ HELPERS
+    private void SetStackVisuals(bool active)
+    {
+        if (_dryStackPiles != null) foreach (var p in _dryStackPiles) SetActive(p, false);
+        SetActive(_safeCover, false);
+        if (_dustFx != null) _dustFx.Stop();
+    }
+
+    private void SetActive(GameObject go, bool on) { if (go != null) go.SetActive(on); }
+    private float Smooth(float t) { t = Mathf.Clamp01(t); return t * t * (3f - 2f * t); }
+
+    private void Tint(GameObject go, Color c)
+    {
+        if (go == null) return;
+        if (_mpb == null) _mpb = new MaterialPropertyBlock();
+        foreach (var r in go.GetComponentsInChildren<Renderer>(true))
+        { r.GetPropertyBlock(_mpb); _mpb.SetColor(IdBase, c); _mpb.SetColor(IdColor, c); r.SetPropertyBlock(_mpb); }
+    }
+
+    private void EnsurePadGround()
+    {
+        if (_containPad == null) return;
+        if (_containPad.GetComponent<Collider>() == null)
+        {
+            var mf = _containPad.GetComponentInChildren<MeshFilter>();
+            var bc = _containPad.AddComponent<BoxCollider>();
+            if (mf != null && mf.sharedMesh != null) { bc.center = mf.sharedMesh.bounds.center; bc.size = mf.sharedMesh.bounds.size; }
+        }
+    }
+
+    private void TeleportTo(Vector3 pos, Vector3 fwd, bool skip)
+    {
+        if (skip) return;
+        if (_playerRigRoot == null) AutoFindReferences();
+        if (_playerRigRoot == null) return;
+        var xr = _playerRigRoot.GetComponent<XROrigin>();
+        if (xr == null) return;
+        var cc = _playerRigRoot.GetComponent<CharacterController>();
+        bool en = cc != null && cc.enabled; if (en) cc.enabled = false;
+        xr.MoveCameraToWorldLocation(pos + Vector3.up * xr.CameraYOffset);
+        xr.MatchOriginUpCameraForward(Vector3.up, fwd.sqrMagnitude > 0.001f ? fwd : Vector3.forward);
+        if (en) cc.enabled = true;
+    }
+
+    private Transform GetCam() { var xr = _playerRigRoot != null ? _playerRigRoot.GetComponent<XROrigin>() : null; return xr != null && xr.Camera != null ? xr.Camera.transform : (Camera.main != null ? Camera.main.transform : null); }
+    private Vector3 GetPlayerHead() { var c = GetCam(); return c != null ? c.position : new Vector3(20f, 2.5f, 207f); }
+    private void BillboardTo(Transform t, Vector3 head) { if (t == null) return; Vector3 d = t.position - head; d.y = 0f; if (d.sqrMagnitude > 0.001f) t.rotation = Quaternion.LookRotation(d.normalized, Vector3.up); }
+
+    private TextMesh MakeText(Transform parent, Vector3 local, float size, TextAnchor anchor, Color col)
+    {
+        var go = new GameObject("Txt");
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = local; go.transform.localRotation = Quaternion.identity;
+        go.transform.localScale = Vector3.one * (1f / Mathf.Max(0.01f, parent.lossyScale.x));
+        var tm = go.AddComponent<TextMesh>();
+        tm.fontSize = 64; tm.characterSize = size; tm.anchor = anchor; tm.alignment = TextAlignment.Center; tm.color = col;
+        var font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf") ?? Resources.GetBuiltinResource<Font>("Arial.ttf");
+        if (font != null) { tm.font = font; var mr = go.GetComponent<MeshRenderer>(); if (mr != null) mr.sharedMaterial = font.material; }
+        return tm;
+    }
+
+    private Material OpaqueMat(Color c)
+    {
+        var sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        var m = new Material(sh); m.color = c; if (m.HasProperty(IdBase)) m.SetColor(IdBase, c); return m;
+    }
+
+    private IEnumerator AttachXrButton(GameObject go, System.Action onClick)
+    {
+        yield return null;
+        var bc = go.GetComponent<BoxCollider>() ?? go.AddComponent<BoxCollider>(); bc.isTrigger = false;
+        var si = go.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>()
+              ?? go.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>();
+        si.colliders.Clear(); si.colliders.Add(bc); si.enabled = false; si.enabled = true;
+        si.selectEntered.AddListener(_ => onClick());
+        si.hoverEntered.AddListener(_ => { _pendingClick = onClick; });
     }
 
     private void EnsureAudio()
     {
-        if (_limeAudio == null)
-            _limeAudio = CreateAudioSource("L13_Lime_Dosing_Audio", GenerateNoiseMotorClip("Level13LimeDosing", 3f, 22050, 95f, 0.18f), true, 0.25f);
-
-        if (_pressAudio == null)
-            _pressAudio = CreateAudioSource("L13_FinalPress_Audio", GenerateNoiseMotorClip("Level13FinalPress", 4f, 22050, 46f, 0.30f), true, 0.30f);
-
-        if (_conveyorAudio == null)
-            _conveyorAudio = CreateAudioSource("L13_Conveyor_Audio", GenerateNoiseMotorClip("Level13Conveyor", 3f, 22050, 62f, 0.24f), true, 0.35f);
-
-        if (_completeAudio == null)
-            _completeAudio = CreateAudioSource("L13_Complete_Audio", GenerateCompleteClip(1.3f, 22050), false, 0.15f);
+        if (_stackAudio == null) _stackAudio = MakeAudio("L12_StackAudio", true, 0f, GenNoise(3f, 70f, 1401));
+        if (_readyAudio == null) _readyAudio = MakeAudio("L12_ReadyAudio", false, 0f, GenChime(1f, 1402));
     }
-
-    private AudioSource CreateAudioSource(string name, AudioClip clip, bool loop, float spatialBlend)
+    private AudioSource MakeAudio(string n, bool loop, float vol, AudioClip clip)
+    { var go = new GameObject(n); go.transform.SetParent(transform, false); var a = go.AddComponent<AudioSource>(); a.loop = loop; a.playOnAwake = false; a.spatialBlend = 0.2f; a.volume = vol; a.clip = clip; return a; }
+    private void Start(AudioSource s, float v) { if (s == null) return; s.volume = v; if (!s.isPlaying) s.Play(); }
+    private void Stop(AudioSource s) { if (s != null && s.isPlaying) s.Stop(); }
+    private AudioClip GenNoise(float dur, float hz, int seed)
     {
-        GameObject go = new GameObject(name);
-        go.transform.SetParent(transform, false);
-        AudioSource source = go.AddComponent<AudioSource>();
-        source.clip = clip;
-        source.loop = loop;
-        source.playOnAwake = false;
-        source.spatialBlend = spatialBlend;
-        return source;
+        int sr = 22050, n = Mathf.CeilToInt(dur * sr); var d = new float[n]; var r = new System.Random(seed); float ph = 0f, f = 0f;
+        for (int i = 0; i < n; i++) { ph += 2f * Mathf.PI * hz / sr; float mo = Mathf.Sin(ph) * 0.28f; float no = ((float)r.NextDouble() - 0.5f) * 0.22f; f += 0.05f * (no - f); d[i] = (mo + f) * 0.4f; }
+        var c = AudioClip.Create("n" + seed, n, 1, sr, false); c.SetData(d, 0); return c;
     }
-
-    private void StartAudio(AudioSource source, float volume)
+    private AudioClip GenChime(float dur, int seed)
     {
-        if (source == null)
-            return;
-
-        source.volume = volume;
-        if (!source.isPlaying)
-            source.Play();
-    }
-
-    private void StopAudio(AudioSource source)
-    {
-        if (source != null && source.isPlaying)
-            source.Stop();
-    }
-
-    private void StopAllProcessAudio()
-    {
-        StopAudio(_limeAudio);
-        StopAudio(_pressAudio);
-        StopAudio(_conveyorAudio);
-        StopAudio(_completeAudio);
-    }
-
-    private AudioClip GenerateNoiseMotorClip(string name, float duration, int sampleRate, float frequency, float noiseAmount)
-    {
-        int total = Mathf.CeilToInt(duration * sampleRate);
-        float[] data = new float[total];
-        System.Random random = new System.Random(name.GetHashCode());
-        float phase = 0f;
-        float filter = 0f;
-
-        for (int i = 0; i < total; i++)
-        {
-            float time = (float)i / sampleRate;
-            phase += 2f * Mathf.PI * frequency / sampleRate;
-            float motor = Mathf.Sin(phase) * 0.28f;
-            float pulse = Mathf.Abs(Mathf.Sin(2f * Mathf.PI * 1.25f * time));
-            float noise = ((float)random.NextDouble() - 0.5f) * noiseAmount;
-            filter += 0.05f * (noise - filter);
-            data[i] = (motor * (0.65f + pulse * 0.35f) + filter) * 0.50f;
-        }
-
-        AudioClip clip = AudioClip.Create(name, total, 1, sampleRate, false);
-        clip.SetData(data, 0);
-        return clip;
-    }
-
-    private AudioClip GenerateCompleteClip(float duration, int sampleRate)
-    {
-        int total = Mathf.CeilToInt(duration * sampleRate);
-        float[] data = new float[total];
-
-        for (int i = 0; i < total; i++)
-        {
-            float time = (float)i / sampleRate;
-            float envelope = Mathf.Clamp01(1f - time / duration);
-            float tone = Mathf.Sin(2f * Mathf.PI * 520f * time) * 0.18f;
-            float harmonic = Mathf.Sin(2f * Mathf.PI * 780f * time) * 0.11f;
-            data[i] = (tone + harmonic) * envelope;
-        }
-
-        AudioClip clip = AudioClip.Create("Level13Complete", total, 1, sampleRate, false);
-        clip.SetData(data, 0);
-        return clip;
+        int sr = 22050, n = Mathf.CeilToInt(dur * sr); var d = new float[n];
+        for (int i = 0; i < n; i++) { float t = (float)i / sr; float env = Mathf.Clamp01(1f - t / dur); d[i] = (Mathf.Sin(2 * Mathf.PI * 450 * t) * 0.2f + Mathf.Sin(2 * Mathf.PI * 675 * t) * 0.13f) * env; }
+        var c = AudioClip.Create("c" + seed, n, 1, sr, false); c.SetData(d, 0); return c;
     }
 
     private void AutoFindReferences()
     {
         if (_playerRigRoot == null)
         {
-            GameObject rig = GameObject.Find("XR Origin (XR Rig)")
-                         ?? GameObject.Find("XR Origin")
-                         ?? GameObject.Find("XR Rig")
-                         ?? GameObject.FindWithTag("Player");
-            if (rig != null)
-                _playerRigRoot = rig.transform;
+            var rig = GameObject.Find("XR Origin (XR Rig)") ?? GameObject.Find("XR Origin") ?? GameObject.Find("XR Rig") ?? GameObject.FindWithTag("Player");
+            if (rig != null) _playerRigRoot = rig.transform;
         }
-
-        if (_teleportTargetField == null)
-        {
-            GameObject field = GameObject.Find("SpawnPoint_Lvl13");
-            if (field != null)
-                _teleportTargetField = field.transform;
-        }
-
-        if (_dryStackField == null)
-            _dryStackField = GameObject.Find("Mesin Utama/Level13_DryStack_Field") ?? GameObject.Find("Level13_DryStack_Field");
-
-        if (_dryStackField == null)
-            return;
-
-        Transform root = _dryStackField.transform;
-        if (_agitatorRoot == null) _agitatorRoot = root.Find("Final_Neutralization_Tank/Polishing_Agitator_Root");
-        if (_limestoneBag == null) _limestoneBag = root.Find("Final_Neutralization_Tank/Limestone_Bag");
-        if (_limestonePourStream == null) _limestonePourStream = FindChild(root, "Final_Neutralization_Tank/Limestone_Pour_Stream");
-        if (_polishedTailingFlow == null) _polishedTailingFlow = FindChild(root, "Polished_Tailing_Flow");
-        if (_filtrateChannel == null) _filtrateChannel = FindChild(root, "Final_FilterPress_Unit/Filtrate_Channel");
-        if (_phMonitorNeedle == null) _phMonitorNeedle = root.Find("pH_Monitor_Panel/pH_Monitor_Needle");
-        if (_phStatusGreen == null) _phStatusGreen = FindChild(root, "pH_Monitor_Panel/pH_Status_Green");
-        if (_phStatusRed == null) _phStatusRed = FindChild(root, "pH_Monitor_Panel/pH_Status_Red");
-        if (_environmentalBeaconGreen == null) _environmentalBeaconGreen = FindChild(root, "Environmental_Beacon_Green");
-        if (_environmentalBeaconRed == null) _environmentalBeaconRed = FindChild(root, "Environmental_Beacon_Red");
-        if (_dryStackSafeCover == null) _dryStackSafeCover = FindChild(root, "DryStack_Storage/DryStack_SafeCover");
-
-        if (_limestoneDustFx == null)
-        {
-            Transform fx = root.Find("Limestone_Dust_FX");
-            if (fx != null) _limestoneDustFx = fx.GetComponent<ParticleSystem>();
-        }
-
-        if (_dryStackDustFx == null)
-        {
-            Transform fx = root.Find("DryStack_Dust_FX");
-            if (fx != null) _dryStackDustFx = fx.GetComponent<ParticleSystem>();
-        }
-
-        if (_cakeBlocks == null || _cakeBlocks.Length == 0)
-            _cakeBlocks = GetChildren(root.Find("Cake_Transfer_Conveyor/Cake_On_Conveyor"), "Cake_Block_");
-
+        if (_teleportTargetDcs == null) { var g = GameObject.Find("SpawnPoint_DCS"); if (g != null) _teleportTargetDcs = g.transform; }
+        if (_rig == null) _rig = GameObject.Find("Level13_DryStack_BlenderRig");
+        if (_rig == null) return;
+        if (_containPad == null) _containPad = Child("GDS_ContainPad");
+        if (_geomembrane == null) _geomembrane = Child("GDS_Geomembrane");
+        if (_safeCover == null) _safeCover = Child("DryStack_SafeCover");
+        if (_polishPondWater == null) _polishPondWater = Child("GDS_PolishPond_Water");
         if (_dryStackPiles == null || _dryStackPiles.Length == 0)
-            _dryStackPiles = GetChildren(root.Find("DryStack_Storage"), "DryStack_Pile_");
-
-        if (_filterPlates == null || _filterPlates.Length == 0)
-            _filterPlates = GetChildTransforms(root.Find("Final_FilterPress_Unit"), "PressPlate_");
-
-        if (_conveyorRollers == null || _conveyorRollers.Length == 0)
-            _conveyorRollers = GetChildTransforms(root.Find("Cake_Transfer_Conveyor"), "Conveyor_Roller_");
+            _dryStackPiles = CollectChildren("DryStack_Pile_");
+        if (_piezoCaps == null || _piezoCaps.Length == 0)
+            _piezoCaps = CollectChildren("GDS_PiezoCap_");
+        if (_dustFx == null) { var t = FindChild("DryStack_Dust_FX"); if (t != null) _dustFx = t.GetComponent<ParticleSystem>(); }
     }
 
-    private GameObject[] GetChildren(Transform parent, string prefix)
+    private GameObject[] CollectChildren(string prefix)
     {
-        if (parent == null)
-            return new GameObject[0];
-
-        System.Collections.Generic.List<GameObject> results = new System.Collections.Generic.List<GameObject>();
-        for (int i = 0; i < parent.childCount; i++)
-        {
-            Transform child = parent.GetChild(i);
-            if (child.name.StartsWith(prefix))
-                results.Add(child.gameObject);
-        }
-
-        results.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
-        return results.ToArray();
+        var list = new List<GameObject>();
+        foreach (Transform t in _rig.GetComponentsInChildren<Transform>(true)) if (t.name.StartsWith(prefix)) list.Add(t.gameObject);
+        return list.ToArray();
     }
-
-    private Transform[] GetChildTransforms(Transform parent, string prefix)
+    private GameObject Child(string name) { var t = FindChild(name); return t != null ? t.gameObject : null; }
+    private Transform FindChild(string name)
     {
-        if (parent == null)
-            return new Transform[0];
-
-        System.Collections.Generic.List<Transform> results = new System.Collections.Generic.List<Transform>();
-        for (int i = 0; i < parent.childCount; i++)
-        {
-            Transform child = parent.GetChild(i);
-            if (child.name.StartsWith(prefix))
-                results.Add(child);
-        }
-
-        results.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
-        return results.ToArray();
+        if (_rig == null) return null;
+        foreach (Transform t in _rig.GetComponentsInChildren<Transform>(true)) if (t.name == name) return t;
+        return null;
     }
-
-    private GameObject FindChild(Transform root, string path)
-    {
-        Transform child = root.Find(path);
-        return child != null ? child.gameObject : null;
-    }
-
-    public bool QuestComplete => _questComplete;
-    public float PHCurrent => _pHCurrent;
-    public float CakeMoistureCurrent => _cakeMoistureCurrent;
-    public float DryStackProgress => _dryStackProgress;
 }
