@@ -96,6 +96,10 @@ public class Level3OreSlurryController : MonoBehaviour
     [SerializeField] private float _lebarSebarOreRuntime = 1.15f;
     [Tooltip("Tinggi arc jatuh batu dari ujung belt ke slurry tank.")]
     [SerializeField] private float _tinggiJatuhOreRuntime = 1.35f;
+    [Tooltip("Offset ketinggian seluruh jalur ore di belt (negatif = lebih rendah/mepet ke crusher).")]
+    [SerializeField] private float _oreBeltHeightOffset = -0.55f;
+    [Tooltip("Geser titik mid belt mendekat ke crusher (mepet). Positif = lebih dekat ke start.")]
+    [SerializeField] private float _oreBeltStartSnug = 1.2f;
     [Tooltip("Sembunyikan conveyor/ore/escalator bekas di sekitar slurry tank saat runtime.")]
     [SerializeField] private bool _hapusOreConveyorBekasRuntime = true;
     [Tooltip("Kecepatan target visual blade agitator prefab Level3 (deg/s).")]
@@ -225,7 +229,8 @@ public class Level3OreSlurryController : MonoBehaviour
         float dt = Time.deltaTime;
         UpdateRuntimeOreConveyor(dt);
         UpdateRuntimeWaterFlow(dt);
-        UpdateRuntimeAgitator(dt);
+        UpdateRuntimeAgitator(dt);        UpdateSlurryStir(dt);
+
         UpdateRuntimeTankLiquidVolume();
         UpdateRuntimeSlurrySurface(dt);
     }
@@ -453,6 +458,9 @@ public class Level3OreSlurryController : MonoBehaviour
         if (_slurryFill != null)
             ShowArrowKe(_slurryFill);
 
+        // Nyala mesin + sirine + eskalator (dorongan mundur lalu naik) DULU sebelum ore keluar dari black box.
+        yield return StartCoroutine(StartupMesinDanEskalator());
+
         yield return StartCoroutine(AnimasikanOreMasukKeTank());
         SelesaikanOreMasukTank();
         GameLevelManager.Instance?.NotifyLevel3OreReachedSlurry();
@@ -472,6 +480,161 @@ public class Level3OreSlurryController : MonoBehaviour
             Debug.LogWarning("[Level3OreSlurryController] Slurry belum mencapai batas 75%, quest belum akan dicentang.");
 
         _sequenceCoroutine = null;
+    }
+
+    // Sekuens nyala mesin Ore Crusher: mesin nyala + sirine, eskalator dorongan MUNDUR sesaat lalu NAIK.
+    private IEnumerator StartupMesinDanEskalator()
+    {
+        if (_oreBeltMaterial == null && _oreBeltVisual != null)
+        {
+            Renderer br = _oreBeltVisual.GetComponent<Renderer>();
+            if (br != null) _oreBeltMaterial = Application.isPlaying ? br.material : br.sharedMaterial;
+        }
+
+        _crusherFxAktif = true;
+        StartCoroutine(CrusherCrushFxLoop());
+
+        System.Collections.Generic.List<Transform> spinners = new System.Collections.Generic.List<Transform>();
+        foreach (Transform t in CariSemuaTransformTermasukInactive())
+        {
+            if (t == null) continue;
+            string n = t.name.ToLowerInvariant();
+            if (n.Contains("pulley")) spinners.Add(t);
+        }
+
+        GameObject audGo = new GameObject("Level3_Mesin_Siren_Audio");
+        audGo.transform.SetParent(transform, false);
+        AudioSource aud = audGo.AddComponent<AudioSource>();
+        aud.spatialBlend = 0f; aud.volume = 0.85f; aud.loop = true;
+        aud.clip = GenSirenClip(2.4f); aud.Play();
+
+        // Phase 1: mesin nyala + dorongan MUNDUR sesaat (belt offset positif = mundur).
+        float jerk = 0.5f, e = 0f;
+        while (e < jerk)
+        {
+            e += Time.deltaTime;
+            float k = e / jerk;
+            SetBeltOffsetRuntime(0.07f * Mathf.Sin(k * Mathf.PI));
+            for (int i = 0; i < spinners.Count; i++) if (spinners[i] != null) spinners[i].Rotate(Vector3.forward, -55f * Time.deltaTime, Space.Self);
+            yield return null;
+        }
+
+        // Phase 2: eskalator NAIK perlahan, ramp-up smooth (belt offset negatif = maju).
+        float ramp = 2.6f; e = 0f;
+        while (e < ramp)
+        {
+            e += Time.deltaTime;
+            float spd = Mathf.SmoothStep(0f, 1f, e / ramp);
+            _runtimeOreBeltOffset = Mathf.Repeat(_runtimeOreBeltOffset + Time.deltaTime * spd * 0.9f, 1f);
+            SetBeltOffsetRuntime(-_runtimeOreBeltOffset);
+            for (int i = 0; i < spinners.Count; i++) if (spinners[i] != null) spinners[i].Rotate(Vector3.forward, 340f * spd * Time.deltaTime, Space.Self);
+            yield return null;
+        }
+
+        aud.loop = false;
+        if (aud != null) aud.Stop();
+        Destroy(audGo, 0.2f);
+    }
+
+    // ===== Crusher jaw-crush + dust FX saat mesin nyala =====
+    private bool _crusherFxAktif;
+    private GameObject _crusherDustGo;
+
+    private void EnsureCrusherDust(Vector3 worldPos)
+    {
+        if (_crusherDustGo != null) return;
+        _crusherDustGo = new GameObject("Level3_Crusher_Dust_FX");
+        _crusherDustGo.transform.SetParent(transform, false);
+        _crusherDustGo.transform.position = worldPos;
+        var ps = _crusherDustGo.AddComponent<ParticleSystem>();
+        var main = ps.main;
+        main.startLifetime = 1.4f; main.startSpeed = 0.6f; main.startSize = 0.55f;
+        main.gravityModifier = -0.04f; main.maxParticles = 120;
+        main.startColor = new Color(0.6f, 0.53f, 0.44f, 0.45f);
+        var em = ps.emission; em.rateOverTime = 24f;
+        var sh = ps.shape; sh.shapeType = ParticleSystemShapeType.Box; sh.scale = new Vector3(1.4f, 0.4f, 1.8f);
+        var rend = ps.GetComponent<ParticleSystemRenderer>();
+        Shader dsh = Shader.Find("Sprites/Default");
+        if (rend != null && dsh != null) { var dm = new Material(dsh); dm.color = new Color(0.62f, 0.55f, 0.46f, 0.4f); rend.material = dm; }
+        ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+    }
+
+    private IEnumerator CrusherCrushFxLoop()
+    {
+        Transform jawL = null, jawR = null;
+        System.Collections.Generic.List<Transform> fly = new System.Collections.Generic.List<Transform>();
+        foreach (Transform t in CariSemuaTransformTermasukInactive())
+        {
+            if (t == null) continue;
+            string n = t.name.ToLowerInvariant();
+            if (n.Contains("left_smooth_jaw_liner")) jawL = t;
+            else if (n.Contains("right_smooth_jaw_liner")) jawR = t;
+            else if (n.Contains("flywheel")) fly.Add(t);
+        }
+        System.Collections.Generic.List<Vector3> flyCtr = new System.Collections.Generic.List<Vector3>();
+        for (int i = 0; i < fly.Count; i++) { Renderer rr = fly[i] != null ? fly[i].GetComponent<Renderer>() : null; flyCtr.Add(rr != null ? rr.bounds.center : (fly[i] != null ? fly[i].position : Vector3.zero)); }
+        Vector3 baseL = jawL != null ? jawL.position : Vector3.zero;
+        Vector3 baseR = jawR != null ? jawR.position : Vector3.zero;
+        EnsureCrusherDust(new Vector3(141.5f, 5.6f, 56.2f));
+        ParticleSystem dust = _crusherDustGo != null ? _crusherDustGo.GetComponent<ParticleSystem>() : null;
+        if (dust != null) dust.Play();
+        float ph = 0f, dustAcc = 0f;
+        while (_crusherFxAktif)
+        {
+            ph += Time.deltaTime * 9f; // ~1.4 Hz crush
+            float squeeze = Mathf.Abs(Mathf.Sin(ph)) * 0.16f;
+            if (jawL != null) jawL.position = baseL + new Vector3(0f, 0f, squeeze);
+            if (jawR != null) jawR.position = baseR + new Vector3(0f, 0f, -squeeze);
+            for (int i = 0; i < fly.Count; i++) if (fly[i] != null) fly[i].RotateAround(flyCtr[i], Vector3.forward, 430f * Time.deltaTime);
+            dustAcc += Time.deltaTime; if (dust != null && dustAcc >= 0.07f) { dust.Emit(2); dustAcc = 0f; }
+            yield return null;
+        }
+        if (jawL != null) jawL.position = baseL;
+        if (jawR != null) jawR.position = baseR;
+        if (dust != null) dust.Stop(true, ParticleSystemStopBehavior.StopEmitting);
+    }
+
+    private void SetBeltOffsetRuntime(float v)
+    {
+        if (_oreBeltMaterial == null) return;
+        Vector2 off = new Vector2(0f, v);
+        if (_oreBeltMaterial.HasProperty("_MainTex")) _oreBeltMaterial.SetTextureOffset("_MainTex", off);
+        if (_oreBeltMaterial.HasProperty("_BaseMap")) _oreBeltMaterial.SetTextureOffset("_BaseMap", off);
+    }
+
+    private AudioClip GenSirenClip(float dur)
+    {
+        int sr = 44100;
+        int n = Mathf.CeilToInt(dur * sr);
+        float[] data = new float[n];
+        float wailPhase = 0f, h2 = 0f, h3 = 0f, motorPhase = 0f;
+        var rnd = new System.Random(99);
+        for (int i = 0; i < n; i++)
+        {
+            float t = (float)i / sr;
+            float p = (float)i / n;
+            // 1. Sirine wail elektromekanis pabrik: fundamental naik-turun 380..780 Hz
+            float wail = 380f + 200f * (1f + Mathf.Sin(2f * Mathf.PI * 0.55f * t));
+            wailPhase += 2f * Mathf.PI * wail / sr;
+            h2 += 2f * Mathf.PI * (wail * 2f) / sr;
+            h3 += 2f * Mathf.PI * (wail * 3f) / sr;
+            float horn = Mathf.Sin(wailPhase) * 0.6f + Mathf.Sin(h2) * 0.25f + Mathf.Sin(h3) * 0.12f;
+            // 2. Motor spin-up: rumble naik pitch 34->88 Hz (mesin menyala)
+            float motorRamp = Mathf.Clamp01(p / 0.45f);
+            float motorHz = Mathf.Lerp(34f, 88f, motorRamp);
+            motorPhase += 2f * Mathf.PI * motorHz / sr;
+            float motor = (Mathf.Sin(motorPhase) + 0.5f * Mathf.Sin(motorPhase * 2f)) * 0.35f * motorRamp;
+            // 3. Tekstur noise mekanis + saturasi lembut biar gritty/realistis
+            float noise = ((float)rnd.NextDouble() * 2f - 1f) * 0.06f;
+            float s = horn * 0.7f + motor + noise;
+            s = (float)System.Math.Tanh(s * 1.6);
+            // 4. Envelope attack/release halus
+            float env = Mathf.Min(Mathf.Clamp01(p / 0.04f), Mathf.Clamp01((1f - p) / 0.12f));
+            data[i] = s * env * 0.85f;
+        }
+        AudioClip clip = AudioClip.Create("Level3_Mesin_Siren", n, 1, sr, false);
+        clip.SetData(data, 0);
+        return clip;
     }
 
     private IEnumerator TeleportKeDcsSaatTransisi(float duration)
@@ -519,6 +682,10 @@ public class Level3OreSlurryController : MonoBehaviour
     {
         SiapkanSlurryFillUntukIsi();
 
+        // Rotor DIAM dulu (impeller dibangun). Mengaduk BARU setelah laporan HT akhir + sirine.
+        if (_agitatorVisibleParts.Count == 0) CacheVisibleAgitatorParts();
+        EnsureSlurryImpeller();
+
         // Mulai FX audio + bubble particle
         EnsureSlurryFx();
         if (_slurryFx != null)
@@ -528,7 +695,9 @@ public class Level3OreSlurryController : MonoBehaviour
         }
 
         // Mulai FX aliran air jatuh dari pipa kiri (mesh stream + droplet particle).
-        SetWaterFlowFxAktif(true);
+        SetWaterFlowFxAktif(false); SetWaterPourAktif(true); // air mancur realistis dari WaterInlet_Flange + cairan naik; (cyan lama mati)
+        if (_runtimeSwirlRoot == null) BuatRuntimeSwirlSurface();
+        if (_runtimeSwirlRoot != null) _runtimeSwirlRoot.SetActive(true); // ore mulai muncul bertahap seiring cairan naik - pakai cairan naik realistis (nikel/slurry)
 
         float elapsed = 0f;
         while (elapsed < _durasiIsiSlurry)
@@ -712,7 +881,9 @@ public class Level3OreSlurryController : MonoBehaviour
         if (t <= split)
         {
             float localT = Mathf.InverseLerp(0f, split, t);
-            return Vector3.Lerp(_oreStartPoint.position, _oreMidPoint.position, localT);
+            Vector3 p = Vector3.Lerp(_oreStartPoint.position, _oreMidPoint.position, localT);
+            p.y += _oreBeltHeightOffset; // turunkan jalur belt biar mepet ke crusher
+            return p;
         }
 
         float dropT = Mathf.InverseLerp(split, 1f, t);
@@ -1025,7 +1196,20 @@ public class Level3OreSlurryController : MonoBehaviour
             return;
 
         _agitatorSudahStartSetelahLaporan = true;
+        MainkanSirineMesinSlurry();
+        SetWaterPourAktif(false);
         MulaiAgitatorJikaPerlu();
+    }
+
+    // Sirine penanda mesin slurry tank (rotor pengaduk) mulai bergerak setelah laporan HT.
+    private void MainkanSirineMesinSlurry()
+    {
+        var go = new GameObject("Level3_SlurryStart_Siren");
+        go.transform.SetParent(transform, false);
+        var aud = go.AddComponent<AudioSource>();
+        aud.spatialBlend = 0f; aud.volume = 0.9f; aud.loop = false;
+        aud.clip = GenSirenClip(2.6f); aud.Play();
+        Destroy(go, 3.0f);
     }
 
     private void MulaiAgitatorJikaPerlu()
@@ -1061,6 +1245,65 @@ public class Level3OreSlurryController : MonoBehaviour
     /// <summary>
     /// Hentikan pengaduk (dipanggil saat Level 3 reset / level lain mulai).
     /// </summary>
+    private GameObject _slurryImpellerGo;    private readonly System.Collections.Generic.List<Transform> _slurryStirParts = new System.Collections.Generic.List<Transform>();
+    private Vector3 _slurryStirPivot;
+    private float _slurryStirSpeed;
+    private bool _tankBoundsAda;
+    private Vector3 _tankCenter;
+    private float _tankRadius;
+    private float _tankBottomY;
+    private float _tankRimY;
+
+    private void EnsureSlurryImpeller()
+    {
+        if (_slurryStirParts.Count > 0) return;
+        Transform shaft = CariTransformNamaContains("AgitatorVerticalShaft");
+        Vector3 c = shaft != null ? shaft.position : (_slurryFill != null ? _slurryFill.position : transform.position);
+        _slurryStirPivot = new Vector3(c.x, 0f, c.z);
+        foreach (var t in CariSemuaTransformTermasukInactive())
+        {
+            if (t == null) continue;
+            string n = t.name;
+            if (n.IndexOf("StirrerColumn_Static", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || n.IndexOf("StirrerHub_Static", System.StringComparison.OrdinalIgnoreCase) >= 0
+                || n.IndexOf("StirrerBlade_Static", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (!t.gameObject.activeSelf) t.gameObject.SetActive(true);
+                _slurryStirParts.Add(t);
+            }
+        }
+    }
+
+    // Putar rakitan pengaduk statik (kolom+hub+bilah, geometri FBX baked di origin) mengelilingi poros tengah via RotateAround.
+    private void UpdateSlurryStir(float dt)
+    {
+        float target = _runtimeAgitatorAktif ? Mathf.Abs(_kecepatanAgitatorVisibleDeg) : 0f;
+        _slurryStirSpeed = Mathf.MoveTowards(_slurryStirSpeed, target, 60f * dt);
+        if (_slurryStirSpeed <= 0.001f || _slurryStirParts.Count == 0) return;
+        float angle = _slurryStirSpeed * dt * (_kecepatanAgitatorVisibleDeg < 0f ? -1f : 1f);
+        for (int i = _slurryStirParts.Count - 1; i >= 0; i--)
+        {
+            Transform t = _slurryStirParts[i];
+            if (t == null) { _slurryStirParts.RemoveAt(i); continue; }
+            t.RotateAround(_slurryStirPivot, Vector3.up, angle);
+        }
+    }
+
+    // Cache bounds tangki open-top yang sudah di-rebuild supaya cairan terisi tepat di tengah & seukuran tangki.
+    private void EnsureTankBounds()
+    {
+        if (_tankBoundsAda) return;
+        Transform shell = CariTransformNamaContains("OpenShell_SmoothSteel");
+        Renderer r = shell != null ? shell.GetComponentInChildren<Renderer>(true) : null;
+        if (r == null || r.bounds.size.sqrMagnitude < 0.01f) return;
+        Bounds b = r.bounds;
+        _tankCenter = b.center;
+        _tankRadius = Mathf.Max(b.extents.x, b.extents.z) * 0.92f;
+        _tankBottomY = b.min.y + 0.25f;
+        _tankRimY = b.max.y;
+        _tankBoundsAda = true;
+    }
+
     private void HentikanAgitator()
     {
         _runtimeAgitatorAktif = false;
@@ -1181,6 +1424,15 @@ public class Level3OreSlurryController : MonoBehaviour
                            CariTransformNamaContains("Ore_Inlet_Rim_Back_Bar") ??
                            _oreEndPoint;
 
+        // Inlet FBX baked (transform.position ~0, geometri di world lewat renderer) -> pakai pusat bounds renderer agar path ore tidak lewat origin.
+        if (_oreMidPoint != null && _oreMidPoint != _oreEndPoint && _oreMidPoint.position.sqrMagnitude < 0.0025f)
+        {
+            Renderer rMid = _oreMidPoint.GetComponentInChildren<Renderer>(true);
+            Vector3 midPos = (rMid != null && rMid.bounds.size.sqrMagnitude > 0.0001f) ? rMid.bounds.center : HitungFallbackOreMidPoint();
+            _runtimeOreMidPoint = BuatRuntimePointJikaPerlu(_runtimeOreMidPoint, "Level3_Runtime_Ore_MidPoint", midPos);
+            _oreMidPoint = _runtimeOreMidPoint;
+        }
+
         if (_oreStartPoint == null)
         {
             Vector3 start = HitungFallbackOreStartPoint();
@@ -1197,10 +1449,45 @@ public class Level3OreSlurryController : MonoBehaviour
 
         if (_runtimeOreStartPoint != null && _oreStartPoint == _runtimeOreStartPoint)
             _runtimeOreStartPoint.position = HitungFallbackOreStartPoint();
-        if (_runtimeOreMidPoint != null && _oreMidPoint == _runtimeOreMidPoint)
+        if (_runtimeOreMidPoint != null && _oreMidPoint == _runtimeOreMidPoint && _runtimeOreMidPoint.position.sqrMagnitude < 0.0025f)
             _runtimeOreMidPoint.position = HitungFallbackOreMidPoint();
         if (_runtimeOreEndPoint != null && _oreEndPoint == _runtimeOreEndPoint)
             _runtimeOreEndPoint.position = HitungFallbackOreEndPoint();
+
+        // OVERRIDE: ore KELUAR dari Crusher_Discharge_BlackBox -> NAIK belt -> jatuh ke tangki rebuilt (bukan slurry lama 88,-0.3).
+        PaksaOrePathBlackBoxKeTank();
+    }
+
+    private void PaksaOrePathBlackBoxKeTank()
+    {
+        EnsureTankBounds();
+        if (!_tankBoundsAda) return;
+        var blackBox = CariTransformNamaContains("Crusher_Discharge_BlackBox");
+        if (blackBox != null)
+        {
+            Renderer rb = blackBox.GetComponentInChildren<Renderer>(true);
+            Vector3 bbPos = (rb != null ? rb.bounds.center : blackBox.position) + Vector3.up * 0.25f;
+            _runtimeOreStartPoint = BuatRuntimePointJikaPerlu(_runtimeOreStartPoint, "Level3_Runtime_Ore_StartPoint", bbPos);
+            _runtimeOreStartPoint.position = bbPos;
+            _oreStartPoint = _runtimeOreStartPoint;
+        }
+        Vector3 endPos = new Vector3(_tankCenter.x, _tankBottomY + 1.2f, _tankCenter.z);
+        _runtimeOreEndPoint = BuatRuntimePointJikaPerlu(_runtimeOreEndPoint, "Level3_Runtime_Ore_EndPoint", endPos);
+        _runtimeOreEndPoint.position = endPos;
+        _oreEndPoint = _runtimeOreEndPoint;
+        Vector3 midPos = new Vector3(_tankCenter.x + 8f, _tankRimY + 1.2f, _tankCenter.z);
+        if (_oreBeltVisual != null)
+        {
+            Renderer rBelt = _oreBeltVisual.GetComponentInChildren<Renderer>(true);
+            if (rBelt != null) midPos = new Vector3(rBelt.bounds.min.x + 1.5f, rBelt.bounds.max.y + 0.05f, rBelt.bounds.center.z);
+        }
+        // Geser mid mendekat ke start (crusher discharge) supaya ore mepet ke crusher, bukan menggantung jauh.
+        if (_oreStartPoint != null)
+            midPos = Vector3.Lerp(midPos, _oreStartPoint.position, Mathf.Clamp01(_oreBeltStartSnug * 0.18f));
+        midPos.y += _oreBeltHeightOffset;
+        _runtimeOreMidPoint = BuatRuntimePointJikaPerlu(_runtimeOreMidPoint, "Level3_Runtime_Ore_MidPoint", midPos);
+        _runtimeOreMidPoint.position = midPos;
+        _oreMidPoint = _runtimeOreMidPoint;
     }
 
     private bool OreEndPointTerlaluJauhDariSlurry(Transform point)
@@ -1549,6 +1836,16 @@ public class Level3OreSlurryController : MonoBehaviour
         }
     }
 
+    private void HideSceneOreOnBelt()
+    {
+        for (int i = 0; i < _sceneOrePieces.Count; i++)
+        {
+            RuntimeOrePiece ore = _sceneOrePieces[i];
+            if (ore != null && ore.Transform != null)
+                ore.Transform.gameObject.SetActive(false);
+        }
+    }
+
     private void UpdateSceneOreOnBelt(float dt, float speed)
     {
         if (_sceneOrePieces.Count == 0)
@@ -1569,7 +1866,7 @@ public class Level3OreSlurryController : MonoBehaviour
 
             float pathT = Mathf.Clamp01(ore.Offset + globalT * speed * ore.SpeedMul * 5.25f);
             Vector3 dir = HitungArahOreRuntime(pathT);
-            ore.Transform.position = HitungPosisiOreRuntime(pathT, ore.Lateral, 0.12f);
+            ore.Transform.position = HitungPosisiOreRuntime(pathT, ore.Lateral, 0.04f);
             if (dir.sqrMagnitude > 0.001f)
                 ore.Transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
 
@@ -1583,6 +1880,145 @@ public class Level3OreSlurryController : MonoBehaviour
         }
     }
 
+    private GameObject _waterPourGo;
+    private Material _waterPourMat;
+    private bool _waterPourCoRunning;
+
+    // Air mancur REALISTIS dari L3_SlurryTank_WaterInlet_Flange (stream translucent + UV scroll), bukan partikel cyan.
+    private void SetWaterPourAktif(bool aktif)
+    {
+        if (!aktif) { if (_waterPourGo != null) _waterPourGo.SetActive(false); return; }
+        EnsureTankBounds();
+        Transform flange = CariTransformNamaContains("SlurryTank_WaterInlet_Flange") ?? CariTransformNamaContains("WaterInlet_Flange");
+        Vector3 top = flange != null ? flange.position : new Vector3(89f, 6.7f, 60.4f);
+        float cx = _tankBoundsAda ? _tankCenter.x : top.x;
+        float cz = _tankBoundsAda ? _tankCenter.z : top.z;
+        Vector3 bottom = new Vector3(Mathf.Lerp(top.x, cx, 0.4f), (_tankBoundsAda ? _tankBottomY : 1.5f) + 1.0f, Mathf.Lerp(top.z, cz, 0.4f));
+        if (_waterPourGo == null)
+        {
+            _waterPourGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            _waterPourGo.name = "Level3_RealWaterPour";
+            var col = _waterPourGo.GetComponent<Collider>(); if (col != null) Destroy(col);
+            _waterPourMat = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+            _waterPourMat.SetFloat("_Surface", 1f);
+            _waterPourMat.SetInt("_SrcBlend", (int)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            _waterPourMat.SetInt("_DstBlend", (int)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            _waterPourMat.SetInt("_ZWrite", 0);
+            _waterPourMat.renderQueue = 3000;
+            _waterPourMat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            Color wc = new Color(0.60f, 0.78f, 0.95f, 0.55f);
+            _waterPourMat.color = wc;
+            if (_waterPourMat.HasProperty("_BaseColor")) _waterPourMat.SetColor("_BaseColor", wc);
+            if (_waterPourMat.HasProperty("_Smoothness")) _waterPourMat.SetFloat("_Smoothness", 0.92f);
+            _waterPourMat.mainTexture = BuatTeksturAliranAir();
+            _waterPourGo.GetComponent<Renderer>().sharedMaterial = _waterPourMat;
+        }
+        _waterPourGo.SetActive(true);
+        Vector3 dir = bottom - top; float len = Mathf.Max(0.6f, dir.magnitude);
+        _waterPourGo.transform.position = (top + bottom) * 0.5f;
+        _waterPourGo.transform.up = dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector3.up;
+        _waterPourGo.transform.localScale = new Vector3(0.5f, len * 0.5f, 0.5f);
+        if (_waterPourMat != null) _waterPourMat.mainTextureScale = new Vector2(1f, Mathf.Max(2f, len));
+        if (!_waterPourCoRunning) { _waterPourCoRunning = true; StartCoroutine(AnimasiAliranAir()); }
+    }
+
+    private Texture2D BuatTeksturAliranAir()
+    {
+        int h = 64; var tex = new Texture2D(2, h); tex.wrapMode = TextureWrapMode.Repeat;
+        for (int y = 0; y < h; y++)
+        {
+            float v = 0.65f + 0.35f * Mathf.Sin(y * 0.7f);
+            Color c = new Color(0.7f * v, 0.85f * v, 1f * v, 1f);
+            tex.SetPixel(0, y, c); tex.SetPixel(1, y, c);
+        }
+        tex.Apply(); return tex;
+    }
+
+    private System.Collections.IEnumerator AnimasiAliranAir()
+    {
+        float o = 0f;
+        while (_waterPourGo != null && _waterPourGo.activeSelf)
+        {
+            o = Mathf.Repeat(o + Time.deltaTime * 1.8f, 1f);
+            if (_waterPourMat != null) _waterPourMat.mainTextureOffset = new Vector2(0f, -o * 4f);
+            yield return null;
+        }
+        _waterPourCoRunning = false;
+    }
+
+    private Mesh _meshBatuAsli;
+    private Material _matBatuAsli;
+
+    // Siapkan 1 mesh batu ORE ASLI, di-center ke origin (mesh FBX ter-bake di world coords)
+    // supaya bisa dipakai jadi batu BERGERAK di atas belt (bukan kubus primitif).
+    private void SiapkanMeshBatuAsli()
+    {
+        if (_meshBatuAsli != null) return;
+        foreach (var t in CariSemuaTransformTermasukInactive())
+        {
+            if (t == null) continue;
+            if (t.name.IndexOf("Rounded_Ore_Rock", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
+            var mf = t.GetComponent<MeshFilter>();
+            var r = t.GetComponent<Renderer>();
+            if (mf == null || mf.sharedMesh == null) continue;
+            var src = mf.sharedMesh;
+            var verts = src.vertices;
+            Vector3 ctr = src.bounds.center;
+            for (int i = 0; i < verts.Length; i++) verts[i] -= ctr;
+            var m = new Mesh { name = "Level3_OreRock_Centered" };
+            m.vertices = verts;
+            m.triangles = src.triangles;
+            m.normals = src.normals;
+            m.uv = src.uv;
+            m.RecalculateBounds();
+            _meshBatuAsli = m;
+            if (r != null) _matBatuAsli = r.sharedMaterial;
+            break;
+        }
+    }
+
+    private AudioSource _conveyorAudio;
+
+    // Suara batu + motor eskalator saat ore berjalan di belt (loop), nyala saat ore berangkat.
+    private void SetConveyorAudioAktif(bool aktif)
+    {
+        if (!aktif) { if (_conveyorAudio != null) _conveyorAudio.Stop(); return; }
+        if (_conveyorAudio == null)
+        {
+            var go = new GameObject("Level3_ConveyorRock_Audio");
+            go.transform.SetParent(transform, false);
+            if (_oreBeltVisual != null)
+            {
+                Renderer rb = _oreBeltVisual.GetComponentInChildren<Renderer>(true);
+                go.transform.position = rb != null ? rb.bounds.center : _oreBeltVisual.position;
+            }
+            _conveyorAudio = go.AddComponent<AudioSource>();
+            _conveyorAudio.spatialBlend = 0.55f; _conveyorAudio.volume = 0.6f; _conveyorAudio.loop = true;
+            _conveyorAudio.maxDistance = 70f; _conveyorAudio.rolloffMode = AudioRolloffMode.Linear;
+            _conveyorAudio.clip = GenConveyorRockClip(3.2f);
+        }
+        if (!_conveyorAudio.isPlaying) _conveyorAudio.Play();
+    }
+
+    private AudioClip GenConveyorRockClip(float dur)
+    {
+        int sr = 44100; int n = Mathf.CeilToInt(dur * sr); var data = new float[n];
+        var rnd = new System.Random(7); float hum = 0f; float lp = 0f;
+        for (int i = 0; i < n; i++)
+        {
+            hum += 2f * Mathf.PI * 58f / sr;
+            float motor = (Mathf.Sin(hum) + 0.4f * Mathf.Sin(hum * 2f)) * 0.18f;
+            float ns = (float)rnd.NextDouble() * 2f - 1f;
+            lp += 0.08f * (ns - lp);
+            float clatter = lp * 0.5f;
+            float knock = ((float)rnd.NextDouble() < 0.0045f) ? ((float)rnd.NextDouble() * 2f - 1f) * 0.55f : 0f;
+            data[i] = Mathf.Clamp(motor + clatter + knock, -1f, 1f) * 0.85f;
+        }
+        int f = Mathf.Min(2200, n / 20);
+        for (int i = 0; i < f; i++) { float k = (float)i / f; data[i] *= k; data[n - 1 - i] *= k; }
+        var c = AudioClip.Create("Level3_ConveyorRock", n, 1, sr, false); c.SetData(data, 0); return c;
+    }
+
     private void BuatRuntimeOreConveyorFx()
     {
         if (_pakaiOreAsliDariBelt)
@@ -1594,21 +2030,29 @@ public class Level3OreSlurryController : MonoBehaviour
         _runtimeOreMaterial = BuatRuntimeMaterial("Level3_Runtime_Laterite_Ore_Material", new Color(0.23f, 0.17f, 0.12f, 1f), false);
         _runtimeBeltCleatMaterial = BuatRuntimeMaterial("Level3_Runtime_Belt_Moving_Cleat_Material", new Color(0.08f, 0.08f, 0.075f, 1f), false);
 
+        SiapkanMeshBatuAsli();
         int oreCount = Mathf.Clamp(_jumlahOreBatuRuntime, 6, 90);
         for (int i = 0; i < oreCount; i++)
         {
-            PrimitiveType type = i % 3 == 0 ? PrimitiveType.Sphere : PrimitiveType.Cube;
-            GameObject ore = GameObject.CreatePrimitive(type);
-            ore.name = "Level3_Runtime_Moving_Ore_" + i.ToString("00");
-            ore.transform.SetParent(_runtimeOreConveyorRoot.transform, true);
-
-            Renderer r = ore.GetComponent<Renderer>();
-            if (r != null)
-                r.sharedMaterial = _runtimeOreMaterial;
-
-            Collider c = ore.GetComponent<Collider>();
-            if (c != null)
-                Destroy(c);
+            GameObject ore;
+            if (_meshBatuAsli != null)
+            {
+                ore = new GameObject("Level3_Runtime_Moving_Ore_" + i.ToString("00"));
+                ore.transform.SetParent(_runtimeOreConveyorRoot.transform, true);
+                ore.AddComponent<MeshFilter>().sharedMesh = _meshBatuAsli;
+                ore.AddComponent<MeshRenderer>().sharedMaterial = _matBatuAsli != null ? _matBatuAsli : _runtimeOreMaterial;
+            }
+            else
+            {
+                PrimitiveType type = i % 3 == 0 ? PrimitiveType.Sphere : PrimitiveType.Cube;
+                ore = GameObject.CreatePrimitive(type);
+                ore.name = "Level3_Runtime_Moving_Ore_" + i.ToString("00");
+                ore.transform.SetParent(_runtimeOreConveyorRoot.transform, true);
+                Renderer r = ore.GetComponent<Renderer>();
+                if (r != null) r.sharedMaterial = _runtimeOreMaterial;
+                Collider c = ore.GetComponent<Collider>();
+                if (c != null) Destroy(c);
+            }
 
             float seedA = Mathf.Repeat(i * 0.371f, 1f);
             float seedB = Mathf.Repeat(i * 0.619f, 1f);
@@ -1665,7 +2109,9 @@ public class Level3OreSlurryController : MonoBehaviour
         if (!_pakaiOreAsliDariBelt && _runtimeOreConveyorRoot == null)
             BuatRuntimeOreConveyorFx();
 
+        if (!aktif) _crusherFxAktif = false;
         _runtimeOreConveyorAktif = aktif;
+        SetConveyorAudioAktif(aktif);
         if (aktif)
         {
             _runtimeOreConveyorTime = 0f;
@@ -1682,9 +2128,20 @@ public class Level3OreSlurryController : MonoBehaviour
         if (_runtimeOreConveyorRoot != null && !_pakaiOreAsliDariBelt)
             _runtimeOreConveyorRoot.SetActive(aktif);
 
+        if (!aktif && _pakaiOreAsliDariBelt)
+            HideSceneOreOnBelt();
+
         if (aktif)
             UpdateRuntimeOreConveyor(0f);
     }
+
+    // DEBUG: klik kanan komponen ini untuk uji aliran ore di belt (Level3_Runtime_Ore_Belt_Flow).
+    [ContextMenu("DEBUG: Level3 Ore Belt Flow ON")]
+    private void DebugOreBeltFlowOn() { SetConveyorOreFxAktif(true); }
+
+    [ContextMenu("DEBUG: Level3 Ore Belt Flow OFF")]
+    private void DebugOreBeltFlowOff() { SetConveyorOreFxAktif(false); }
+
 
     private void UpdateRuntimeOreConveyor(float dt)
     {
@@ -1724,7 +2181,7 @@ public class Level3OreSlurryController : MonoBehaviour
                 continue;
 
             float t = Mathf.Clamp01((_runtimeOreConveyorTime * speed * ore.SpeedMul) + ore.Offset * 0.72f);
-            ore.Transform.position = HitungPosisiOreRuntime(t, ore.Lateral, 0.16f);
+            ore.Transform.position = HitungPosisiOreRuntime(t, ore.Lateral, 0.06f);
             ore.Transform.localScale = ore.BaseScale * (t > 0.72f ? Mathf.Lerp(1f, 0.72f, Mathf.InverseLerp(0.72f, 1f, t)) : 1f);
             ore.Transform.Rotate(ore.SpinAxis, 260f * dt * ore.SpeedMul, Space.Self);
         }
@@ -1839,7 +2296,7 @@ public class Level3OreSlurryController : MonoBehaviour
         _runtimeTankLiquidVolume = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         _runtimeTankLiquidVolume.name = "Level3_Runtime_Tank_Liquid_Rising_75";
         _runtimeTankLiquidVolumeTransform = _runtimeTankLiquidVolume.transform;
-        _runtimeTankLiquidMaterial = BuatRuntimeMaterial("Level3_Runtime_Tank_Liquid_Material", new Color(0.42f, 0.18f, 0.55f, 0.78f), true);
+        _runtimeTankLiquidMaterial = BuatRuntimeMaterial("Level3_Runtime_Tank_Liquid_Material", new Color(0.48f, 0.26f, 0.14f, 0.78f), true);
 
         Renderer liquidRenderer = _runtimeTankLiquidVolume.GetComponent<Renderer>();
         if (liquidRenderer != null)
@@ -1882,7 +2339,7 @@ public class Level3OreSlurryController : MonoBehaviour
         if (_runtimeTankLiquidMaterial != null)
         {
             float pulse = 0.72f + Mathf.Sin(Time.time * 4.5f) * 0.06f;
-            Color color = new Color(0.42f, 0.18f, 0.55f, pulse);
+            Color color = new Color(0.48f, 0.26f, 0.14f, pulse);
             _runtimeTankLiquidMaterial.color = color;
             if (_runtimeTankLiquidMaterial.HasProperty("_BaseColor"))
                 _runtimeTankLiquidMaterial.SetColor("_BaseColor", color);
@@ -1893,6 +2350,8 @@ public class Level3OreSlurryController : MonoBehaviour
 
     private Vector3 HitungCenterSlurryTank()
     {
+        EnsureTankBounds();
+        if (_tankBoundsAda) return _tankCenter;
         if (_slurryFill == null)
             return transform.position;
 
@@ -1916,6 +2375,8 @@ public class Level3OreSlurryController : MonoBehaviour
 
     private float HitungRadiusSlurryTankLiquid()
     {
+        EnsureTankBounds();
+        if (_tankBoundsAda) return _tankRadius;
         if (_slurryFill != null)
             return Mathf.Clamp(Mathf.Min(_slurryFill.lossyScale.x, _slurryFill.lossyScale.z) * 0.36f, 2.5f, 7.25f);
 
@@ -1924,6 +2385,8 @@ public class Level3OreSlurryController : MonoBehaviour
 
     private float HitungBottomYSlurryTankLiquid()
     {
+        EnsureTankBounds();
+        if (_tankBoundsAda) return _tankBottomY;
         if (_slurryFill != null && _slurryFill.parent != null)
             return _slurryFill.parent.position.y - 3.05f;
 
@@ -1932,6 +2395,8 @@ public class Level3OreSlurryController : MonoBehaviour
 
     private float HitungTopTargetYSlurryTankLiquid()
     {
+        EnsureTankBounds();
+        if (_tankBoundsAda) return _tankRimY - 1.2f;
         if (_slurryFill != null && _slurryFill.parent != null)
             return _slurryFill.parent.position.y + 3.35f;
 
@@ -1950,31 +2415,36 @@ public class Level3OreSlurryController : MonoBehaviour
 
     private void BuatRuntimeSwirlSurface()
     {
+        SiapkanMeshBatuAsli();
         _runtimeSwirlRoot = new GameObject("Level3_Runtime_Slurry_Surface_Swirl");
         _runtimeSwirlRootTransform = _runtimeSwirlRoot.transform;
-        _runtimeSwirlMaterial = BuatRuntimeMaterial("Level3_Runtime_Slurry_Swirl_Material", new Color(0.62f, 0.95f, 1f, 0.78f), true);
-
-        for (int i = 0; i < 10; i++)
+        var rnd = new System.Random(31);
+        int n = 28; // berton-ton ore chunk di dalam slurry
+        for (int i = 0; i < n; i++)
         {
-            float angle = i * (360f / 10f);
-            float rad = angle * Mathf.Deg2Rad;
-            float radius = Mathf.Lerp(0.9f, 2.65f, (i % 5) / 4f);
-            GameObject strip = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            strip.name = "Level3_Runtime_Slurry_Swirl_Strip_" + i.ToString("00");
-            strip.transform.SetParent(_runtimeSwirlRootTransform, false);
-            strip.transform.localPosition = new Vector3(Mathf.Cos(rad) * radius, 0f, Mathf.Sin(rad) * radius);
-            strip.transform.localRotation = Quaternion.Euler(0f, angle + 28f, 0f);
-            strip.transform.localScale = new Vector3(0.72f, 0.018f, 0.055f);
-
-            Renderer r = strip.GetComponent<Renderer>();
-            if (r != null)
-                r.sharedMaterial = _runtimeSwirlMaterial;
-
-            Collider c = strip.GetComponent<Collider>();
-            if (c != null)
-                Destroy(c);
+            float ang = (float)rnd.NextDouble() * Mathf.PI * 2f;
+            float radius = Mathf.Sqrt((float)rnd.NextDouble()) * 1.45f;
+            GameObject chunk;
+            if (_meshBatuAsli != null)
+            {
+                chunk = new GameObject("Level3_Runtime_Slurry_Ore_" + i.ToString("00"));
+                chunk.transform.SetParent(_runtimeSwirlRootTransform, false);
+                chunk.AddComponent<MeshFilter>().sharedMesh = _meshBatuAsli;
+                chunk.AddComponent<MeshRenderer>().sharedMaterial = _matBatuAsli != null ? _matBatuAsli : _runtimeOreMaterial;
+            }
+            else
+            {
+                chunk = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                chunk.name = "Level3_Runtime_Slurry_Ore_" + i.ToString("00");
+                chunk.transform.SetParent(_runtimeSwirlRootTransform, false);
+                var cc0 = chunk.GetComponent<Collider>(); if (cc0 != null) Destroy(cc0);
+                var rr0 = chunk.GetComponent<Renderer>(); if (rr0 != null) rr0.sharedMaterial = _runtimeOreMaterial;
+            }
+            chunk.transform.localPosition = new Vector3(Mathf.Cos(ang) * radius, -0.05f - (float)rnd.NextDouble() * 0.75f, Mathf.Sin(ang) * radius);
+            chunk.transform.localRotation = Quaternion.Euler((float)rnd.NextDouble() * 360f, (float)rnd.NextDouble() * 360f, (float)rnd.NextDouble() * 360f);
+            float s = Mathf.Lerp(0.45f, 0.95f, (float)rnd.NextDouble());
+            chunk.transform.localScale = new Vector3(s, s, s);
         }
-
         _runtimeSwirlRoot.SetActive(false);
         UpdateRuntimeSlurrySurface(0f);
     }
@@ -2164,18 +2634,20 @@ public class Level3OreSlurryController : MonoBehaviour
 
         Vector3 surface = HitungWorldPosPermukaanSlurry() + Vector3.up * 0.05f;
         _runtimeSwirlRootTransform.position = surface;
-        float radius = Mathf.Max(0.3f, Mathf.Min(_slurryFill.lossyScale.x, _slurryFill.lossyScale.z) * 0.36f);
-        float scale = radius / 2.65f;
+        // Kecilkan swirl supaya tidak keluar dari slurry tank: pakai 0.30 dari radius tank
+        // dan basis scatter 1.45 (bukan 2.65) agar chunk tetap di dalam dinding tank.
+        float radius = Mathf.Max(0.25f, Mathf.Min(_slurryFill.lossyScale.x, _slurryFill.lossyScale.z) * 0.30f);
+        float scale = radius / 1.45f;
         _runtimeSwirlRootTransform.localScale = new Vector3(scale, 1f, scale);
 
-        if (_runtimeSwirlMaterial != null)
+        // Ore muncul BERTAHAP seiring cairan naik (berton-ton ore terakumulasi di dalam slurry).
+        int cc = _runtimeSwirlRootTransform.childCount;
+        float prog = Mathf.Clamp01(_runtimeSlurryFillProgress);
+        for (int i = 0; i < cc; i++)
         {
-            float active = Mathf.InverseLerp(0f, Mathf.Max(1f, Mathf.Abs(_kecepatanAgitatorVisibleDeg)), _runtimeAgitatorSpeed);
-            float alpha = Mathf.Lerp(0.18f, 0.78f, active);
-            Color color = new Color(0.62f, 0.95f, 1f, alpha);
-            _runtimeSwirlMaterial.color = color;
-            if (_runtimeSwirlMaterial.HasProperty("_BaseColor"))
-                _runtimeSwirlMaterial.SetColor("_BaseColor", color);
+            bool show = prog >= ((i + 0.5f) / cc) * 0.92f;
+            var ch = _runtimeSwirlRootTransform.GetChild(i);
+            if (ch.gameObject.activeSelf != show) ch.gameObject.SetActive(show);
         }
     }
 

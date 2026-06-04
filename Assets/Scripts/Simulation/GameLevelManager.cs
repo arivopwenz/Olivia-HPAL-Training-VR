@@ -114,6 +114,7 @@ public class GameLevelManager : MonoBehaviour
     [Header("=== Parameter Real-Time ===")]
     [SerializeField] private float _flowRateSaatIni;
     [SerializeField] private float _acidRatioSaatIni;
+    [SerializeField] private float _acidStrokeSaatIni;
     [SerializeField] private float _suhuSaatIni = 25f;
     [SerializeField] private float _tekananSaatIni = 1f;
     [SerializeField] private float _rpmSaatIni;
@@ -1497,6 +1498,7 @@ public class GameLevelManager : MonoBehaviour
     public void SetSuhu(float nilai) => _suhuSaatIni = nilai;
     public void SetTekanan(float nilai) => _tekananSaatIni = nilai;
     public void SetRPM(float nilai) => _rpmSaatIni = nilai;
+    public void SetAcidStroke(float nilai) => _acidStrokeSaatIni = Mathf.Clamp(nilai, 0f, 100f);
     public void SetPH(float nilai)
     {
         _phSaatIni = nilai;
@@ -1505,6 +1507,7 @@ public class GameLevelManager : MonoBehaviour
 
     public float FlowRate => _flowRateSaatIni;
     public float AcidRatio => _acidRatioSaatIni;
+    public float AcidStroke => _acidStrokeSaatIni;
     public float Suhu => _suhuSaatIni;
     public float Tekanan => _tekananSaatIni;
     public float RPM => _rpmSaatIni;

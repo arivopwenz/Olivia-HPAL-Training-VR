@@ -102,6 +102,8 @@ public class Level5SteamValveController : MonoBehaviour
     private float _valveOpenPercent;
     private bool _questTercapai;
     private bool _sedangDiGrab;
+    private bool _valveHover;
+
     private bool _valvePenuhSudahDinotif;
     private bool _fieldSudahDibuka;
     private bool _fieldApdHintShown;
@@ -110,6 +112,10 @@ public class Level5SteamValveController : MonoBehaviour
     private float _yawTanganLastFrame;
     private bool _yawTanganValid;
     private bool _listenerTerpasang;
+    private UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable _valveSimple;
+    private GesturalHandwheel _valveGH;
+
+
     private Quaternion _valveWheelBaseLocalRotation = Quaternion.identity;
     private Quaternion _gaugeNeedleBaseLocalRotation = Quaternion.identity;
     private Transform _capturedValveWheel;
@@ -243,15 +249,15 @@ public class Level5SteamValveController : MonoBehaviour
         }
 
         bool berubah = false;
-        if (_sedangDiGrab && _interactorAttach != null)
-            berubah = TrackVRRotation();
+        if (_valveGH != null)
+            { _rotasiAkumulasi = _valveGH.OpenPercent01 * _totalDerajatFullOpen; berubah = true; }
 
         if (!berubah)
             berubah = SimulateValveInputKeyboard();
 
         // Fallback: kalau valve di-grab tapi yaw tangan gak valid, auto-open perlahan
         // supaya player gak stuck. 4 detik untuk full open (1440° / 360 deg/s).
-        if (!berubah && _sedangDiGrab)
+        if (false) // mekanisme lama auto-open dihapus: sekarang murni gestural seperti FV1
         {
             _rotasiAkumulasi = Mathf.Clamp(_rotasiAkumulasi + 360f * Time.deltaTime, 0f, _totalDerajatFullOpen);
             berubah = true;
@@ -273,25 +279,22 @@ public class Level5SteamValveController : MonoBehaviour
     private bool TrackVRRotation()
     {
         if (_valveWheel == null) return false;
-
-        // Hitung yaw tangan relatif terhadap parent valve (supaya rotasi valve cuma sumbu yang dipilih).
         Vector3 axisWorld = _valveWheel.parent != null
             ? _valveWheel.parent.TransformDirection(_sumbuRotasiValveLocal).normalized
             : _valveWheel.TransformDirection(_sumbuRotasiValveLocal).normalized;
 
-        // Project forward tangan ke bidang tegak lurus axis
-        Vector3 handForward = _interactorAttach.forward;
-        Vector3 projForward = Vector3.ProjectOnPlane(handForward, axisWorld).normalized;
+        // BARU: ikut TWIST tangan pemain (controller.up diproyeksikan ke bidang disc), bukan .forward.
+        Vector3 handVec = _interactorAttach.up;
+        Vector3 projForward = Vector3.ProjectOnPlane(handVec, axisWorld);
+        if (projForward.sqrMagnitude < 0.01f) { handVec = _interactorAttach.right; projForward = Vector3.ProjectOnPlane(handVec, axisWorld); }
         if (projForward.sqrMagnitude < 0.0001f) return false;
+        projForward.Normalize();
 
-        // Reference forward = arah right valve di bidang sumbu (stabil saat axis Y up)
-        Vector3 refForward = _valveWheel.parent != null
-            ? Vector3.ProjectOnPlane(_valveWheel.parent.right, axisWorld).normalized
-            : Vector3.ProjectOnPlane(Vector3.right, axisWorld).normalized;
+        Vector3 refForward = Vector3.ProjectOnPlane(Vector3.up, axisWorld);
+        if (refForward.sqrMagnitude < 0.0001f) refForward = Vector3.ProjectOnPlane(Vector3.right, axisWorld);
+        refForward.Normalize();
 
         float yawSekarang = Vector3.SignedAngle(refForward, projForward, axisWorld);
-
-        // Frame pertama setelah grab: belum punya reference, simpan dan skip delta.
         if (!_yawTanganValid)
         {
             _yawTanganLastFrame = yawSekarang;
@@ -301,15 +304,12 @@ public class Level5SteamValveController : MonoBehaviour
 
         float delta = Mathf.DeltaAngle(_yawTanganLastFrame, yawSekarang);
         _yawTanganLastFrame = yawSekarang;
+        if (Mathf.Abs(delta) > 35f) return false;   // buang lompatan teleport tangan
 
-        // Searah jarum jam dilihat dari atas (axis Y+) = delta negatif. Inversekan supaya CW = buka.
-        float deltaValve = -delta * _skalaResponsRotasiVR;
-        if (_balikkanArahRotasiVR)
-            deltaValve = -deltaValve;
-
-        // Buang delta tidak natural (dead zone + clamp jump besar dari teleport tangan)
-        if (Mathf.Abs(deltaValve) < 0.05f) return false;
-        if (Mathf.Abs(deltaValve) > 30f) return false;
+        // gesturalGain: gerakan kecil tangan -> putaran besar (seperti FV1).
+        float deltaValve = -delta * Mathf.Max(1f, _skalaResponsRotasiVR * 3f);
+        if (_balikkanArahRotasiVR) deltaValve = -deltaValve;
+        if (Mathf.Abs(deltaValve) < 0.001f) return false;
 
         _rotasiAkumulasi = Mathf.Clamp(_rotasiAkumulasi + deltaValve, 0f, _totalDerajatFullOpen);
         return true;
@@ -368,8 +368,8 @@ public class Level5SteamValveController : MonoBehaviour
 
         if (_valveWheel != null)
         {
-            Vector3 valveAxis = SafeAxis(_sumbuRotasiValveLocal, Vector3.forward);
-            _valveWheel.localRotation = _valveWheelBaseLocalRotation * Quaternion.AngleAxis(_rotasiAkumulasi, valveAxis);
+            // putaran wheel ditangani GesturalHandwheel (persis Level 8)
+            ; // (rotasi wheel via GesturalHandwheel)
         }
 
         if (_steamParticle != null)
@@ -447,13 +447,20 @@ public class Level5SteamValveController : MonoBehaviour
 
     private void WireXRGrabListeners()
     {
-        if (_listenerTerpasang) return;
-        if (_valveGrab == null && _valveWheel != null)
-            _valveGrab = _valveWheel.GetComponent<XRGrabInteractable>();
-        if (_valveGrab == null) return;
+        if (_listenerTerpasang || _valveWheel == null) return;
 
-        _valveGrab.selectEntered.AddListener(OnValveSelectEntered);
-        _valveGrab.selectExited.AddListener(OnValveSelectExited);
+        // Putaran PERSIS seperti Level 8 Flash Vessel: GesturalHandwheel menangani interaksi
+        // (XRSimpleInteractable hover+grab) + rotasi part mengelilingi pivot world.
+        var oldGrab = _valveWheel.GetComponent<XRGrabInteractable>();
+        if (oldGrab != null) Destroy(oldGrab);
+        var oldRb = _valveWheel.GetComponent<Rigidbody>();
+        if (oldRb != null) Destroy(oldRb);
+        _valveGrab = null;
+
+        _valveGH = _valveWheel.GetComponent<GesturalHandwheel>();
+        if (_valveGH == null) _valveGH = _valveWheel.gameObject.AddComponent<GesturalHandwheel>();
+        _valveGH.fullOpenDegrees = _totalDerajatFullOpen;
+        _valveGH.Setup(_valveWheel, null);
         _listenerTerpasang = true;
     }
 

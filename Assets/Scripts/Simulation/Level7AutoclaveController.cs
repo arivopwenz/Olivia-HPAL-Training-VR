@@ -149,6 +149,8 @@ public class Level7AutoclaveController : MonoBehaviour
     private float _inletValveDegrees;
     private float _inletValveOpenPercent;
     private bool _inletValveGrabbed;
+    private bool _inletValveHover;
+
     private bool _inletYawValid;
     private float _inletYawLast;
     private Transform _inletInteractorAttach;
@@ -291,7 +293,7 @@ public class Level7AutoclaveController : MonoBehaviour
 
         _phase = Phase.BukaInletValve;
         if (_hud != null) _hud.ShowNotifPublic(_msgStart);
-        EnsureInletValveInteractable();
+        EnsureInletValvePivot();
     }
 
     private void Update()
@@ -302,8 +304,9 @@ public class Level7AutoclaveController : MonoBehaviour
 
         if (_phase == Phase.BukaInletValve)
         {
-            bool changed = _inletValveGrabbed && TrackInletValveRotation();
-            changed |= SimulateValveKeyboard();
+            if (_inletGH != null) _inletValveOpenPercent = _inletGH.OpenPercent01;
+            bool changed = false;
+            if (_inletValveOpenPercent > 0.01f && _inletValveOpenPercent < 0.99f) SetStatusLamp(false);
             if (changed)
             {
                 UpdateInletValveVisuals();
@@ -930,16 +933,17 @@ public class Level7AutoclaveController : MonoBehaviour
     private Vector3[] _handwheelPartsBasePosition;
     private Vector3 _handwheelPivotWorld;
     private Vector3 _handwheelAxisWorld = Vector3.up;
+    private GesturalHandwheel _inletGH;
+
     private HandwheelVirtualPivot _handwheelVirtualPivot;
 
     private void EnsureInletValvePivot()
     {
-        if (_handwheelVirtualPivot != null) return;
+        if (_inletGH != null) return;
 
         Transform hub = FindByNameInactive("L7_LiquidUnderflow_Handwheel_Hub");
         if (hub == null) return;
 
-        // Buat pivot empty di posisi hub (di world root, supaya tidak terpengaruh scale 257 parent).
         if (_inletValvePivot == null)
         {
             GameObject pivotGo = new GameObject("L7_InletValve_Pivot_Runtime");
@@ -950,7 +954,6 @@ public class Level7AutoclaveController : MonoBehaviour
             _inletPivotBaseRotation = pivot.rotation;
         }
 
-        // Cache 6 parts: hub + outer ring + 4 spokes.
         string[] partTokens = {
             "L7_LiquidUnderflow_Handwheel_Hub",
             "L7_LiquidUnderflow_Handwheel_OuterRing",
@@ -967,21 +970,11 @@ public class Level7AutoclaveController : MonoBehaviour
         }
         _handwheelParts = parts.ToArray();
 
-        // Pakai HandwheelVirtualPivot (sama pattern dengan Level 5 preheater).
-        // Pivot ini akan auto-center ke mesh parts dan rotate seperti steering wheel.
-        _handwheelVirtualPivot = _inletValvePivot.GetComponent<HandwheelVirtualPivot>();
-        if (_handwheelVirtualPivot == null)
-            _handwheelVirtualPivot = _inletValvePivot.gameObject.AddComponent<HandwheelVirtualPivot>();
-
-        _handwheelVirtualPivot.SetMeshParts(_handwheelParts);
-        // Sumbu local pivot — coba auto-detect dari mesh bounds (pipe extruded direction).
-        _handwheelVirtualPivot.SetAxisLocal(_handwheelVirtualPivot.InferAxisLocalFromMeshBounds());
-        _handwheelVirtualPivot.CenterPivotToMeshParts();
-        _handwheelVirtualPivot.RecacheRestPose();
-
-        _handwheelPivotWorld = _inletValvePivot.position;
-        _handwheelAxisWorld = _inletValvePivot.TransformDirection(_inletValvePivot.up).normalized;
-        _inletPivotBaseRotation = _inletValvePivot.rotation;
+        // BARU: putaran PERSIS seperti Level 8 Flash Vessel (GesturalHandwheel di hub).
+        _inletGH = hub.GetComponent<GesturalHandwheel>();
+        if (_inletGH == null) _inletGH = hub.gameObject.AddComponent<GesturalHandwheel>();
+        _inletGH.fullOpenDegrees = _inletValveFullOpenDegrees;
+        _inletGH.Setup(hub, _handwheelParts);
     }
 
     /// <summary>
@@ -1025,30 +1018,37 @@ public class Level7AutoclaveController : MonoBehaviour
     {
         if (_inletValvePivot == null) return;
 
-        var simple = _inletValvePivot.GetComponent<XRSimpleInteractable>();
-        if (simple != null) Destroy(simple);
+        // Mekanisme BARU (seperti FV1_To_FV2_..._BypassHandwheel): XRSimpleInteractable supaya
+        // handwheel hanya BERPUTAR di tempat (tidak ketarik mengikuti tangan); hover & grab sama-sama memutar.
+        var oldGrab = _inletValvePivot.GetComponent<XRGrabInteractable>();
+        if (oldGrab != null) Destroy(oldGrab);
+        var oldRb = _inletValvePivot.GetComponent<Rigidbody>();
+        if (oldRb != null) Destroy(oldRb);
+        _inletValveGrab = null;
 
-        _inletValveGrab = _inletValvePivot.GetComponent<XRGrabInteractable>()
-                       ?? _inletValvePivot.gameObject.AddComponent<XRGrabInteractable>();
-        _inletValveGrab.enabled = true;
-
-        if (_inletValvePivot.GetComponent<Collider>() == null)
-        {
-            SphereCollider col = _inletValvePivot.gameObject.AddComponent<SphereCollider>();
-            col.radius = 0.55f;
-            col.isTrigger = false;
-        }
+        var valveCollider = _inletValvePivot.GetComponent<SphereCollider>();
+        if (valveCollider == null) valveCollider = _inletValvePivot.gameObject.AddComponent<SphereCollider>();
+        valveCollider.radius = LocalRadiusForWorld(_inletValvePivot, 0.7f);
+        valveCollider.isTrigger = false;
         foreach (var c in _inletValvePivot.GetComponentsInChildren<Collider>(true))
             if (c != null) c.enabled = true;
 
-        var rb = _inletValvePivot.GetComponent<Rigidbody>() ?? _inletValvePivot.gameObject.AddComponent<Rigidbody>();
-        rb.isKinematic = true;
-        rb.useGravity = false;
+        var simple = _inletValvePivot.GetComponent<XRSimpleInteractable>();
+        if (simple == null) simple = _inletValvePivot.gameObject.AddComponent<XRSimpleInteractable>();
+        // Daftarkan collider EKSPLISIT (kalau ditambah via script, list interactable kosong -> gak bisa di-select).
+        simple.colliders.Clear();
+        foreach (var c in _inletValvePivot.GetComponents<Collider>())
+            if (c != null) simple.colliders.Add(c);
+        simple.enabled = false; simple.enabled = true;
 
-        _inletValveGrab.selectEntered.RemoveAllListeners();
-        _inletValveGrab.selectExited.RemoveAllListeners();
-        _inletValveGrab.selectEntered.AddListener(OnInletGrabbed);
-        _inletValveGrab.selectExited.AddListener(OnInletReleased);
+        simple.selectEntered.RemoveAllListeners();
+        simple.selectExited.RemoveAllListeners();
+        simple.hoverEntered.RemoveAllListeners();
+        simple.hoverExited.RemoveAllListeners();
+        simple.selectEntered.AddListener(OnInletGrabbed);
+        simple.selectExited.AddListener(OnInletReleased);
+        simple.hoverEntered.AddListener((a) => { _inletValveHover = true; _inletInteractorAttach = a.interactorObject != null ? a.interactorObject.transform : _inletInteractorAttach; });
+        simple.hoverExited.AddListener((a) => { _inletValveHover = false; _inletYawValid = false; });
     }
 
     private void OnInletGrabbed(UnityEngine.XR.Interaction.Toolkit.SelectEnterEventArgs args)
@@ -1075,25 +1075,22 @@ public class Level7AutoclaveController : MonoBehaviour
             : _inletValvePivot.TransformDirection(_inletValveAxisLocal).normalized;
         if (axisWorld.sqrMagnitude < 0.001f) axisWorld = Vector3.up;
 
-        Vector3 projected = Vector3.ProjectOnPlane(_inletInteractorAttach.forward, axisWorld).normalized;
-        if (projected.sqrMagnitude < 0.001f) return false;
-        Vector3 reference = _inletValvePivot.parent != null
-            ? Vector3.ProjectOnPlane(_inletValvePivot.parent.right, axisWorld).normalized
-            : Vector3.ProjectOnPlane(Vector3.right, axisWorld).normalized;
+        // BARU: ikut TWIST tangan pemain (controller.up diproyeksikan ke bidang disc), bukan .forward.
+        Vector3 handVec = _inletInteractorAttach.up;
+        Vector3 projected = Vector3.ProjectOnPlane(handVec, axisWorld);
+        if (projected.sqrMagnitude < 0.01f) { handVec = _inletInteractorAttach.right; projected = Vector3.ProjectOnPlane(handVec, axisWorld); }
+        if (projected.sqrMagnitude < 0.0001f) return false;
+        projected.Normalize();
+        Vector3 reference = Vector3.ProjectOnPlane(Vector3.up, axisWorld);
+        if (reference.sqrMagnitude < 0.0001f) reference = Vector3.ProjectOnPlane(Vector3.right, axisWorld);
+        reference.Normalize();
         float yaw = Vector3.SignedAngle(reference, projected, axisWorld);
-        if (!_inletYawValid)
-        {
-            _inletYawLast = yaw;
-            _inletYawValid = true;
-            return false;
-        }
-        float delta = -Mathf.DeltaAngle(_inletYawLast, yaw) * 1.4f;
+        if (!_inletYawValid) { _inletYawLast = yaw; _inletYawValid = true; return false; }
+        float dYaw = Mathf.DeltaAngle(_inletYawLast, yaw);
         _inletYawLast = yaw;
-        if (Mathf.Abs(delta) < 0.05f || Mathf.Abs(delta) > 35f)
-        {
-            // Auto-rotate fallback when grabbed but yaw not valid.
-            delta = 360f * Time.deltaTime;
-        }
+        if (Mathf.Abs(dYaw) > 35f) dYaw = 0f;
+        float delta = dYaw * 5f; // gesturalGain: gerakan kecil tangan -> putaran besar.
+        if (Mathf.Abs(delta) < 0.0001f) return false;
         _inletValveDegrees = Mathf.Clamp(_inletValveDegrees + delta, 0f, _inletValveFullOpenDegrees);
         return true;
     }
@@ -1756,5 +1753,12 @@ public class Level7AutoclaveController : MonoBehaviour
     {
         _slurryFillProgress = 1f;
         UpdateSlurryShader(1f);
+    }
+
+    private static float LocalRadiusForWorld(Transform t, float worldRadius)
+    {
+        Vector3 s = t != null ? t.lossyScale : Vector3.one;
+        float maxAxis = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z), 0.0001f);
+        return worldRadius / maxAxis;
     }
 }

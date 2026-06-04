@@ -36,7 +36,7 @@ public class Level4SlurryPumpController : MonoBehaviour
     [Tooltip("Material liquid (slurry orange).")]
     [SerializeField] private Material _liquidMaterial;
     [Tooltip("Durasi liquid mengisi pipa (detik).")]
-    [SerializeField] private float _durasiLiquidMengalir = 12f;
+    [SerializeField] private float _durasiLiquidMengalir = 32f;
     [SerializeField] private AnimationCurve _kurvaLiquid = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
     [Tooltip("Diameter liquid relatif terhadap pipa (0.85 = sedikit lebih kecil supaya muat).")]
     [Range(0.5f, 0.99f)] [SerializeField] private float _diameterRelatif = 0.88f;
@@ -119,6 +119,7 @@ public class Level4SlurryPumpController : MonoBehaviour
     private MaterialPropertyBlock _mpb;
     private bool _highlightPumpAktif;
     private bool _highlightPreheaterAktif;
+    private ProcessPipeFlowAnimator _slurryToPreheaterFlow;
     private AudioSource _audioSource;
     private AudioSource _pumpAudioSource;
     private GameObject _liquidFillRuntime;
@@ -203,13 +204,13 @@ public class Level4SlurryPumpController : MonoBehaviour
             case GameLevelManager.Level4Phase.MenungguLaporanFlow:
                 if (_hud != null)
                     _hud.ShowNotifPublic("Flow rate 450 m³/h tercapai. Tahan T dan lapor: 'slurry pump aktif'.");
-                // Mulai pump motor sound (player baru hidupkan pump dengan flow rate tepat)
-                SetLevel4PipeFlow(true);
+                // Jangan nyalakan visual seluruh pipa di DCS. Aliran baru terlihat bertahap setelah player di field.
+                SetLevel4PipeFlow(false);
                 StartPumpSound();
                 break;
 
             case GameLevelManager.Level4Phase.ObservasiPump:
-                SetLevel4PipeFlow(true);
+                SetLevel4PipeFlow(false);
                 StartSequence(SeqTeleportKeFieldDanFillPipa());
                 break;
 
@@ -252,6 +253,7 @@ public class Level4SlurryPumpController : MonoBehaviour
         yield return new WaitForSeconds(_jedaDiPump);
 
         yield return StartCoroutine(AnimasikanLiquidFillPipa());
+        SetLevel4PipeFlow(true);
 
         SetHighlight(_pumpHighlightRenderers, false, ref _highlightPumpAktif);
         SetHighlight(_preheaterHighlightRenderers, true, ref _highlightPreheaterAktif);
@@ -289,6 +291,8 @@ public class Level4SlurryPumpController : MonoBehaviour
         // Snapshot tank fill state awal (penuh) untuk drain animation
         Vector3 tankScaleAwal = _slurryTankFill != null ? _slurryTankFill.localScale : Vector3.one;
         Vector3 tankPosAwal = _slurryTankFill != null ? _slurryTankFill.localPosition : Vector3.zero;
+        ProcessPipeSegment[] animatedRouteSegments = BuildLevel4RouteSegmentsForAnimation();
+        SetRouteSegmentsProgress(animatedRouteSegments, 0f);
 
         float elapsed = 0f;
         while (elapsed < _durasiLiquidMengalir)
@@ -323,6 +327,8 @@ public class Level4SlurryPumpController : MonoBehaviour
                 _slurryTankFill.localPosition = tPos;
             }
 
+            SetRouteSegmentsProgress(animatedRouteSegments, curveT);
+
             yield return null;
         }
 
@@ -344,6 +350,53 @@ public class Level4SlurryPumpController : MonoBehaviour
             Vector3 tPos = _slurryTankFill.localPosition;
             tPos.y = _slurryTankPosYAkhir;
             _slurryTankFill.localPosition = tPos;
+        }
+        SetRouteSegmentsProgress(animatedRouteSegments, 1f);
+    }
+
+    private ProcessPipeSegment[] BuildLevel4RouteSegmentsForAnimation()
+    {
+        if (_pipeNetwork == null)
+        {
+            var mesinUtama = GameObject.Find("Mesin Utama");
+            if (mesinUtama != null)
+                _pipeNetwork = mesinUtama.GetComponent<ProcessPipeNetwork>();
+        }
+
+        if (_pipeNetwork == null || _level4FlowRouteIds == null)
+            return System.Array.Empty<ProcessPipeSegment>();
+
+        var ordered = new System.Collections.Generic.List<ProcessPipeSegment>();
+        var seen = new System.Collections.Generic.HashSet<ProcessPipeSegment>();
+        for (int i = 0; i < _level4FlowRouteIds.Length; i++)
+        {
+            string routeId = _level4FlowRouteIds[i];
+            if (string.IsNullOrWhiteSpace(routeId))
+                continue;
+
+            ProcessPipeSegment[] routeSegments = _pipeNetwork.GetRouteSegments(routeId);
+            for (int s = 0; s < routeSegments.Length; s++)
+            {
+                ProcessPipeSegment segment = routeSegments[s];
+                if (segment != null && seen.Add(segment))
+                    ordered.Add(segment);
+            }
+        }
+
+        return ordered.ToArray();
+    }
+
+    private void SetRouteSegmentsProgress(ProcessPipeSegment[] segments, float progress)
+    {
+        if (segments == null || segments.Length == 0)
+            return;
+
+        progress = Mathf.Clamp01(progress);
+        int activeCount = Mathf.Clamp(Mathf.CeilToInt(progress * segments.Length), 0, segments.Length);
+        for (int i = 0; i < segments.Length; i++)
+        {
+            if (segments[i] != null)
+                segments[i].SetFlowActive(i < activeCount);
         }
     }
 
@@ -435,9 +488,21 @@ public class Level4SlurryPumpController : MonoBehaviour
 
     private void SetLevel4PipeFlow(bool active)
     {
+        bool canSearchScene = isActiveAndEnabled && gameObject.activeInHierarchy;
+
+        if (_slurryToPreheaterFlow == null)
+        {
+            if (canSearchScene)
+            {
+                var sf = GameObject.Find("SlurryToPreheater_SlurryFlow");
+                if (sf != null) _slurryToPreheaterFlow = sf.GetComponent<ProcessPipeFlowAnimator>();
+            }
+        }
+        if (_slurryToPreheaterFlow != null) _slurryToPreheaterFlow.SetFlowing(active);
+
         if (_pipeNetwork == null)
         {
-            if (!isActiveAndEnabled || !gameObject.activeInHierarchy)
+            if (!canSearchScene)
                 return;
 
             var mesinUtama = GameObject.Find("Mesin Utama");
