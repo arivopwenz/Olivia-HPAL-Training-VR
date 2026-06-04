@@ -88,7 +88,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     [Tooltip("GameObject Transparent_CalibrationColumn yang akan diisi cairan dari bawah ke atas saat acid mengalir.")]
     [SerializeField] private Transform _calibrationColumn;
     [SerializeField] private Transform _calibrationColumnLiquid;
-    [SerializeField] private float _columnFillDuration = 6f;
+    [SerializeField] private float _columnFillDuration = 14f;
     [SerializeField] private TMPro.TMP_Text _columnLevelLabel;
 
     [Header("=== Flow Visuals ===")]
@@ -98,9 +98,9 @@ public class Level6AcidInjectionController : MonoBehaviour
     [SerializeField] private Transform _acidLineEnd;
     [SerializeField] private GameObject _autoclaveLiquidObject;
     [SerializeField] private float _delaySetelahValveTerbuka = 2.5f;
-    [SerializeField] private float _durasiSlurryFlow = 5f;
-    [SerializeField] private float _durasiAutoclaveFill = 6f;
-    [SerializeField] private float _durasiAcidFlow = 5f;
+    [SerializeField] private float _durasiSlurryFlow = 16f;
+    [SerializeField] private float _durasiAutoclaveFill = 18f;
+    [SerializeField] private float _durasiAcidFlow = 14f;
 
     [Header("=== Audio ===")]
     [SerializeField] private AudioSource _flowAudio;
@@ -256,12 +256,8 @@ public class Level6AcidInjectionController : MonoBehaviour
         {
             bool changed = _slurryGrabbed && TrackWheelRotation(_slurryValveWheel, _slurryInteractorAttach, _slurryValveAxisLocal, ref _slurryYawLast, ref _slurryYawValid, ref _slurryValveDegrees, _slurryFullOpenDegrees);
             changed |= SimulateKeyboard(ref _slurryValveDegrees, _slurryFullOpenDegrees);
-            // Fallback: kalau valve di-grab tapi gak ada yaw delta yang valid, auto-open perlahan biar player gak frustrasi.
-            if (_slurryGrabbed && !changed)
-            {
-                _slurryValveDegrees = Mathf.Clamp(_slurryValveDegrees + 360f * Time.deltaTime, 0f, _slurryFullOpenDegrees);
-                changed = true;
-            }
+            // Auto-open fallback DIHAPUS atas permintaan: rotasi murni dari deteksi tangan
+            // realtime atau tombol R/F (SimulateKeyboard). Tidak auto-spin saat grabbed.
             if (changed) UpdateSlurryValveVisuals();
             if (_slurryOpenPercent >= 0.99f) StartSequence(SlurryFlowCoroutine());
         }
@@ -305,6 +301,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     {
         if (!IsLevel6() || _phase != Phase.DcsAcidSetup) return;
         _strokePercentCurrent = Mathf.Clamp(_strokePercentCurrent + _strokeStepPerClick, 0f, 100f);
+        GameLevelManager.Instance?.SetAcidStroke(_strokePercentCurrent);
         UpdateAcidDisplay();
         TryAdvanceDcsAcid();
     }
@@ -313,6 +310,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     {
         if (!IsLevel6() || _phase != Phase.DcsAcidSetup) return;
         _strokePercentCurrent = Mathf.Clamp(_strokePercentCurrent - _strokeStepPerClick, 0f, 100f);
+        GameLevelManager.Instance?.SetAcidStroke(_strokePercentCurrent);
         UpdateAcidDisplay();
         TryAdvanceDcsAcid();
     }
@@ -610,12 +608,24 @@ public class Level6AcidInjectionController : MonoBehaviour
     private bool TrackWheelRotation(Transform wheel, Transform attach, Vector3 localAxis, ref float yawLast, ref bool yawValid, ref float degrees, float maxDegrees)
     {
         if (wheel == null || attach == null) return false;
+        // Sumbu putar wheel dalam world space.
         Vector3 axisWorld = wheel.parent != null ? wheel.parent.TransformDirection(localAxis).normalized : wheel.TransformDirection(localAxis).normalized;
         if (axisWorld.sqrMagnitude < 0.001f) axisWorld = Vector3.up;
-        Vector3 projected = Vector3.ProjectOnPlane(attach.forward, axisWorld).normalized;
-        if (projected.sqrMagnitude < 0.001f) return false;
-        Vector3 reference = wheel.parent != null ? Vector3.ProjectOnPlane(wheel.parent.right, axisWorld).normalized : Vector3.ProjectOnPlane(Vector3.right, axisWorld).normalized;
-        float yaw = Vector3.SignedAngle(reference, projected, axisWorld);
+
+        // REAL VR FEEL: ukur posisi tangan player relatif ke pusat wheel, lalu hitung sudut
+        // pada bidang tegak lurus sumbu wheel. Saat tangan bergerak tangensial mengelilingi
+        // wheel (cara natural memutar setir), sudut bergeser dan wheel ikut berputar real-time.
+        Vector3 fromCenter = attach.position - wheel.position;
+        Vector3 inPlane = Vector3.ProjectOnPlane(fromCenter, axisWorld);
+        if (inPlane.sqrMagnitude < 0.0009f) return false; // tangan terlalu dekat pusat -> ambigu
+
+        // Reference radial (kanan wheel) untuk mengukur sudut absolut.
+        Vector3 reference = wheel.parent != null
+            ? Vector3.ProjectOnPlane(wheel.parent.right, axisWorld).normalized
+            : Vector3.ProjectOnPlane(Vector3.right, axisWorld).normalized;
+        if (reference.sqrMagnitude < 0.001f) reference = Vector3.right;
+
+        float yaw = Vector3.SignedAngle(reference, inPlane.normalized, axisWorld);
         if (!yawValid)
         {
             yawLast = yaw;
@@ -623,9 +633,14 @@ public class Level6AcidInjectionController : MonoBehaviour
             return false;
         }
 
-        float delta = -Mathf.DeltaAngle(yawLast, yaw) * 1.35f;
+        // Delta sudut antara frame ini dan sebelumnya. Pengali 1.0 = 1:1 (real). Tanda
+        // dinegasi supaya searah jarum jam menambah pembukaan valve (konvensi lapangan).
+        float delta = -Mathf.DeltaAngle(yawLast, yaw);
         yawLast = yaw;
-        if (Mathf.Abs(delta) < 0.05f || Mathf.Abs(delta) > 35f) return false;
+
+        // Filter noise kecil + outlier besar (e.g. teleport/glitch tracking).
+        if (Mathf.Abs(delta) < 0.05f || Mathf.Abs(delta) > 60f) return false;
+
         degrees = Mathf.Clamp(degrees + delta, 0f, maxDegrees);
         return true;
     }
@@ -756,6 +771,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         _acidRatioCurrent = 0f;
         _phCurrent = _phStart;
         _strokePercentCurrent = 0f;
+        GameLevelManager.Instance?.SetAcidStroke(0f);
         _tankSelected = 0;
         _acidArmed = false;
         _slurryValveDegrees = 0f;
@@ -1107,7 +1123,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         SphereCollider col = root.GetComponent<SphereCollider>();
         if (col == null) col = root.AddComponent<SphereCollider>();
         col.center = new Vector3(0f, 0.12f, 0f);
-        col.radius = 0.22f;
+        col.radius = LocalRadiusForWorld(root.transform, 0.22f);
         col.isTrigger = false;
 
         XRSimpleInteractable simple = root.GetComponent<XRSimpleInteractable>();
@@ -1214,8 +1230,13 @@ public class Level6AcidInjectionController : MonoBehaviour
         if (wheel.GetComponent<Collider>() == null)
         {
             SphereCollider col = wheel.gameObject.AddComponent<SphereCollider>();
-            col.radius = 0.42f;
+            col.radius = LocalRadiusForWorld(wheel, 0.42f);
             col.isTrigger = false;
+        }
+        else if (wheel.GetComponent<Collider>() is SphereCollider sphere)
+        {
+            sphere.radius = LocalRadiusForWorld(wheel, 0.42f);
+            sphere.isTrigger = false;
         }
         // Pastikan semua collider enabled
         foreach (var col in wheel.GetComponentsInChildren<Collider>(true))
@@ -1318,17 +1339,9 @@ public class Level6AcidInjectionController : MonoBehaviour
 
     private void EnsureAutoclaveLiquid()
     {
-        if (_autoclaveLiquidObject != null) return;
-        _autoclaveLiquidObject = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        _autoclaveLiquidObject.name = "L6_Autoclave_PurpleLiquid_Rising_Runtime";
-        _autoclaveLiquidObject.transform.SetParent(_runtimeRoot.transform, true);
-        _autoclaveLiquidObject.transform.position = GetAutoclaveLiquidTargetPosition();
-        _autoclaveLiquidObject.transform.localScale = new Vector3(3f, 0.04f, 3f);
-        Collider col = _autoclaveLiquidObject.GetComponent<Collider>();
-        if (col != null) Destroy(col);
-        Renderer renderer = _autoclaveLiquidObject.GetComponent<Renderer>();
-        if (renderer != null) renderer.sharedMaterial = _slurryMat;
-        _autoclaveLiquidObject.SetActive(false);
+        // DIHAPUS atas permintaan: L6_Autoclave_PurpleLiquid_Rising_Runtime tidak dibuat lagi.
+        // Cairan ungu di dalam autoclave digantikan oleh aliran via pipa L5/L7 (tabung) saja.
+        return;
     }
 
     private Vector3 GetAutoclaveLiquidTargetPosition()
@@ -1579,26 +1592,37 @@ public class Level6AcidInjectionController : MonoBehaviour
     {
         if (_dcsAcidPanelRoot != null) return;
 
-        // Position panel: di sebelah KIRI player view, supaya tidak menutupi DCS reactor monitoring canvas.
-        // Spawn DCS at (-2.12, 8.36, 16.28). DCS button area di z=17.17-18.05, x=-2.77 to -1.46.
-        // Panel acid placement: x kiri (-3.5), y eye level (~9.3), z agak depan (17.6).
-        Vector3 spawnPos = _teleportTargetDcs != null ? _teleportTargetDcs.position : new Vector3(-2.12f, 8.36f, 16.28f);
-        Vector3 spawnFwd = _teleportTargetDcs != null ? _teleportTargetDcs.forward : Vector3.forward;
-        // Offset: 1.4m forward + 1.6m kiri (relative to spawn forward) + 1m up (eye level)
-        Vector3 leftDir = Vector3.Cross(Vector3.up, spawnFwd).normalized;
-        Vector3 panelPos = spawnPos + spawnFwd * 1.4f + leftDir * 1.6f + Vector3.up * 1.0f;
-
         GameObject root = new GameObject("L6_DCS_AcidControlPanel_Runtime");
         if (_runtimeRoot != null) root.transform.SetParent(_runtimeRoot.transform, true);
-        root.transform.position = panelPos;
 
-        // Panel face TOWARDS player (rotate panel sehingga player melihat front face).
-        Vector3 awayFromPlayer = (panelPos - spawnPos);
-        awayFromPlayer.y = 0f;
-        awayFromPlayer.Normalize();
-        if (awayFromPlayer.sqrMagnitude < 0.001f) awayFromPlayer = spawnFwd.normalized;
-        root.transform.rotation = Quaternion.LookRotation(awayFromPlayer, Vector3.up);
-        _dcsAcidPanelRoot = root;
+        // TARUH DI LAYAR KIRI (VW_Side_L_Screen) supaya enak dilihat di layar video wall.
+        // Operator menghadap +Z; panel ditaruh tepat di depan layar kiri & menghadap operator (-Z).
+        Transform leftScreen = FindTransformByName("VW_Side_L_Screen") ?? FindTransformContains("VW_Side_L_Screen");
+        if (leftScreen != null)
+        {
+            Vector3 sc = leftScreen.position;            // (~-5.67, 10.42, 20.02)
+            Vector3 panelPos = new Vector3(sc.x, sc.y, sc.z - 0.06f);
+            root.transform.position = panelPos;
+            // Konten panel (teks) menghadap local -Z. Supaya terbaca operator (yang menghadap +Z),
+            // panel local +Z harus mengarah +Z (ke dinding) -> rotasi identity. (back = mirror).
+            root.transform.rotation = Quaternion.identity;
+            _dcsAcidPanelRoot = root;
+        }
+        else
+        {
+            // Fallback: posisi lama di kiri view DCS kalau layar tidak ketemu.
+            Vector3 spawnPos = _teleportTargetDcs != null ? _teleportTargetDcs.position : new Vector3(-2.12f, 8.36f, 16.28f);
+            Vector3 spawnFwd = _teleportTargetDcs != null ? _teleportTargetDcs.forward : Vector3.forward;
+            Vector3 leftDir = Vector3.Cross(Vector3.up, spawnFwd).normalized;
+            Vector3 panelPos = spawnPos + spawnFwd * 1.4f + leftDir * 1.6f + Vector3.up * 1.0f;
+            root.transform.position = panelPos;
+            Vector3 awayFromPlayer = (panelPos - spawnPos);
+            awayFromPlayer.y = 0f;
+            awayFromPlayer.Normalize();
+            if (awayFromPlayer.sqrMagnitude < 0.001f) awayFromPlayer = spawnFwd.normalized;
+            root.transform.rotation = Quaternion.LookRotation(awayFromPlayer, Vector3.up);
+            _dcsAcidPanelRoot = root;
+        }
 
         // Background plate (1.4m wide x 1.0m tall) — lebih kecil dari sebelumnya
         GameObject bg = GameObject.CreatePrimitive(PrimitiveType.Cube);
@@ -1658,6 +1682,10 @@ public class Level6AcidInjectionController : MonoBehaviour
         if (!_acidArmWired && _btnAcidArm != null) { _btnAcidArm.selectEntered.AddListener(_ => ArmAcidSystem()); _acidArmWired = true; }
 
         UpdateAcidDisplay();
+
+        // Skala panel supaya pas di depan layar kiri (layar 1.0x1.5m; panel 1.4x1.0m).
+        if (_dcsAcidPanelRoot != null && FindTransformByName("VW_Side_L_Screen") != null)
+            _dcsAcidPanelRoot.transform.localScale = Vector3.one * 0.62f;
     }
 
     private void CreateRow(Transform parent, string idPrefix, string label, string unit, string target, float yPos,
@@ -1903,6 +1931,13 @@ public class Level6AcidInjectionController : MonoBehaviour
         _acidGrabbed = false;
         _acidInteractorAttach = null;
         _acidYawValid = false;
+    }
+
+    private static float LocalRadiusForWorld(Transform t, float worldRadius)
+    {
+        Vector3 s = t != null ? t.lossyScale : Vector3.one;
+        float maxAxis = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z), 0.0001f);
+        return worldRadius / maxAxis;
     }
 
     public float AcidRatioCurrent => _acidRatioCurrent;

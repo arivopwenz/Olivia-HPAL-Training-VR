@@ -42,8 +42,8 @@ public class Level8FlashTrainController : MonoBehaviour
     [SerializeField] private Transform _fv2HandwheelHub;
     [SerializeField] private Transform _fv3HandwheelHub;
     [SerializeField] private float _handwheelFullOpenDegrees = 300f; // ~0.8 putaran (dipermudah lagi dari 540)
-    [Tooltip("Pengali sensitivitas gestural: gerakan tangan kecil -> putaran besar (makin mudah).")]
-    [SerializeField] private float _gesturalGain = 5f;
+    [Tooltip("Pengali sensitivitas twist. 1.5 = sedikit amplifikasi, terkendali. Jangan 5 (kebut).")]
+    [SerializeField] private float _gesturalGain = 1.5f;
 
     [Header("=== Cascade Panel + Slurry Visualisation ===")]
     [SerializeField] private Renderer _fv1StatusStrip;
@@ -553,10 +553,11 @@ public class Level8FlashTrainController : MonoBehaviour
     {
         if ((hw.grabbed || hw.hovered) && hw.interactorAttach != null)
         {
+            // TWIST tangan (orientasi controller) — versi yang terbukti bisa diputar dgn ray/hover.
             Vector3 axis = hw.axisWorld;
             Vector3 handVec = hw.interactorAttach.up;
             Vector3 projected = Vector3.ProjectOnPlane(handVec, axis);
-            if (projected.sqrMagnitude < 0.01f) { handVec = hw.interactorAttach.right; projected = Vector3.ProjectOnPlane(handVec, axis); }
+            if (projected.sqrMagnitude < 0.02f) { handVec = hw.interactorAttach.right; projected = Vector3.ProjectOnPlane(handVec, axis); }
             if (projected.sqrMagnitude > 0.0001f)
             {
                 projected.Normalize();
@@ -565,7 +566,7 @@ public class Level8FlashTrainController : MonoBehaviour
                 refF.Normalize();
                 float yawNow = Vector3.SignedAngle(refF, projected, axis);
                 if (!hw.yawValid) { hw.yawLast = yawNow; hw.yawValid = true; }
-                else { float d = Mathf.DeltaAngle(hw.yawLast, yawNow); hw.yawLast = yawNow; if (Mathf.Abs(d) > 35f) d = 0f; return d * Mathf.Max(1f, _gesturalGain); }
+                else { float d = Mathf.DeltaAngle(hw.yawLast, yawNow); hw.yawLast = yawNow; if (Mathf.Abs(d) > 60f) d = 0f; return d * Mathf.Max(1f, _gesturalGain); }
             }
         }
         else hw.yawValid = false;
@@ -582,53 +583,12 @@ public class Level8FlashTrainController : MonoBehaviour
         //    Tahan Shift+key untuk memutar TUTUP (CCW), tapi gak diizinkan di SOP — biarkan jalan satu arah.
         if (Input.GetKey(debugKey)) deltaDeg += 360f * Time.deltaTime; // 1 putaran/detik
 
-        // 2) GESTURAL VR: track delta yaw tangan player saat hover/grab handwheel.
-        //    Pakai controller.up (vector "atas tangan") yang berubah saat player twist pergelangan
-        //    di sumbu forward. Project ke bidang disc handwheel.
-        if ((hw.grabbed || hw.hovered) && hw.interactorAttach != null)
-        {
-            Vector3 axis = hw.axisWorld;
-            // Pilih vektor tangan yang punya komponen TERBESAR di bidang disc:
-            // .up dan .right keduanya tegak lurus .forward. Untuk disc vertikal (axis ≈ ±X),
-            // .up dan .right ada di bidang disc → twist pergelangan = perubahan keduanya.
-            Vector3 handVec = hw.interactorAttach.up;
-            Vector3 projected = Vector3.ProjectOnPlane(handVec, axis);
-            if (projected.sqrMagnitude < 0.01f)
-            {
-                handVec = hw.interactorAttach.right;
-                projected = Vector3.ProjectOnPlane(handVec, axis);
-            }
-            if (projected.sqrMagnitude > 0.0001f)
-            {
-                projected.Normalize();
-                Vector3 refForward = Vector3.ProjectOnPlane(Vector3.up, axis);
-                if (refForward.sqrMagnitude < 0.0001f) refForward = Vector3.ProjectOnPlane(Vector3.right, axis);
-                refForward.Normalize();
-                float yawNow = Vector3.SignedAngle(refForward, projected, axis);
-
-                if (!hw.yawValid)
-                {
-                    hw.yawLast = yawNow;
-                    hw.yawValid = true;
-                }
-                else
-                {
-                    float dYaw = Mathf.DeltaAngle(hw.yawLast, yawNow);
-                    hw.yawLast = yawNow;
-                    if (Mathf.Abs(dYaw) > 35f) dYaw = 0f;
-                    // Sign convention: SignedAngle dengan axis = -X (sumbu real handwheel),
-                    // putar tangan CW dari sudut pandang player (yang melihat dari +X) menghasilkan
-                    // dYaw POSITIF. Player expects CW = membuka valve → degrees naik.
-                    // _gesturalGain: gerakan kecil tangan -> putaran besar (makin gampang).
-                    deltaDeg += dYaw * Mathf.Max(1f, _gesturalGain);
-                }
-            }
-        }
-        else
-        {
-            // Lepas grab/hover: invalidate baseline supaya saat grab lagi, baseline diambil ulang.
-            hw.yawValid = false;
-        }
+        // 2) REAL VR FEEL (gaya Level 6 TrackWheelRotation): ukur POSISI tangan player
+        //    relatif ke pusat wheel, proyeksikan ke bidang disc, lalu hitung sudut.
+        //    Saat tangan bergerak tangensial mengelilingi wheel (cara natural memutar
+        //    setir), sudut bergeser dan wheel ikut berputar real-time. Lebih riil & immersive
+        //    daripada twist orientasi pergelangan.
+        deltaDeg += GetGesturalDelta(hw);
 
         if (Mathf.Abs(deltaDeg) < 0.0001f) return;
 
@@ -836,13 +796,14 @@ public class Level8FlashTrainController : MonoBehaviour
             // Collider untuk area select. NON-trigger supaya XR interactor (ray/sphere cast) bisa hit.
             // Radius besar supaya gampang di-target di VR/simulator.
             Collider col = target.GetComponent<Collider>();
-            if (col == null)
+            var sphere = col as SphereCollider;
+            if (sphere == null)
             {
-                var sc = go.AddComponent<SphereCollider>();
-                sc.radius = 0.7f;
-                sc.isTrigger = false;
-                col = sc;
+                sphere = go.AddComponent<SphereCollider>();
+                col = sphere;
             }
+            sphere.radius = LocalRadiusForWorld(target, 0.7f);
+            sphere.isTrigger = false;
 
             // BUANG XRGrabInteractable + Rigidbody kalau ada (sisa versi lama) supaya objek
             // TIDAK ketarik mengikuti tangan. Handwheel hanya BERPUTAR di tempat.
@@ -2288,6 +2249,13 @@ public class Level8FlashTrainController : MonoBehaviour
     private void StopAudio(AudioSource src)
     {
         if (src != null && src.isPlaying) src.Stop();
+    }
+
+    private static float LocalRadiusForWorld(Transform t, float worldRadius)
+    {
+        Vector3 s = t != null ? t.lossyScale : Vector3.one;
+        float maxAxis = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z), 0.0001f);
+        return worldRadius / maxAxis;
     }
 
     // ============================================================

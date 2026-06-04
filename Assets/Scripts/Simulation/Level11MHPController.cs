@@ -161,7 +161,7 @@ public class Level11MHPController : MonoBehaviour
 
         SetProcessVisuals(true);
         if (_feedLiquid != null) _feedLiquid.SetActive(true);
-        Start(_agitatorAudio, 0.34f);
+        PlayAudio(_agitatorAudio, 0.34f);
         BuildOperatorStation();
         _stageIndex = 0;
         BeginDoseStage();
@@ -217,7 +217,7 @@ public class Level11MHPController : MonoBehaviour
     private IEnumerator DoseRoutine(int idx)
     {
         var s = _stages[idx];
-        Start(_doseAudio, 0.4f);
+        PlayAudio(_doseAudio, 0.4f);
         if (_reagentLiquid != null) _reagentLiquid.SetActive(true);
         float t = 0f;
         while (t < _doseDuration)
@@ -239,7 +239,7 @@ public class Level11MHPController : MonoBehaviour
         {
             _stage3 = true; _mhpQuality = 92f;
             if (_mhpSampleFlow != null) _mhpSampleFlow.SetActive(true);
-            Start(_readyAudio, 0.32f);
+            PlayAudio(_readyAudio, 0.32f);
         }
 
         if (idx < 2) { _stageIndex = idx + 1; BeginDoseStage(); }
@@ -302,7 +302,7 @@ public class Level11MHPController : MonoBehaviour
         {
             _sampleTaken = true;
             if (_mhpSampleProduct != null) { _mhpSampleProduct.SetActive(true); Tint(_mhpSampleProduct, new Color(0.15f, 0.6f, 0.38f)); }
-            Start(_readyAudio, 0.3f);
+            PlayAudio(_readyAudio, 0.3f);
             _stageIndex = 4;
             if (_hud != null) _hud.ShowNotifPublic("Sampel MHP diambil. Tekan [L] untuk submit ke LAB QC (assay Ni/Co).", 7f);
         }
@@ -387,7 +387,7 @@ public class Level11MHPController : MonoBehaviour
 
     private IEnumerator DispatchRoutine()
     {
-        SetFillStream(true); Start(_doseAudio, 0.32f);
+        SetFillStream(true); PlayAudio(_doseAudio, 0.32f);
         float t = 0f;
         while (t < _dispatchDuration)
         {
@@ -397,7 +397,7 @@ public class Level11MHPController : MonoBehaviour
             yield return null;
         }
         _dispatchProgress = 100f; ApplyBaggingFill(1f);
-        SetFillStream(false); Start(_readyAudio, 0.3f); _dispatching = false;
+        SetFillStream(false); PlayAudio(_readyAudio, 0.3f); _dispatching = false;
         _baggingDone = true; _stageIndex = 6; _questComplete = true;
         _glm?.NotifyLevel11MHPComplete();
         if (_hud != null) _hud.ShowNotifPublic("Produk MHP dikemas (FIBC) & siap dispatch ke refinery. Lapor HT (tahan T): 'MHP terbentuk'.", 8f);
@@ -710,7 +710,7 @@ public class Level11MHPController : MonoBehaviour
     }
     private AudioSource MakeAudio(string n, bool loop, float vol, AudioClip clip)
     { var go = new GameObject(n); go.transform.SetParent(transform, false); var a = go.AddComponent<AudioSource>(); a.loop = loop; a.playOnAwake = false; a.spatialBlend = 0.2f; a.volume = vol; a.clip = clip; return a; }
-    private void Start(AudioSource s, float v) { if (s == null) return; s.volume = v; if (!s.isPlaying) s.Play(); }
+    private void PlayAudio(AudioSource s, float v) { if (s == null) return; s.volume = v; if (!s.isPlaying) s.Play(); }
     private void Stop(AudioSource s) { if (s != null && s.isPlaying) s.Stop(); }
     private AudioClip GenNoise(float dur, float hz, int seed)
     {

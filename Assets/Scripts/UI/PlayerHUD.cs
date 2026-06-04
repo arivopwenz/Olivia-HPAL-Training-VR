@@ -1000,6 +1000,9 @@ public class PlayerHUD : MonoBehaviour
             return;
 
         panelNotif.SetActive(true);
+        // Pastikan banner render PALING DEPAN (di atas semua panel & transition overlay).
+        var notifRt = panelNotif.GetComponent<RectTransform>();
+        if (notifRt != null) notifRt.SetAsLastSibling();
         if (txtNotif != null)
             txtNotif.text = pesan;
 
@@ -1078,65 +1081,241 @@ public class PlayerHUD : MonoBehaviour
         if (panelOperasional != null) panelOperasional.SetActive(false);
         if (panelWalkieTalkieHint != null) panelWalkieTalkieHint.SetActive(false);
 
-        if (_operasionalRect != null)
+        // ===================================================================
+        // REDESAIN PANEL TASK v3 — stack vertikal bersih, tidak overlap.
+        // Layout (anchor semua dari TOP, panel pivot kanan-atas):
+        //   [0      .. -PAD]            margin atas
+        //   HEADER  (judul level)       tinggi HEADER_H
+        //   MISI    (quest)             tinggi MISI_H
+        //   LAPORAN HT (kata kunci)     tinggi HT_H
+        //   OPERASIONAL / APD checklist sisa ruang ke bawah
+        // ===================================================================
+        const float PANEL_W = 500f;
+        const float PANEL_H = 800f;
+        const float PAD = 14f;          // padding dalam panel
+        const float HEADER_H = 56f;
+        const float MISI_H = 128f;
+        const float HT_H = 150f;
+        const float GAP = 10f;
+
+        float yHeader = -PAD;
+        float yMisi = yHeader - HEADER_H - GAP;
+        float yHt = yMisi - MISI_H - GAP;
+        float yChecklist = yHt - HT_H - GAP;
+        float checklistH = PANEL_H + yChecklist - PAD; // sisa sampai bawah (yChecklist negatif)
+
+        Color cPanel = new Color(0.05f, 0.07f, 0.11f, 0.95f);
+        Color cBand = new Color(0.09f, 0.13f, 0.20f, 0.96f);
+        Color cBandDark = new Color(0.03f, 0.05f, 0.08f, 0.97f);
+        Color cHeaderBand = new Color(0.06f, 0.34f, 0.52f, 1f);
+
+        RectTransform panelRect = null;
+        if (_questRect != null && _questRect.parent != null)
+            panelRect = _questRect.parent as RectTransform; // Panel_Quest
+        if (panelRect != null)
         {
-            _operasionalRect.anchorMin = new Vector2(0f, 0f);
-            _operasionalRect.anchorMax = new Vector2(1f, 0f);
-            _operasionalRect.pivot = new Vector2(0.5f, 0f);
-            _operasionalRect.sizeDelta = new Vector2(-20f, 190f);
-            _operasionalRect.anchoredPosition = new Vector2(0f, 8f);
+            panelRect.anchorMin = new Vector2(1f, 1f);
+            panelRect.anchorMax = new Vector2(1f, 1f);
+            panelRect.pivot = new Vector2(1f, 1f);
+            panelRect.sizeDelta = new Vector2(PANEL_W, PANEL_H);
+            panelRect.anchoredPosition = new Vector2(-24f, -24f);
+            var pImg = panelRect.GetComponent<Image>();
+            if (pImg != null) pImg.color = cPanel;
+
+            // Header band penuh lebar
+            var headerTr = panelRect.Find("BG_Header") as RectTransform;
+            if (headerTr != null)
+            {
+                headerTr.anchorMin = new Vector2(0f, 1f);
+                headerTr.anchorMax = new Vector2(1f, 1f);
+                headerTr.pivot = new Vector2(0.5f, 1f);
+                headerTr.sizeDelta = new Vector2(0f, HEADER_H);
+                headerTr.anchoredPosition = new Vector2(0f, -PAD);
+                var hbImg = headerTr.GetComponent<Image>();
+                if (hbImg != null) hbImg.color = cHeaderBand;
+            }
+
+            // Divider lama (garis) tidak dipakai di layout v3 -> sembunyikan.
+            var dividerTr = panelRect.Find("Divider");
+            if (dividerTr != null) dividerTr.gameObject.SetActive(false);
         }
 
-        if (_walkieHintRect != null)
+        // HEADER label
+        if (txtLevelLabel != null)
         {
-            _walkieHintRect.anchorMin = new Vector2(0f, 0f);
-            _walkieHintRect.anchorMax = new Vector2(1f, 0f);
-            _walkieHintRect.pivot = new Vector2(0.5f, 0f);
-            _walkieHintRect.sizeDelta = new Vector2(-20f, 124f);
-            _walkieHintRect.anchoredPosition = new Vector2(0f, 206f);
+            txtLevelLabel.fontSize = 23f;
+            txtLevelLabel.fontStyle = FontStyles.Bold;
+            txtLevelLabel.alignment = TextAlignmentOptions.Center;
+            txtLevelLabel.textWrappingMode = TextWrappingModes.Normal;
+            txtLevelLabel.overflowMode = TextOverflowModes.Truncate;
+            txtLevelLabel.color = Color.white;
         }
 
+        // MISI (quest) band
+        if (_questRect != null)
+        {
+            _questRect.anchorMin = new Vector2(0f, 1f);
+            _questRect.anchorMax = new Vector2(1f, 1f);
+            _questRect.pivot = new Vector2(0.5f, 1f);
+            _questRect.sizeDelta = new Vector2(-(PAD * 2f), MISI_H);
+            _questRect.anchoredPosition = new Vector2(0f, yMisi);
+            _questRect.gameObject.SetActive(true);
+            var qImg = _questRect.GetComponent<Image>();
+            if (qImg != null) qImg.color = cBand;
+            StyleBody(txtQuestLabel, 17f, TextAlignmentOptions.TopLeft);
+        }
+
+        // APD checklist — isi area checklist (hanya Level 1)
         if (_apdRect != null)
         {
             _apdRect.anchorMin = new Vector2(0f, 1f);
             _apdRect.anchorMax = new Vector2(1f, 1f);
             _apdRect.pivot = new Vector2(0.5f, 1f);
-            _apdRect.sizeDelta = new Vector2(0f, 420f);
-            _apdRect.anchoredPosition = new Vector2(0f, -184f);
+            _apdRect.sizeDelta = new Vector2(-(PAD * 2f), checklistH);
+            _apdRect.anchoredPosition = new Vector2(0f, yChecklist);
         }
 
-        SetQuestArea(98f, 110f);
+        // LAPORAN HT band
+        if (_walkieHintRect != null)
+        {
+            _walkieHintRect.anchorMin = new Vector2(0f, 1f);
+            _walkieHintRect.anchorMax = new Vector2(1f, 1f);
+            _walkieHintRect.pivot = new Vector2(0.5f, 1f);
+            _walkieHintRect.sizeDelta = new Vector2(-(PAD * 2f), HT_H);
+            _walkieHintRect.anchoredPosition = new Vector2(0f, yHt);
+            var hImg = _walkieHintRect.GetComponent<Image>();
+            if (hImg != null) hImg.color = cBandDark;
+        }
+        if (txtHintKataKunci != null)
+        {
+            txtHintKataKunci.fontSize = 16f;
+            txtHintKataKunci.enableAutoSizing = true;
+            txtHintKataKunci.fontSizeMin = 12f;
+            txtHintKataKunci.fontSizeMax = 17f;
+            txtHintKataKunci.textWrappingMode = TextWrappingModes.Normal;
+            txtHintKataKunci.overflowMode = TextOverflowModes.Truncate;
+            txtHintKataKunci.alignment = TextAlignmentOptions.TopLeft;
+            txtHintKataKunci.margin = new Vector4(14f, 34f, 14f, 10f);
+            txtHintKataKunci.color = new Color(1f, 0.88f, 0.34f);
+            var htRt = txtHintKataKunci.GetComponent<RectTransform>();
+            if (htRt != null)
+            {
+                htRt.anchorMin = new Vector2(0f, 0f);
+                htRt.anchorMax = new Vector2(1f, 1f);
+                htRt.offsetMin = Vector2.zero;
+                htRt.offsetMax = Vector2.zero;
+            }
+            // Header "LAPORAN HT" di band walkie (buat sekali).
+            if (_walkieHintRect != null && _walkieHintRect.Find("Lbl_HT") == null)
+            {
+                var lblGo = new GameObject("Lbl_HT", typeof(RectTransform));
+                var lblRt = lblGo.GetComponent<RectTransform>();
+                lblRt.SetParent(_walkieHintRect, false);
+                lblRt.anchorMin = new Vector2(0f, 1f);
+                lblRt.anchorMax = new Vector2(1f, 1f);
+                lblRt.pivot = new Vector2(0.5f, 1f);
+                lblRt.sizeDelta = new Vector2(-20f, 28f);
+                lblRt.anchoredPosition = new Vector2(0f, -6f);
+                var lbl = lblGo.AddComponent<TextMeshProUGUI>();
+                lbl.text = "LAPORAN HT";
+                lbl.fontSize = 15f;
+                lbl.fontStyle = FontStyles.Bold;
+                lbl.color = new Color(0.45f, 0.85f, 1f);
+                lbl.alignment = TextAlignmentOptions.TopLeft;
+                lbl.margin = new Vector4(14f, 4f, 4f, 0f);
+            }
+        }
+
+        // OPERASIONAL checklist — isi area checklist (anchor TOP, di bawah LAPORAN HT)
+        if (_operasionalRect != null)
+        {
+            _operasionalRect.anchorMin = new Vector2(0f, 1f);
+            _operasionalRect.anchorMax = new Vector2(1f, 1f);
+            _operasionalRect.pivot = new Vector2(0.5f, 1f);
+            _operasionalRect.sizeDelta = new Vector2(-(PAD * 2f), checklistH);
+            _operasionalRect.anchoredPosition = new Vector2(0f, yChecklist);
+            var oImg = _operasionalRect.GetComponent<Image>();
+            if (oImg != null) oImg.color = cBand;
+        }
+        if (txtParameterInfo != null)
+        {
+            txtParameterInfo.fontSize = 17f;
+            txtParameterInfo.enableAutoSizing = true;
+            txtParameterInfo.fontSizeMin = 12f;
+            txtParameterInfo.fontSizeMax = 18f;
+            txtParameterInfo.textWrappingMode = TextWrappingModes.Normal;
+            txtParameterInfo.overflowMode = TextOverflowModes.Truncate;
+            txtParameterInfo.alignment = TextAlignmentOptions.TopLeft;
+            txtParameterInfo.lineSpacing = 14f;
+            var prt = txtParameterInfo.GetComponent<RectTransform>();
+            if (prt != null)
+            {
+                prt.anchorMin = new Vector2(0f, 0f);
+                prt.anchorMax = new Vector2(1f, 1f);
+                prt.offsetMin = new Vector2(16f, 14f);
+                prt.offsetMax = new Vector2(-16f, -44f);
+            }
+        }
+
         EnsureTransitionOverlay();
+        PositionNotifTop();
+    }
+    private void PositionNotifTop()
+    {
+        if (panelNotif == null) return;
+        var rt = panelNotif.GetComponent<RectTransform>();
+        if (rt != null)
+        {
+            rt.anchorMin = new Vector2(0.5f, 1f);
+            rt.anchorMax = new Vector2(0.5f, 1f);
+            rt.pivot = new Vector2(0.5f, 1f);
+            rt.sizeDelta = new Vector2(900f, 84f);
+            rt.anchoredPosition = new Vector2(0f, -26f);
+            // render paling depan: jadikan child terakhir di canvas root.
+            rt.SetAsLastSibling();
+        }
+        if (txtNotif != null)
+        {
+            txtNotif.fontSize = 22f;
+            txtNotif.enableAutoSizing = true;
+            txtNotif.fontSizeMin = 14f;
+            txtNotif.fontSizeMax = 24f;
+            txtNotif.fontStyle = FontStyles.Bold;
+            txtNotif.alignment = TextAlignmentOptions.Center;
+            txtNotif.textWrappingMode = TextWrappingModes.Normal;
+            txtNotif.overflowMode = TextOverflowModes.Truncate;
+            txtNotif.margin = new Vector4(20f, 6f, 20f, 6f);
+        }
     }
 
+    private void StyleBody(TextMeshProUGUI t, float size, TextAlignmentOptions align)
+    {
+        if (t == null) return;
+        t.fontSize = size;
+        t.enableAutoSizing = true;
+        t.fontSizeMin = 12f;
+        t.fontSizeMax = size + 2f;
+        t.textWrappingMode = TextWrappingModes.Normal;
+        t.overflowMode = TextOverflowModes.Truncate;
+        t.alignment = align;
+        t.margin = new Vector4(12f, 6f, 12f, 6f);
+    }
+
+    // Layout band sekarang ditangani sekali di CacheAndFixLayout() (v3 stack vertikal).
+    // Method2 ini sengaja dibuat no-op supaya tidak menimpa posisi band saat ganti fase.
     private void SetQuestArea(float topOffset, float height)
     {
-        if (_questRect == null)
-            return;
-
-        _questRect.anchorMin = new Vector2(0f, 1f);
-        _questRect.anchorMax = new Vector2(1f, 1f);
-        _questRect.pivot = new Vector2(0.5f, 1f);
-        _questRect.sizeDelta = new Vector2(-40f, height);
-        _questRect.anchoredPosition = new Vector2(0f, -topOffset);
-        _questRect.gameObject.SetActive(true);
+        if (_questRect != null) _questRect.gameObject.SetActive(true);
     }
 
     private void SetApdLayout(bool active)
     {
-        if (_apdRect == null)
-            return;
-
-        _apdRect.anchoredPosition = active ? new Vector2(0f, -184f) : new Vector2(0f, -184f);
+        // no-op: posisi APD diatur di CacheAndFixLayout.
     }
 
     private void SetHintLayout()
     {
-        if (_walkieHintRect == null)
-            return;
-
-        _walkieHintRect.anchoredPosition = new Vector2(0f, 206f);
-        _walkieHintRect.sizeDelta = new Vector2(-20f, 124f);
+        // no-op: posisi band LAPORAN HT diatur di CacheAndFixLayout.
     }
 
     private void EnsureTransitionOverlay()

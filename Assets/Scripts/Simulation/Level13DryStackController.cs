@@ -168,7 +168,7 @@ public class Level13DryStackController : MonoBehaviour
 
     private IEnumerator StackRoutine()
     {
-        Start(_stackAudio, 0.34f);
+        PlayAudio(_stackAudio, 0.34f);
         if (_dustFx != null) _dustFx.Play();
         int shown = 0;
         float t = 0f;
@@ -186,7 +186,7 @@ public class Level13DryStackController : MonoBehaviour
         }
         _dryStackProgress = 100f;
         if (_dustFx != null) _dustFx.Stop();
-        Stop(_stackAudio); Start(_readyAudio, 0.3f);
+        Stop(_stackAudio); PlayAudio(_readyAudio, 0.3f);
         _stackingDone = true; _busy = false; _stage = 1;
         BeginStage();
         _seq = null;
@@ -194,7 +194,7 @@ public class Level13DryStackController : MonoBehaviour
 
     private IEnumerator ClosureRoutine()
     {
-        Start(_stackAudio, 0.22f);
+        PlayAudio(_stackAudio, 0.22f);
         float t = 0f;
         while (t < _closureDuration)
         {
@@ -204,7 +204,7 @@ public class Level13DryStackController : MonoBehaviour
         }
         if (_safeCover != null) { _safeCover.SetActive(true); Tint(_safeCover, new Color(0.32f, 0.5f, 0.22f)); } // rehab grass cap
         if (_piezoCaps != null) foreach (var p in _piezoCaps) Tint(p, new Color(0.15f, 0.65f, 0.2f)); // piezometer AMAN
-        Stop(_stackAudio); Start(_readyAudio, 0.3f);
+        Stop(_stackAudio); PlayAudio(_readyAudio, 0.3f);
         _closureDone = true; _busy = false; _stage = 2;
         ShowButton(false);
         if (_hud != null) _hud.ShowNotifPublic("Sel tertutup + revegetasi. Jalan ke TIMBUNAN untuk inspeksi akhir.", 7f);
@@ -219,7 +219,7 @@ public class Level13DryStackController : MonoBehaviour
         Vector3 head = GetPlayerHead();
         if (Vector2.Distance(new Vector2(head.x, head.z), new Vector2(target.x, target.z)) <= _inspectRadius)
         {
-            _inspected = true; _stage = 3; Start(_readyAudio, 0.3f);
+            _inspected = true; _stage = 3; PlayAudio(_readyAudio, 0.3f);
             if (_hud != null) _hud.ShowNotifPublic("Inspeksi DSTF OK. Tekan [L] untuk COMPLIANCE QC (geomembrane/piezometer/rembesan).", 7f);
         }
     }
@@ -408,7 +408,7 @@ public class Level13DryStackController : MonoBehaviour
     }
     private AudioSource MakeAudio(string n, bool loop, float vol, AudioClip clip)
     { var go = new GameObject(n); go.transform.SetParent(transform, false); var a = go.AddComponent<AudioSource>(); a.loop = loop; a.playOnAwake = false; a.spatialBlend = 0.2f; a.volume = vol; a.clip = clip; return a; }
-    private void Start(AudioSource s, float v) { if (s == null) return; s.volume = v; if (!s.isPlaying) s.Play(); }
+    private void PlayAudio(AudioSource s, float v) { if (s == null) return; s.volume = v; if (!s.isPlaying) s.Play(); }
     private void Stop(AudioSource s) { if (s != null && s.isPlaying) s.Stop(); }
     private AudioClip GenNoise(float dur, float hz, int seed)
     {

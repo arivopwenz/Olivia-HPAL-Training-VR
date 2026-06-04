@@ -1026,12 +1026,10 @@ public class Level7AutoclaveController : MonoBehaviour
         if (oldRb != null) Destroy(oldRb);
         _inletValveGrab = null;
 
-        if (_inletValvePivot.GetComponent<Collider>() == null)
-        {
-            SphereCollider col = _inletValvePivot.gameObject.AddComponent<SphereCollider>();
-            col.radius = 0.7f;
-            col.isTrigger = false;
-        }
+        var valveCollider = _inletValvePivot.GetComponent<SphereCollider>();
+        if (valveCollider == null) valveCollider = _inletValvePivot.gameObject.AddComponent<SphereCollider>();
+        valveCollider.radius = LocalRadiusForWorld(_inletValvePivot, 0.7f);
+        valveCollider.isTrigger = false;
         foreach (var c in _inletValvePivot.GetComponentsInChildren<Collider>(true))
             if (c != null) c.enabled = true;
 
@@ -1755,5 +1753,12 @@ public class Level7AutoclaveController : MonoBehaviour
     {
         _slurryFillProgress = 1f;
         UpdateSlurryShader(1f);
+    }
+
+    private static float LocalRadiusForWorld(Transform t, float worldRadius)
+    {
+        Vector3 s = t != null ? t.lossyScale : Vector3.one;
+        float maxAxis = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z), 0.0001f);
+        return worldRadius / maxAxis;
     }
 }

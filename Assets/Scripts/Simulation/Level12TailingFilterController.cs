@@ -125,7 +125,7 @@ public class Level12TailingFilterController : MonoBehaviour
         TeleportTo(new Vector3(28f, 1.5f, 140f), new Vector3(0f, 0f, 1f), false);
         yield return new WaitForSeconds(_fadeDuration * 0.5f + 0.5f);
         SetProcessVisuals(true);
-        Start(_agitatorAudio, 0.32f);
+        PlayAudio(_agitatorAudio, 0.32f);
         BuildOperatorStation();
         _stage = 0;
         BeginStage();
@@ -175,7 +175,7 @@ public class Level12TailingFilterController : MonoBehaviour
 
     private IEnumerator NeutralizeRoutine()
     {
-        Start(_pressAudio, 0.0f);
+        PlayAudio(_pressAudio, 0.0f);
         if (_limestonePour != null) _limestonePour.SetActive(true);
         float t = 0f;
         while (t < _doseDuration)
@@ -198,7 +198,7 @@ public class Level12TailingFilterController : MonoBehaviour
 
     private IEnumerator FilterPressRoutine()
     {
-        Start(_pressAudio, 0.42f);
+        PlayAudio(_pressAudio, 0.42f);
         if (_filtrateChannel != null) _filtrateChannel.SetActive(true);
         int shown = 0;
         float t = 0f;
@@ -216,7 +216,7 @@ public class Level12TailingFilterController : MonoBehaviour
             yield return null;
         }
         _moisture = MoistTarget;
-        Stop(_pressAudio); Start(_readyAudio, 0.3f);
+        Stop(_pressAudio); PlayAudio(_readyAudio, 0.3f);
         _filterPressDone = true; _busy = false; _stage = 2;
         ShowButton(false);
         if (_hud != null) _hud.ShowNotifPublic("Cake terbentuk (moisture 22%). Jalan ke KONVEYOR CAKE untuk inspeksi.", 7f);
@@ -246,7 +246,7 @@ public class Level12TailingFilterController : MonoBehaviour
         Vector3 head = GetPlayerHead();
         if (Vector2.Distance(new Vector2(head.x, head.z), new Vector2(target.x, target.z)) <= _inspectRadius)
         {
-            _inspected = true; _stage = 3; Start(_readyAudio, 0.3f);
+            _inspected = true; _stage = 3; PlayAudio(_readyAudio, 0.3f);
             if (_hud != null) _hud.ShowNotifPublic("Inspeksi cake OK. Tekan [L] untuk COMPLIANCE QC (cek pH/moisture/filtrat).", 7f);
         }
     }
@@ -428,7 +428,7 @@ public class Level12TailingFilterController : MonoBehaviour
     }
     private AudioSource MakeAudio(string n, bool loop, float vol, AudioClip clip)
     { var go = new GameObject(n); go.transform.SetParent(transform, false); var a = go.AddComponent<AudioSource>(); a.loop = loop; a.playOnAwake = false; a.spatialBlend = 0.2f; a.volume = vol; a.clip = clip; return a; }
-    private void Start(AudioSource s, float v) { if (s == null) return; s.volume = v; if (!s.isPlaying) s.Play(); }
+    private void PlayAudio(AudioSource s, float v) { if (s == null) return; s.volume = v; if (!s.isPlaying) s.Play(); }
     private void Stop(AudioSource s) { if (s != null && s.isPlaying) s.Stop(); }
     private AudioClip GenNoise(float dur, float hz, int seed)
     {

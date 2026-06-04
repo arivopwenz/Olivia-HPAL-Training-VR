@@ -96,6 +96,10 @@ public class Level3OreSlurryController : MonoBehaviour
     [SerializeField] private float _lebarSebarOreRuntime = 1.15f;
     [Tooltip("Tinggi arc jatuh batu dari ujung belt ke slurry tank.")]
     [SerializeField] private float _tinggiJatuhOreRuntime = 1.35f;
+    [Tooltip("Offset ketinggian seluruh jalur ore di belt (negatif = lebih rendah/mepet ke crusher).")]
+    [SerializeField] private float _oreBeltHeightOffset = -0.55f;
+    [Tooltip("Geser titik mid belt mendekat ke crusher (mepet). Positif = lebih dekat ke start.")]
+    [SerializeField] private float _oreBeltStartSnug = 1.2f;
     [Tooltip("Sembunyikan conveyor/ore/escalator bekas di sekitar slurry tank saat runtime.")]
     [SerializeField] private bool _hapusOreConveyorBekasRuntime = true;
     [Tooltip("Kecepatan target visual blade agitator prefab Level3 (deg/s).")]
@@ -877,7 +881,9 @@ public class Level3OreSlurryController : MonoBehaviour
         if (t <= split)
         {
             float localT = Mathf.InverseLerp(0f, split, t);
-            return Vector3.Lerp(_oreStartPoint.position, _oreMidPoint.position, localT);
+            Vector3 p = Vector3.Lerp(_oreStartPoint.position, _oreMidPoint.position, localT);
+            p.y += _oreBeltHeightOffset; // turunkan jalur belt biar mepet ke crusher
+            return p;
         }
 
         float dropT = Mathf.InverseLerp(split, 1f, t);
@@ -1460,7 +1466,7 @@ public class Level3OreSlurryController : MonoBehaviour
         if (blackBox != null)
         {
             Renderer rb = blackBox.GetComponentInChildren<Renderer>(true);
-            Vector3 bbPos = (rb != null ? rb.bounds.center : blackBox.position) + Vector3.up * 0.7f;
+            Vector3 bbPos = (rb != null ? rb.bounds.center : blackBox.position) + Vector3.up * 0.25f;
             _runtimeOreStartPoint = BuatRuntimePointJikaPerlu(_runtimeOreStartPoint, "Level3_Runtime_Ore_StartPoint", bbPos);
             _runtimeOreStartPoint.position = bbPos;
             _oreStartPoint = _runtimeOreStartPoint;
@@ -1473,8 +1479,12 @@ public class Level3OreSlurryController : MonoBehaviour
         if (_oreBeltVisual != null)
         {
             Renderer rBelt = _oreBeltVisual.GetComponentInChildren<Renderer>(true);
-            if (rBelt != null) midPos = new Vector3(rBelt.bounds.min.x + 1.5f, rBelt.bounds.max.y + 0.4f, rBelt.bounds.center.z);
+            if (rBelt != null) midPos = new Vector3(rBelt.bounds.min.x + 1.5f, rBelt.bounds.max.y + 0.05f, rBelt.bounds.center.z);
         }
+        // Geser mid mendekat ke start (crusher discharge) supaya ore mepet ke crusher, bukan menggantung jauh.
+        if (_oreStartPoint != null)
+            midPos = Vector3.Lerp(midPos, _oreStartPoint.position, Mathf.Clamp01(_oreBeltStartSnug * 0.18f));
+        midPos.y += _oreBeltHeightOffset;
         _runtimeOreMidPoint = BuatRuntimePointJikaPerlu(_runtimeOreMidPoint, "Level3_Runtime_Ore_MidPoint", midPos);
         _runtimeOreMidPoint.position = midPos;
         _oreMidPoint = _runtimeOreMidPoint;
@@ -1856,7 +1866,7 @@ public class Level3OreSlurryController : MonoBehaviour
 
             float pathT = Mathf.Clamp01(ore.Offset + globalT * speed * ore.SpeedMul * 5.25f);
             Vector3 dir = HitungArahOreRuntime(pathT);
-            ore.Transform.position = HitungPosisiOreRuntime(pathT, ore.Lateral, 0.12f);
+            ore.Transform.position = HitungPosisiOreRuntime(pathT, ore.Lateral, 0.04f);
             if (dir.sqrMagnitude > 0.001f)
                 ore.Transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
 
@@ -2171,7 +2181,7 @@ public class Level3OreSlurryController : MonoBehaviour
                 continue;
 
             float t = Mathf.Clamp01((_runtimeOreConveyorTime * speed * ore.SpeedMul) + ore.Offset * 0.72f);
-            ore.Transform.position = HitungPosisiOreRuntime(t, ore.Lateral, 0.16f);
+            ore.Transform.position = HitungPosisiOreRuntime(t, ore.Lateral, 0.06f);
             ore.Transform.localScale = ore.BaseScale * (t > 0.72f ? Mathf.Lerp(1f, 0.72f, Mathf.InverseLerp(0.72f, 1f, t)) : 1f);
             ore.Transform.Rotate(ore.SpinAxis, 260f * dt * ore.SpeedMul, Space.Self);
         }
@@ -2413,7 +2423,7 @@ public class Level3OreSlurryController : MonoBehaviour
         for (int i = 0; i < n; i++)
         {
             float ang = (float)rnd.NextDouble() * Mathf.PI * 2f;
-            float radius = Mathf.Sqrt((float)rnd.NextDouble()) * 2.5f;
+            float radius = Mathf.Sqrt((float)rnd.NextDouble()) * 1.45f;
             GameObject chunk;
             if (_meshBatuAsli != null)
             {
@@ -2624,8 +2634,10 @@ public class Level3OreSlurryController : MonoBehaviour
 
         Vector3 surface = HitungWorldPosPermukaanSlurry() + Vector3.up * 0.05f;
         _runtimeSwirlRootTransform.position = surface;
-        float radius = Mathf.Max(0.3f, Mathf.Min(_slurryFill.lossyScale.x, _slurryFill.lossyScale.z) * 0.42f);
-        float scale = radius / 2.65f;
+        // Kecilkan swirl supaya tidak keluar dari slurry tank: pakai 0.30 dari radius tank
+        // dan basis scatter 1.45 (bukan 2.65) agar chunk tetap di dalam dinding tank.
+        float radius = Mathf.Max(0.25f, Mathf.Min(_slurryFill.lossyScale.x, _slurryFill.lossyScale.z) * 0.30f);
+        float scale = radius / 1.45f;
         _runtimeSwirlRootTransform.localScale = new Vector3(scale, 1f, scale);
 
         // Ore muncul BERTAHAP seiring cairan naik (berton-ton ore terakumulasi di dalam slurry).

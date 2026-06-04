@@ -85,7 +85,10 @@ public class SlurryPumpRunner : MonoBehaviour
         var em = ps.emission; em.rateOverTime = 0f;
         var sh = ps.shape; sh.shapeType = ParticleSystemShapeType.Circle; sh.radius = 0.16f;
         var vel = ps.velocityOverLifetime; vel.enabled = true;
-        vel.space = ParticleSystemSimulationSpace.World; vel.y = new ParticleSystem.MinMaxCurve(0.7f, 1.5f);
+        vel.space = ParticleSystemSimulationSpace.World;
+        vel.x = new ParticleSystem.MinMaxCurve(0f, 0f);
+        vel.y = new ParticleSystem.MinMaxCurve(0.7f, 1.5f);
+        vel.z = new ParticleSystem.MinMaxCurve(0f, 0f);
         var sz = ps.sizeOverLifetime; sz.enabled = true;
         sz.size = new ParticleSystem.MinMaxCurve(1f, new AnimationCurve(new Keyframe(0, startSize / endSize), new Keyframe(1, 1f)));
         var nz = ps.noise; nz.enabled = true; nz.strength = noise; nz.frequency = 0.7f; nz.scrollSpeed = 0.4f;

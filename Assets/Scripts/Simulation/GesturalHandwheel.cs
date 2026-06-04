@@ -14,14 +14,20 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 public class GesturalHandwheel : MonoBehaviour
 {
     public float fullOpenDegrees = 1440f;
-    public float gesturalGain = 5f;          // sama default seperti Level 8 (_gesturalGain).
+    [Tooltip("Faktor amplifikasi twist tangan ke wheel. 1.0 = 1:1 (paling natural). >1 untuk wheel besar yang harus lebih sensitif.")]
+    public float gesturalGain = 1.0f;
+    [Tooltip("Cap kecepatan rotasi (deg/s). Naikkan kalau tangan player diputar cepat agar wheel tidak ketinggalan.")]
+    [SerializeField] private float _maxDegreesPerSecond = 720f;
+    [Tooltip("Smoothing rotasi tampilan (detik). 0 = instant follow tangan (paling riil), 0.05-0.1 sedikit dampened. 0.22 lama terasa laggy.")]
+    [SerializeField] private float _smoothTime = 0.04f;
     public KeyCode debugKey = KeyCode.R;
     [SerializeField] bool _autoSetupOnStart = false;   // true = setup sendiri saat Start (selalu bisa diputar tangan, tak perlu controller).
     public float OpenPercent01 { get; private set; }
 
     Transform[] _parts; Quaternion[] _baseRot; Vector3[] _basePos;
     Vector3 _pivot, _axis = Vector3.right;
-    float _deg; bool _active, _yawValid; float _yawLast; Transform _attach; bool _ready;
+    float _targetDeg, _displayDeg, _smoothVelocity;
+    bool _active, _yawValid; float _yawLast; Transform _attach; bool _ready;
 
     void Start()
     {
@@ -48,6 +54,12 @@ public class GesturalHandwheel : MonoBehaviour
     }
     public void Setup(Transform hub, IList<Transform> parts)
     {
+        // Pastikan nilai responsif & konsisten walau instance lama punya serialized value lama.
+        if (_smoothTime > 0.1f) _smoothTime = 0.04f;
+        if (_maxDegreesPerSecond < 360f) _maxDegreesPerSecond = 720f;
+        // Twist-based: gain lama (5) bikin terlalu cepat. Clamp ke 1..1.8 (sedikit
+        // amplifikasi, tetap terkendali & konsisten).
+        gesturalGain = Mathf.Clamp(gesturalGain, 1f, 1.8f);
         var list = new List<Transform>();
         if (hub != null) list.Add(hub);
         if (parts != null) foreach (var p in parts) if (p != null && !list.Contains(p)) list.Add(p);
@@ -66,7 +78,7 @@ public class GesturalHandwheel : MonoBehaviour
         _axis = (s.x <= s.y && s.x <= s.z) ? Vector3.right : (s.y <= s.z ? Vector3.up : Vector3.forward);
 
         for (int i = 0; i < _parts.Length; i++) { _baseRot[i] = _parts[i].rotation; _basePos[i] = _parts[i].position; }
-        _deg = 0f; OpenPercent01 = 0f; _ready = true;
+        _targetDeg = 0f; _displayDeg = 0f; _smoothVelocity = 0f; OpenPercent01 = 0f; _ready = true;
         EnsureInteractable(hub != null ? hub : _parts[0]);
     }
 
@@ -75,7 +87,10 @@ public class GesturalHandwheel : MonoBehaviour
         var go = t.gameObject;
         var grab = t.GetComponent<XRGrabInteractable>(); if (grab) Destroy(grab);
         var rb = t.GetComponent<Rigidbody>(); if (rb) Destroy(rb);
-        if (t.GetComponent<Collider>() == null) { var sc = go.AddComponent<SphereCollider>(); sc.radius = 0.7f; sc.isTrigger = false; }
+        var sc = t.GetComponent<SphereCollider>();
+        if (sc == null) sc = go.AddComponent<SphereCollider>();
+        sc.radius = LocalRadiusForWorld(t, 0.7f);
+        sc.isTrigger = false;
         var si = t.GetComponent<XRSimpleInteractable>(); if (si == null) si = go.AddComponent<XRSimpleInteractable>();
         si.colliders.Clear();
         foreach (var c in go.GetComponents<Collider>()) if (c != null) si.colliders.Add(c);
@@ -84,20 +99,31 @@ public class GesturalHandwheel : MonoBehaviour
         si.hoverEntered.RemoveAllListeners(); si.hoverExited.RemoveAllListeners();
         si.selectEntered.AddListener(a => { _active = true; _attach = a.interactorObject != null ? a.interactorObject.transform : null; _yawValid = false; });
         si.selectExited.AddListener(a => { _active = false; _attach = null; _yawValid = false; });
-        si.hoverEntered.AddListener(a => { _active = true; _attach = a.interactorObject != null ? a.interactorObject.transform : _attach; });
+        si.hoverEntered.AddListener(a => { _active = true; _attach = a.interactorObject != null ? a.interactorObject.transform : _attach; _yawValid = false; });
         si.hoverExited.AddListener(a => { _active = false; _yawValid = false; });
+    }
+
+    static float LocalRadiusForWorld(Transform t, float worldRadius)
+    {
+        Vector3 s = t != null ? t.lossyScale : Vector3.one;
+        float maxAxis = Mathf.Max(Mathf.Abs(s.x), Mathf.Abs(s.y), Mathf.Abs(s.z), 0.0001f);
+        return worldRadius / maxAxis;
     }
 
     void Update()
     {
         if (!_ready) return;
         float d = 0f;
-        if (Input.GetKey(debugKey)) d += 360f * Time.deltaTime;
+        // Keyboard fallback (R): kecepatan tetap, konsisten.
+        if (Input.GetKey(debugKey)) d += 200f * Time.deltaTime;
         if (_active && _attach != null)
         {
-            Vector3 hv = _attach.up;
-            Vector3 p = Vector3.ProjectOnPlane(hv, _axis);
-            if (p.sqrMagnitude < 0.01f) { hv = _attach.right; p = Vector3.ProjectOnPlane(hv, _axis); }
+            // ROTASI berbasis TWIST tangan (orientasi controller) — versi yang terbukti
+            // bisa diputar dgn ray/hover interactor. Saat player memutar pergelangan, vektor
+            // .up / .right controller berputar di bidang disc -> sudut berubah -> wheel ikut.
+            Vector3 handVec = _attach.up;
+            Vector3 p = Vector3.ProjectOnPlane(handVec, _axis);
+            if (p.sqrMagnitude < 0.02f) { handVec = _attach.right; p = Vector3.ProjectOnPlane(handVec, _axis); }
             if (p.sqrMagnitude > 0.0001f)
             {
                 p.Normalize();
@@ -106,20 +132,29 @@ public class GesturalHandwheel : MonoBehaviour
                 r.Normalize();
                 float yaw = Vector3.SignedAngle(r, p, _axis);
                 if (!_yawValid) { _yawLast = yaw; _yawValid = true; }
-                else { float dy = Mathf.DeltaAngle(_yawLast, yaw); _yawLast = yaw; if (Mathf.Abs(dy) > 35f) dy = 0f; d += dy * Mathf.Max(1f, gesturalGain); }
+                else
+                {
+                    float dy = Mathf.DeltaAngle(_yawLast, yaw);
+                    _yawLast = yaw;
+                    if (Mathf.Abs(dy) > 60f) dy = 0f;   // buang outlier (glitch tracking)
+                    d += dy * Mathf.Max(1f, gesturalGain);
+                }
             }
         }
         else _yawValid = false;
 
         if (Mathf.Abs(d) < 0.0001f) return;
-        _deg = Mathf.Clamp(_deg + d, 0f, fullOpenDegrees);
-        Apply();
-        OpenPercent01 = Mathf.Clamp01(_deg / fullOpenDegrees);
+
+        // Terapkan LANGSUNG (tanpa SmoothDamp) -> putaran wheel mengikuti tangan real-time.
+        _targetDeg = Mathf.Clamp(_targetDeg + d, 0f, fullOpenDegrees);
+        _displayDeg = _targetDeg;
+        Apply(_displayDeg);
+        OpenPercent01 = Mathf.Clamp01(_displayDeg / fullOpenDegrees);
     }
 
-    void Apply()
+    void Apply(float degrees)
     {
-        Quaternion delta = Quaternion.AngleAxis(_deg, _axis);
+        Quaternion delta = Quaternion.AngleAxis(degrees, _axis);
         for (int i = 0; i < _parts.Length; i++)
         {
             if (_parts[i] == null) continue;

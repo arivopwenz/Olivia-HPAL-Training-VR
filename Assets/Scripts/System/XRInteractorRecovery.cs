@@ -179,7 +179,6 @@ public static class XRInteractorRecovery
                typeName == "XRRayInteractor" ||
                typeName == "XRDirectInteractor" ||
                typeName == "XRPokeInteractor" ||
-               typeName == "XRInteractorLineVisual" ||
                typeName == "CurveVisualController";
     }
 
@@ -278,6 +277,8 @@ public static class XRInteractorRecovery
         foreach (var mb in root.GetComponentsInChildren<MonoBehaviour>(true))
         {
             if (!IsRayVisualController(mb)) continue;
+            if (!HasLineRenderableInHierarchy(mb.gameObject))
+                continue;
             if (activateGameObjects && !mb.gameObject.activeSelf)
                 mb.gameObject.SetActive(true);
             if (!mb.enabled)
@@ -291,5 +292,14 @@ public static class XRInteractorRecovery
 
         string tn = mb.GetType().Name;
         return tn == "XRInteractorLineVisual" || tn == "CurveVisualController";
+    }
+
+    private static bool HasLineRenderableInHierarchy(GameObject go)
+    {
+        if (go == null) return false;
+        return go.GetComponent<NearFarInteractor>() != null ||
+               go.GetComponent<XRRayInteractor>() != null ||
+               go.GetComponentInParent<NearFarInteractor>(true) != null ||
+               go.GetComponentInParent<XRRayInteractor>(true) != null;
     }
 }

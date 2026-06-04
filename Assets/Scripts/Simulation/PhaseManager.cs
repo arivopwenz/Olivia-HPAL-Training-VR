@@ -861,10 +861,20 @@ public class PhaseManager : MonoBehaviour
 
         _respiratorObject.gameObject.SetActive(true);
 
+        // PENTING: hentikan coroutine fade masker (dari Level 1 saat dipakai di wajah) supaya
+        // tidak men-transparankan ulang masker yang baru ditaruh di dada. Bug "masker hilang"
+        // di gameplay normal (Level1->2->3) berasal dari fade ini; debug-skip tidak fade.
+        if (_coroutineFadeMasker != null)
+        {
+            StopCoroutine(_coroutineFadeMasker);
+            _coroutineFadeMasker = null;
+        }
+
         foreach (Renderer mr in _respiratorObject.GetComponentsInChildren<Renderer>(true))
         {
             if (mr == null) continue;
             mr.enabled = true;
+            SetRendererAlpha(mr, 1f);
             BuatMaterialSolid(mr);
         }
 
@@ -943,7 +953,17 @@ public class PhaseManager : MonoBehaviour
     private void MulaiFadeApdSetelahDipakai(string objectName)
     {
         if (!_maskerAutoTransparentSaatDipakai) return;
-        StartCoroutine(FadeApdCoroutine(objectName));
+        // Khusus masker: simpan handle coroutine supaya bisa dihentikan saat masker
+        // dipindah ke dada (mencegah bug "masker hilang" karena fade transparan).
+        if (objectName == "RespiratorMask")
+        {
+            if (_coroutineFadeMasker != null) StopCoroutine(_coroutineFadeMasker);
+            _coroutineFadeMasker = StartCoroutine(FadeApdCoroutine(objectName));
+        }
+        else
+        {
+            StartCoroutine(FadeApdCoroutine(objectName));
+        }
     }
 
     private IEnumerator FadeApdCoroutine(string objectName)

@@ -87,7 +87,7 @@ public class SlurryConditioningTankRunner : MonoBehaviour
             _solids[i] = chunk.transform;
         }
 
-        BuildPanel();
+        // BuildPanel() dihapus atas permintaan: Slurry_Instrument_Panel tidak dibuat lagi.
     }
 
     void BuildPanel()

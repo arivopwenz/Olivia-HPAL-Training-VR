@@ -99,6 +99,7 @@ public class InteractorRayHealer : MonoBehaviour
         {
             var mb = behaviours[i];
             if (!IsBuiltInRayVisual(mb)) continue;
+            if (!HasLineRenderableInHierarchy(mb.gameObject)) continue;
 
             if (!mb.gameObject.activeSelf)
                 mb.gameObject.SetActive(true);
@@ -123,5 +124,14 @@ public class InteractorRayHealer : MonoBehaviour
 
         string tn = mb.GetType().Name;
         return tn == "XRInteractorLineVisual" || tn == "CurveVisualController";
+    }
+
+    private bool HasLineRenderableInHierarchy(GameObject go)
+    {
+        if (go == null) return false;
+        return go.GetComponent<NearFarInteractor>() != null ||
+               go.GetComponent<XRRayInteractor>() != null ||
+               go.GetComponentInParent<NearFarInteractor>(true) != null ||
+               go.GetComponentInParent<XRRayInteractor>(true) != null;
     }
 }
