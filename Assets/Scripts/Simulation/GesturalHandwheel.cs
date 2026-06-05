@@ -26,8 +26,27 @@ public class GesturalHandwheel : MonoBehaviour
 
     Transform[] _parts; Quaternion[] _baseRot; Vector3[] _basePos;
     Vector3 _pivot, _axis = Vector3.right;
+    float _ringRadius = 0.5f;
     float _targetDeg, _displayDeg, _smoothVelocity;
     bool _active, _yawValid; float _yawLast; Transform _attach; bool _ready;
+    Transform _activeHand;
+    static readonly List<Transform> s_handCandidates = new List<Transform>();
+    static float s_nextHandScanTime;
+    static readonly string[] s_knownHandNames =
+    {
+        "OLIVIA_Left_TransparentHand",
+        "OLIVIA_Right_TransparentHand",
+        "LeftHand",
+        "RightHand",
+        "Left Controller",
+        "Right Controller",
+        "[Left InteractionAttachController] Attach",
+        "[Right InteractionAttachController] Attach",
+        "[Left InteractionAttachController] Attach Child",
+        "[Right InteractionAttachController] Attach Child",
+        "Left Controller Stabilized Attach",
+        "Right Controller Stabilized Attach"
+    };
 
     void Start()
     {
@@ -72,12 +91,23 @@ public class GesturalHandwheel : MonoBehaviour
         Bounds b = default; bool has = false;
         foreach (var p in _parts)
             foreach (var r in p.GetComponentsInChildren<Renderer>())
-            { if (!has) { b = r.bounds; has = true; } else b.Encapsulate(r.bounds); }
+            {
+                if (r == null || !IsFinite(r.bounds.center) || !IsFinite(r.bounds.size))
+                    continue;
+                if (!has) { b = r.bounds; has = true; } else b.Encapsulate(r.bounds);
+            }
         _pivot = has ? b.center : (hub != null ? hub.position : _parts[0].position);
+        if (!IsFinite(_pivot))
+            _pivot = hub != null && IsFinite(hub.position) ? hub.position : transform.position;
         Vector3 s = has ? b.size : Vector3.one;
         _axis = (s.x <= s.y && s.x <= s.z) ? Vector3.right : (s.y <= s.z ? Vector3.up : Vector3.forward);
+        _ringRadius = Mathf.Max(0.12f, Mathf.Max(s.x, s.y, s.z) * 0.5f);
 
-        for (int i = 0; i < _parts.Length; i++) { _baseRot[i] = _parts[i].rotation; _basePos[i] = _parts[i].position; }
+        for (int i = 0; i < _parts.Length; i++)
+        {
+            _baseRot[i] = IsFinite(_parts[i].rotation) ? _parts[i].rotation : Quaternion.identity;
+            _basePos[i] = IsFinite(_parts[i].position) ? _parts[i].position : _pivot;
+        }
         _targetDeg = 0f; _displayDeg = 0f; _smoothVelocity = 0f; OpenPercent01 = 0f; _ready = true;
         EnsureInteractable(hub != null ? hub : _parts[0]);
     }
@@ -113,40 +143,56 @@ public class GesturalHandwheel : MonoBehaviour
     void Update()
     {
         if (!_ready) return;
+
         float d = 0f;
-        // Keyboard fallback (R): kecepatan tetap, konsisten.
-        if (Input.GetKey(debugKey)) d += 200f * Time.deltaTime;
-        if (_active && _attach != null)
+        Transform directHand = ResolveDirectHandTracker();
+        if (directHand != null)
         {
-            // ROTASI berbasis TWIST tangan (orientasi controller) — versi yang terbukti
-            // bisa diputar dgn ray/hover interactor. Saat player memutar pergelangan, vektor
-            // .up / .right controller berputar di bidang disc -> sudut berubah -> wheel ikut.
+            d += GetPositionDelta(directHand);
+        }
+        else if (_active && _attach != null)
+        {
             Vector3 handVec = _attach.up;
             Vector3 p = Vector3.ProjectOnPlane(handVec, _axis);
-            if (p.sqrMagnitude < 0.02f) { handVec = _attach.right; p = Vector3.ProjectOnPlane(handVec, _axis); }
+            if (p.sqrMagnitude < 0.02f)
+            {
+                handVec = _attach.right;
+                p = Vector3.ProjectOnPlane(handVec, _axis);
+            }
+
             if (p.sqrMagnitude > 0.0001f)
             {
                 p.Normalize();
                 Vector3 r = Vector3.ProjectOnPlane(Vector3.up, _axis);
-                if (r.sqrMagnitude < 0.0001f) r = Vector3.ProjectOnPlane(Vector3.right, _axis);
+                if (r.sqrMagnitude < 0.0001f)
+                    r = Vector3.ProjectOnPlane(Vector3.right, _axis);
                 r.Normalize();
+
                 float yaw = Vector3.SignedAngle(r, p, _axis);
-                if (!_yawValid) { _yawLast = yaw; _yawValid = true; }
+                if (!_yawValid)
+                {
+                    _yawLast = yaw;
+                    _yawValid = true;
+                }
                 else
                 {
                     float dy = Mathf.DeltaAngle(_yawLast, yaw);
                     _yawLast = yaw;
-                    if (Mathf.Abs(dy) > 60f) dy = 0f;   // buang outlier (glitch tracking)
+                    if (Mathf.Abs(dy) > 60f) dy = 0f;
                     d += dy * Mathf.Max(1f, gesturalGain);
                 }
             }
         }
-        else _yawValid = false;
+        else
+        {
+            _yawValid = false;
+        }
 
-        if (Mathf.Abs(d) < 0.0001f) return;
+        if (!float.IsFinite(d) || Mathf.Abs(d) < 0.0001f) return;
 
-        // Terapkan LANGSUNG (tanpa SmoothDamp) -> putaran wheel mengikuti tangan real-time.
         _targetDeg = Mathf.Clamp(_targetDeg + d, 0f, fullOpenDegrees);
+        if (!float.IsFinite(_targetDeg))
+            _targetDeg = _displayDeg;
         _displayDeg = _targetDeg;
         Apply(_displayDeg);
         OpenPercent01 = Mathf.Clamp01(_displayDeg / fullOpenDegrees);
@@ -154,12 +200,161 @@ public class GesturalHandwheel : MonoBehaviour
 
     void Apply(float degrees)
     {
+        if (!float.IsFinite(degrees) || !IsFinite(_pivot) || !IsFinite(_axis))
+            return;
+
         Quaternion delta = Quaternion.AngleAxis(degrees, _axis);
+        if (!IsFinite(delta))
+            return;
+
         for (int i = 0; i < _parts.Length; i++)
         {
             if (_parts[i] == null) continue;
-            _parts[i].rotation = delta * _baseRot[i];
-            _parts[i].position = _pivot + delta * (_basePos[i] - _pivot);
+            Quaternion nextRotation = delta * _baseRot[i];
+            Vector3 nextPosition = _pivot + delta * (_basePos[i] - _pivot);
+            if (!IsFinite(nextRotation) || !IsFinite(nextPosition))
+                continue;
+
+            _parts[i].rotation = nextRotation;
+            _parts[i].position = nextPosition;
         }
+    }
+
+    static bool IsFinite(Vector3 v)
+    {
+        return float.IsFinite(v.x) && float.IsFinite(v.y) && float.IsFinite(v.z);
+    }
+
+    static bool IsFinite(Quaternion q)
+    {
+        return float.IsFinite(q.x) && float.IsFinite(q.y) && float.IsFinite(q.z) && float.IsFinite(q.w);
+    }
+
+
+    Transform ResolveDirectHandTracker()
+    {
+        RefreshSharedHandCandidates();
+
+        Transform best = null;
+        float bestScore = float.MaxValue;
+        for (int i = 0; i < s_handCandidates.Count; i++)
+            ScoreHandCandidate(s_handCandidates[i], ref best, ref bestScore);
+
+        if (best == null)
+        {
+            _activeHand = null;
+            _yawValid = false;
+            return null;
+        }
+
+        if (_activeHand != best)
+        {
+            _activeHand = best;
+            _yawValid = false;
+        }
+
+        return best;
+    }
+
+    static void RefreshSharedHandCandidates()
+    {
+        if (Time.time < s_nextHandScanTime && s_handCandidates.Count > 0)
+            return;
+
+        s_nextHandScanTime = Time.time + 0.5f;
+        s_handCandidates.Clear();
+
+        for (int i = 0; i < s_knownHandNames.Length; i++)
+        {
+            GameObject go = GameObject.Find(s_knownHandNames[i]);
+            if (go == null) continue;
+
+            Transform t = go.transform;
+            if (t == null || !t.gameObject.activeInHierarchy) continue;
+            if (!s_handCandidates.Contains(t))
+                s_handCandidates.Add(t);
+        }
+    }
+
+    void ScoreHandCandidate(Transform candidate, ref Transform best, ref float bestScore)
+    {
+        if (candidate == null || !candidate.gameObject.activeInHierarchy) return;
+        if (!IsFinite(candidate.position)) return;
+
+        Vector3 fromCenter = candidate.position - _pivot;
+        float axial = Mathf.Abs(Vector3.Dot(fromCenter, _axis.normalized));
+        Vector3 inPlane = Vector3.ProjectOnPlane(fromCenter, _axis);
+        float radial = inPlane.magnitude;
+        if (!float.IsFinite(axial) || !float.IsFinite(radial)) return;
+
+        float minRadius = Mathf.Max(0.05f, _ringRadius * 0.18f);
+        float maxRadius = Mathf.Max(0.65f, _ringRadius * 2.2f);
+        float maxAxial = Mathf.Max(0.75f, _ringRadius * 1.8f);
+        if (radial < minRadius || radial > maxRadius || axial > maxAxial)
+            return;
+
+        float score = Mathf.Abs(radial - _ringRadius) + axial * 0.35f;
+        if (score < bestScore)
+        {
+            bestScore = score;
+            best = candidate;
+        }
+    }
+
+    float GetPositionDelta(Transform hand)
+    {
+        if (hand == null || !IsFinite(hand.position) || !IsFinite(_pivot) || !IsFinite(_axis))
+        {
+            _yawValid = false;
+            return 0f;
+        }
+
+        Vector3 inPlane = Vector3.ProjectOnPlane(hand.position - _pivot, _axis);
+        if (!IsFinite(inPlane) || inPlane.sqrMagnitude < 0.0001f)
+        {
+            _yawValid = false;
+            return 0f;
+        }
+
+        Vector3 reference = Vector3.ProjectOnPlane(Vector3.up, _axis);
+        if (reference.sqrMagnitude < 0.0001f)
+            reference = Vector3.ProjectOnPlane(Vector3.right, _axis);
+        reference.Normalize();
+        if (!IsFinite(reference))
+        {
+            _yawValid = false;
+            return 0f;
+        }
+
+        float yaw = Vector3.SignedAngle(reference, inPlane.normalized, _axis);
+        if (!float.IsFinite(yaw))
+        {
+            _yawValid = false;
+            return 0f;
+        }
+        if (!_yawValid)
+        {
+            _yawLast = yaw;
+            _yawValid = true;
+            return 0f;
+        }
+
+        float delta = Mathf.DeltaAngle(_yawLast, yaw);
+        _yawLast = yaw;
+        if (!float.IsFinite(delta) || Mathf.Abs(delta) < 0.04f || Mathf.Abs(delta) > 75f)
+            return 0f;
+
+        return -delta * Mathf.Max(1f, gesturalGain);
+    }
+
+    static bool PathContains(Transform t, string token)
+    {
+        while (t != null)
+        {
+            if (t.name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return true;
+            t = t.parent;
+        }
+        return false;
     }
 }

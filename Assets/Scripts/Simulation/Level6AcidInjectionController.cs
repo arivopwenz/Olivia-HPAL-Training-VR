@@ -44,6 +44,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     [SerializeField] private Renderer _slurryLampRed;
     [SerializeField] private Renderer _slurryLampGreen;
     [SerializeField] private float _slurryFullOpenDegrees = 1080f;
+    [SerializeField] private bool _slurryHandTrackingAlwaysOn = false;
 
     [Header("=== Acid Field Verification ===")]
     [SerializeField] private Transform _acidValveWheel;
@@ -112,7 +113,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     [TextArea(2, 4)] [SerializeField] private string _msgReportOutlet =
         "Lapor HT: 'Outlet pre-heater dibuka, segera salurkan ke autoclave'.";
     [TextArea(2, 4)] [SerializeField] private string _msgOpenSlurryValve =
-        "Buka valve jalur slurry: tahan grip + putar tangan, atau tekan R (buka) / F (tutup) terus sampai lampu hijau.";
+        "Buka valve jalur slurry: dekatkan tangan ke ring setir, lalu gerakkan tangan kiri-kanan/melingkar. Setir akan mengikuti gerak tangan.";
     [TextArea(2, 4)] [SerializeField] private string _msgSlurryArrived =
         "Slurry panas sudah masuk autoclave. Lapor HT: 'slurry masuk autoclave'.";
     [TextArea(2, 4)] [SerializeField] private string _msgDcsAcid =
@@ -120,9 +121,9 @@ public class Level6AcidInjectionController : MonoBehaviour
     [TextArea(2, 4)] [SerializeField] private string _msgOpenAcidValve =
         "Buka isolation valve H2SO4: tahan grip + putar, atau tekan R (buka) / F (tutup) terus sampai lampu jalur hijau.";
     [TextArea(2, 4)] [SerializeField] private string _msgLocalStart =
-        "Tekan tombol LOCAL START hijau di skid untuk menyalakan metering pump.";
+        "Verifikasi skid asam di field. Jika area aman, lapor HT: 'field acid skid aman'.";
     [TextArea(2, 4)] [SerializeField] private string _msgLeakInspect =
-        "Periksa flange & sparger 8 detik. Jika tidak ada bocor, tekan LEAK INSPECTION OK untuk izinkan acid masuk autoclave.";
+        "Periksa flange & sparger. Jika tidak ada bocor, lapor HT untuk izinkan acid masuk autoclave.";
     [TextArea(2, 4)] [SerializeField] private string _msgFinalReport =
         "Acid injection aktif. Lapor HT: 'acid aktif, rasio 350 kilo, pH 1.0'.";
 
@@ -171,6 +172,10 @@ public class Level6AcidInjectionController : MonoBehaviour
     private float _leakInspectStartTime;
     private Transform _slurryInteractorAttach;
     private Transform _acidInteractorAttach;
+    private Transform _leftHandTracker;
+    private Transform _rightHandTracker;
+    private Transform _activeSlurryHandTracker;
+    private GesturalHandwheel _slurryValveHandwheel;
     private Quaternion _slurryWheelBase = Quaternion.identity;
     private Quaternion _acidWheelBase = Quaternion.identity;
     private Quaternion _slurryGaugeBase = Quaternion.identity;
@@ -246,40 +251,47 @@ public class Level6AcidInjectionController : MonoBehaviour
             StartSequence(KembaliKeDcsAcidCoroutine());
             return;
         }
+
+        if (_phase == Phase.TekanLocalStart)
+        {
+            StartSequence(AcidFlowCoroutine());
+            return;
+        }
     }
 
     private void Update()
     {
-        if (!IsLevel6()) return;
+        bool level6Active = IsLevel6();
+        if (!level6Active)
+        {
+            if (_slurryHandTrackingAlwaysOn)
+                HandleSlurryValveHandTracking(false);
+            return;
+        }
 
         if (_phase == Phase.BukaValveSlurry)
         {
-            bool changed = _slurryGrabbed && TrackWheelRotation(_slurryValveWheel, _slurryInteractorAttach, _slurryValveAxisLocal, ref _slurryYawLast, ref _slurryYawValid, ref _slurryValveDegrees, _slurryFullOpenDegrees);
-            changed |= SimulateKeyboard(ref _slurryValveDegrees, _slurryFullOpenDegrees);
-            // Auto-open fallback DIHAPUS atas permintaan: rotasi murni dari deteksi tangan
-            // realtime atau tombol R/F (SimulateKeyboard). Tidak auto-spin saat grabbed.
-            if (changed) UpdateSlurryValveVisuals();
-            if (_slurryOpenPercent >= 0.99f) StartSequence(SlurryFlowCoroutine());
+            HandleSlurryValveHandTracking(true);
         }
-        else if (_phase == Phase.DcsAcidSetup)
+        else
+        {
+            if (_slurryHandTrackingAlwaysOn)
+                HandleSlurryValveHandTracking(false);
+        }
+
+        if (_phase == Phase.DcsAcidSetup)
         {
             SimulateAcidDcsKeyboard();
             CheckExternalAcidTarget();
         }
         else if (_phase == Phase.BukaValveAcid)
         {
-            // Phase ini sudah tidak digunakan (skip langsung ke TekanLocalStart).
-            // Auto-advance kalau somehow kena di sini.
+            // Phase ini sudah tidak digunakan. Verifikasi acid skid sekarang lewat laporan HT.
             StartSequence(LocalStartAcidCoroutine());
         }
         else if (_phase == Phase.LeakInspection)
         {
             AnimateAcidPumpRotor();
-            SimulateFieldAcidKeyboard();
-        }
-        else if (_phase == Phase.TekanLocalStart)
-        {
-            SimulateFieldAcidKeyboard();
         }
     }
 
@@ -345,6 +357,8 @@ public class Level6AcidInjectionController : MonoBehaviour
         if (_acidDcsReady) return;
         bool ratioOk = Mathf.Abs(_acidRatioCurrent - _acidRatioTarget) <= _acidRatioTolerance && _phCurrent <= 1.1f;
         bool strokeOk = Mathf.Abs(_strokePercentCurrent - _strokePercentTarget) <= _strokePercentTolerance;
+        if (HasSceneDcsAcidButtons() && _btnAcidArm == null && ratioOk && strokeOk)
+            _acidArmed = true;
         if (!ratioOk || !strokeOk || !_acidArmed) return;
 
         _acidDcsReady = true;
@@ -414,7 +428,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         yield return new WaitForSeconds(1.5f);
         yield return FadeHalfTeleport(_teleportTargetAcidSkid);
         XRInteractorRecovery.PulihkanRayInteractor();
-        // Langsung skip BukaValveAcid: di acid skid player tidak buka valve, hanya tekan LOCAL_START + LEAK_OK.
+        // Langsung skip button field: verifikasi acid skid cukup lewat laporan HT.
         _phase = Phase.TekanLocalStart;
         SetLampPair(_acidLampRed, _acidLampGreen, false);
         _hud?.ShowNotifPublic(_msgLocalStart);
@@ -588,7 +602,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     private void UpdateSlurryValveVisuals()
     {
         _slurryOpenPercent = Mathf.Clamp01(_slurryValveDegrees / _slurryFullOpenDegrees);
-        if (_slurryValveWheel != null)
+        if (_slurryValveWheel != null && _slurryValveHandwheel == null)
             _slurryValveWheel.localRotation = _slurryWheelBase * Quaternion.AngleAxis(_slurryValveDegrees, SafeAxis(_slurryValveAxisLocal, Vector3.up));
         if (_slurryGaugeNeedle != null)
             _slurryGaugeNeedle.localRotation = _slurryGaugeBase * Quaternion.AngleAxis(-Mathf.Lerp(0f, 145f, _slurryOpenPercent), Vector3.forward);
@@ -607,9 +621,14 @@ public class Level6AcidInjectionController : MonoBehaviour
 
     private bool TrackWheelRotation(Transform wheel, Transform attach, Vector3 localAxis, ref float yawLast, ref bool yawValid, ref float degrees, float maxDegrees)
     {
-        if (wheel == null || attach == null) return false;
+        if (wheel == null || attach == null)
+        {
+            yawValid = false;
+            return false;
+        }
+
         // Sumbu putar wheel dalam world space.
-        Vector3 axisWorld = wheel.parent != null ? wheel.parent.TransformDirection(localAxis).normalized : wheel.TransformDirection(localAxis).normalized;
+        Vector3 axisWorld = wheel.TransformDirection(localAxis).normalized;
         if (axisWorld.sqrMagnitude < 0.001f) axisWorld = Vector3.up;
 
         // REAL VR FEEL: ukur posisi tangan player relatif ke pusat wheel, lalu hitung sudut
@@ -643,6 +662,83 @@ public class Level6AcidInjectionController : MonoBehaviour
 
         degrees = Mathf.Clamp(degrees + delta, 0f, maxDegrees);
         return true;
+    }
+
+    private Transform ResolveSlurryHandTracker()
+    {
+        if (_slurryValveWheel == null)
+            return null;
+
+        if (_slurryGrabbed && _slurryInteractorAttach != null)
+            return _slurryInteractorAttach;
+
+        if (_leftHandTracker == null || _rightHandTracker == null)
+            CacheHandTrackers();
+
+        Vector3 axisWorld = _slurryValveWheel.TransformDirection(SafeAxis(_slurryValveAxisLocal, Vector3.up)).normalized;
+        if (axisWorld.sqrMagnitude < 0.001f) axisWorld = _slurryValveWheel.forward;
+
+        Transform best = null;
+        float bestScore = float.MaxValue;
+        ScoreHandTracker(_leftHandTracker, _slurryValveWheel.position, axisWorld, ref best, ref bestScore);
+        ScoreHandTracker(_rightHandTracker, _slurryValveWheel.position, axisWorld, ref best, ref bestScore);
+
+        if (best == null)
+        {
+            _activeSlurryHandTracker = null;
+            _slurryYawValid = false;
+            return null;
+        }
+
+        if (_activeSlurryHandTracker != best)
+        {
+            _activeSlurryHandTracker = best;
+            _slurryYawValid = false;
+        }
+
+        return best;
+    }
+
+    private void ScoreHandTracker(Transform candidate, Vector3 wheelCenter, Vector3 axisWorld, ref Transform best, ref float bestScore)
+    {
+        if (candidate == null || !candidate.gameObject.activeInHierarchy)
+            return;
+
+        Vector3 fromCenter = candidate.position - wheelCenter;
+        float axialDistance = Mathf.Abs(Vector3.Dot(fromCenter, axisWorld));
+        Vector3 inPlane = Vector3.ProjectOnPlane(fromCenter, axisWorld);
+        float radialDistance = inPlane.magnitude;
+
+        // Tangan harus berada dekat bidang setir dan di area ring, bukan terlalu jauh.
+        if (axialDistance > 0.85f || radialDistance < 0.08f || radialDistance > 1.25f)
+            return;
+
+        float score = Mathf.Abs(radialDistance - 0.48f) + axialDistance * 0.35f;
+        if (score < bestScore)
+        {
+            bestScore = score;
+            best = candidate;
+        }
+    }
+
+    private void HandleSlurryValveHandTracking(bool allowQuestAdvance)
+    {
+        bool changed = false;
+        if (_slurryValveHandwheel != null)
+        {
+            float degrees = Mathf.Clamp01(_slurryValveHandwheel.OpenPercent01) * _slurryFullOpenDegrees;
+            changed = Mathf.Abs(degrees - _slurryValveDegrees) > 0.01f;
+            _slurryValveDegrees = degrees;
+        }
+        else
+        {
+            Transform handTarget = ResolveSlurryHandTracker();
+            changed = TrackWheelRotation(_slurryValveWheel, handTarget, _slurryValveAxisLocal, ref _slurryYawLast, ref _slurryYawValid, ref _slurryValveDegrees, _slurryFullOpenDegrees);
+        }
+
+        if (changed) UpdateSlurryValveVisuals();
+        if (allowQuestAdvance && _slurryOpenPercent >= 0.99f)
+            StartSequence(SlurryFlowCoroutine());
     }
 
     private bool SimulateKeyboard(ref float degrees, float maxDegrees)
@@ -822,18 +918,19 @@ public class Level6AcidInjectionController : MonoBehaviour
         if (_teleportTargetDcs == null) _teleportTargetDcs = FindTransformByName("SpawnPoint_DCS");
         if (_teleportTargetSlurryValve == null) _teleportTargetSlurryValve = FindTransformByName("SpawnPoint_Lvl6");
         if (_teleportTargetAcidSkid == null) _teleportTargetAcidSkid = FindTransformByName("SpawnPoint_Lvl6_AcidSkid") ?? FindTransformByName("SpawnPoint_Lvl6");
-        if (_slurryValveWheel == null) _slurryValveWheel = FindNearestSlurryHandwheel() ?? FindTransformContains("L6_SlurryRoute_ValveWheel_Runtime");
+        CacheHandTrackers();
+        if (_slurryValveHandwheel == null) _slurryValveHandwheel = FindNearestSlurryHandwheel();
+        if (_slurryValveWheel == null && _slurryValveHandwheel != null) _slurryValveWheel = _slurryValveHandwheel.transform;
+        if (_slurryValveWheel == null) _slurryValveWheel = FindTransformContains("L6_SlurryRoute_ValveWheel_Runtime");
         if (_acidValveWheel == null) _acidValveWheel = FindTransformContains("L6_AcidSkid_ValveWheel_Runtime") ?? FindTransformContains("AcidInjection_IsolationValve_Handwheel");
         if (_slurryGaugeNeedle == null) _slurryGaugeNeedle = FindNearestNeedle(_slurryValveWheel);
         if (_acidGaugeNeedle == null) _acidGaugeNeedle = FindTransformContains("AcidInjectionSystem_Redesign_Model/PressureGauge_Needle") ?? FindNearestNeedle(_acidValveWheel);
-        if (_btnAcidPlus == null) _btnAcidPlus = FindInteractable("Btn_AcidPlus");
-        if (_btnAcidMinus == null) _btnAcidMinus = FindInteractable("Btn_AcidMinus");
-        if (_btnAcidStrokePlus == null) _btnAcidStrokePlus = FindInteractable("Btn_AcidStrokePlus");
-        if (_btnAcidStrokeMinus == null) _btnAcidStrokeMinus = FindInteractable("Btn_AcidStrokeMinus");
+        if (_btnAcidPlus == null) _btnAcidPlus = FindOrCreateSceneInteractable("PS_AcidRatio_pr", "A_PARAM_AcidRatio_PLUS") ?? FindInteractable("Btn_AcidPlus");
+        if (_btnAcidMinus == null) _btnAcidMinus = FindOrCreateSceneInteractable("PS_AcidRatio_mr", "A_PARAM_AcidRatio_MINUS") ?? FindInteractable("Btn_AcidMinus");
+        if (_btnAcidStrokePlus == null) _btnAcidStrokePlus = FindOrCreateSceneInteractable("PS_AcidStroke_pr", "A_PARAM_AcidStroke_PLUS") ?? FindInteractable("Btn_AcidStrokePlus");
+        if (_btnAcidStrokeMinus == null) _btnAcidStrokeMinus = FindOrCreateSceneInteractable("PS_AcidStroke_mr", "A_PARAM_AcidStroke_MINUS") ?? FindInteractable("Btn_AcidStrokeMinus");
         if (_btnAcidTankSelect == null) _btnAcidTankSelect = FindInteractable("Btn_AcidTankSelect");
         if (_btnAcidArm == null) _btnAcidArm = FindInteractable("Btn_AcidArm");
-        if (_btnAcidLocalStart == null) _btnAcidLocalStart = FindInteractable("Btn_AcidLocalStart");
-        if (_btnAcidLeakOk == null) _btnAcidLeakOk = FindInteractable("Btn_AcidLeakOk");
         if (_acidPumpRotor == null) _acidPumpRotor = FindTransformContains("AcidInjection_Pump_Rotor") ?? FindTransformContains("Pump_Rotor");
         if (_preheaterOutlet == null) _preheaterOutlet = FindTransformContains("Pipe_Preheater_Outlet_CleanRiser") ?? FindTransformContains("Pipe_Preheater_Outlet_CleanElbow") ?? FindTransformContains("Preheater_Outlet");
         if (_autoclaveInlet == null) _autoclaveInlet = FindTransformContains("Pipe_Autoclave_SlurryInlet_SideNozzle") ?? FindTransformContains("Autoclave_Inlet") ?? FindTransformContains("Autoclave_Left_Cap");
@@ -845,8 +942,18 @@ public class Level6AcidInjectionController : MonoBehaviour
     {
         if (_runtimeRoot == null)
         {
-            _runtimeRoot = new GameObject("Level6_Runtime_Objects");
-            _runtimeRoot.transform.SetParent(transform, false);
+            Transform existingRoot = transform.Find("Level6_Runtime_Objects") ?? FindTransformByName("Level6_Runtime_Objects");
+            if (existingRoot != null)
+            {
+                _runtimeRoot = existingRoot.gameObject;
+                if (existingRoot.parent != transform)
+                    existingRoot.SetParent(transform, true);
+            }
+            else
+            {
+                _runtimeRoot = new GameObject("Level6_Runtime_Objects");
+                _runtimeRoot.transform.SetParent(transform, false);
+            }
         }
 
         _slurryMat = _slurryMat != null ? _slurryMat : CreateTransparentMat("M_L6_Slurry_Purple_Runtime", new Color(0.45f, 0.12f, 0.75f, 0.78f), true);
@@ -854,7 +961,8 @@ public class Level6AcidInjectionController : MonoBehaviour
         EnsureWheelFallbacks();
         EnsureFlowAnchors();
         EnsureLampFallbacks();
-        EnsureInteractable(ref _slurryValveWheel, ref _slurryValveGrab, OnSlurryGrabbed, OnSlurryReleased);
+        if (_slurryValveHandwheel == null)
+            EnsureInteractable(ref _slurryValveWheel, ref _slurryValveGrab, OnSlurryGrabbed, OnSlurryReleased, OnSlurryHoverEntered, OnSlurryHoverExited);
         // Acid valve tidak diperlukan; player tekan button instead.
         CaptureBaseRotations();
         _slurryFlowObject = EnsureFlowCylinder("L6_SlurryFlow_Preheater_To_Autoclave", _slurryMat);
@@ -868,8 +976,8 @@ public class Level6AcidInjectionController : MonoBehaviour
     {
         if (_slurryValveWheel == null)
             _slurryValveWheel = CreateWheelFallback("L6_SlurryRoute_ValveWheel_Runtime", _teleportTargetSlurryValve != null ? _teleportTargetSlurryValve.position + new Vector3(0.7f, 1.15f, 1.0f) : new Vector3(18.7f, 3.2f, 57f));
-        // Acid valve dihilangkan: di acid skid player hanya tekan button START + LEAK_OK,
-        // tidak perlu valve runtime. Skip _acidValveWheel.
+        // Acid valve/button field dihilangkan: verifikasi acid skid cukup lewat laporan HT.
+        // Tidak perlu valve runtime. Skip _acidValveWheel.
     }
 
     private void EnsureFlowAnchors()
@@ -966,34 +1074,24 @@ public class Level6AcidInjectionController : MonoBehaviour
         // Panel base: di sebelah kanan column (player face left toward column).
         Vector3 panelBase = anchorPos + new Vector3(1.0f, -0.3f, 0f);
 
-        if (_btnAcidLocalStart == null)
-        {
-            _btnAcidLocalStart = CreateMushroomButton(
-                "L6_AcidSkid_BtnLocalStart_Runtime",
-                panelBase + new Vector3(0f, 0f, -0.25f),
-                Color.green,
-                "LOCAL\nSTART");
-        }
-
-        if (_btnAcidLeakOk == null)
-        {
-            _btnAcidLeakOk = CreateMushroomButton(
-                "L6_AcidSkid_BtnLeakOk_Runtime",
-                panelBase + new Vector3(0f, 0f, 0.25f),
-                new Color(0.05f, 0.45f, 0.95f),
-                "LEAK\nOK");
-        }
-
         if (_acidPumpRunningLamp == null)
         {
-            GameObject lamp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-            lamp.name = "L6_AcidSkid_PumpRunLamp_Runtime";
-            lamp.transform.SetParent(_runtimeRoot.transform, true);
-            lamp.transform.position = panelBase + new Vector3(0f, 0.4f, 0f);
-            lamp.transform.localScale = Vector3.one * 0.18f;
-            Collider lc = lamp.GetComponent<Collider>();
-            if (lc != null) Destroy(lc);
-            _acidPumpRunningLamp = lamp.GetComponent<Renderer>();
+            Transform existingLamp = _runtimeRoot.transform.Find("L6_AcidSkid_PumpRunLamp_Runtime");
+            if (existingLamp != null)
+            {
+                _acidPumpRunningLamp = existingLamp.GetComponent<Renderer>();
+            }
+            else
+            {
+                GameObject lamp = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                lamp.name = "L6_AcidSkid_PumpRunLamp_Runtime";
+                lamp.transform.SetParent(_runtimeRoot.transform, true);
+                lamp.transform.position = panelBase + new Vector3(0f, 0.4f, 0f);
+                lamp.transform.localScale = Vector3.one * 0.18f;
+                Collider lc = lamp.GetComponent<Collider>();
+                if (lc != null) DestroySafely(lc);
+                _acidPumpRunningLamp = lamp.GetComponent<Renderer>();
+            }
             EnsureLampMaterials();
             if (_acidPumpRunningLamp != null) _acidPumpRunningLamp.sharedMaterial = _greenOffMat;
         }
@@ -1008,7 +1106,7 @@ public class Level6AcidInjectionController : MonoBehaviour
             ped.transform.position = panelBase + new Vector3(0f, -0.12f, 0f);
             ped.transform.localScale = new Vector3(0.5f, 0.18f, 0.7f);
             Collider pc = ped.GetComponent<Collider>();
-            if (pc != null) Destroy(pc);
+            if (pc != null) DestroySafely(pc);
             Renderer pr = ped.GetComponent<Renderer>();
             if (pr != null) pr.sharedMaterial = CreateOpaqueMat("L6_AcidPedestalMat", new Color(0.25f, 0.25f, 0.28f));
         }
@@ -1036,21 +1134,26 @@ public class Level6AcidInjectionController : MonoBehaviour
         float innerHeight = columnHeight * 0.85f;
         float innerDiameter = columnDiameter * 0.85f;
 
-        // Bikin liquid sebagai child column TAPI dengan world-space transform supaya gak terpengaruh
-        // rotation parent yang kompleks. Pakai parent runtime root sebagai parent (world space).
-        GameObject liquid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-        liquid.name = "L6_CalibrationColumn_Liquid_Runtime";
-        Collider lcol = liquid.GetComponent<Collider>();
-        if (lcol != null) Destroy(lcol);
-
-        // Parent ke runtimeRoot (no rotation/scale dependency).
         Transform parent = _runtimeRoot != null ? _runtimeRoot.transform : null;
-        liquid.transform.SetParent(parent, true);
+        Transform existingLiquid = parent != null ? parent.Find("L6_CalibrationColumn_Liquid_Runtime") : null;
+        GameObject liquid;
+        if (existingLiquid != null)
+        {
+            liquid = existingLiquid.gameObject;
+        }
+        else
+        {
+            // Bikin liquid sebagai child runtime root dengan world-space transform supaya tidak
+            // ikut rotation/scale parent column yang kompleks.
+            liquid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            liquid.name = "L6_CalibrationColumn_Liquid_Runtime";
+            Collider lcol = liquid.GetComponent<Collider>();
+            if (lcol != null) DestroySafely(lcol);
+            liquid.transform.SetParent(parent, true);
+        }
+
         liquid.transform.rotation = Quaternion.identity; // cylinder Y axis = world up
         liquid.transform.position = new Vector3(worldCenter.x, worldCenter.y - columnHeight * 0.5f, worldCenter.z);
-        // Scale: cylinder primitive default = 2 unit tinggi (Y), 1 unit diameter (XZ).
-        // Saat full: localScale.y = innerHeight/2, localScale.xz = innerDiameter
-        // Start kosong: scale.y mendekati 0
         liquid.transform.localScale = new Vector3(innerDiameter, 0.001f, innerDiameter);
 
         Renderer rend = liquid.GetComponent<Renderer>();
@@ -1102,7 +1205,7 @@ public class Level6AcidInjectionController : MonoBehaviour
             if (sr != null) sr.sharedMaterial = CreateOpaqueMat(name + "_StemMat", new Color(0.18f, 0.18f, 0.18f));
             // Hapus collider stem (collider hanya di cap untuk grab)
             Collider sc = stemGo.GetComponent<Collider>();
-            if (sc != null) Destroy(sc);
+            if (sc != null) DestroySafely(sc);
         }
 
         Transform cap = root.transform.Find("Cap");
@@ -1117,7 +1220,7 @@ public class Level6AcidInjectionController : MonoBehaviour
             if (cr != null) cr.sharedMaterial = CreateOpaqueMat(name + "_CapMat", color, true);
             // Cap collider remove karena root yang punya
             Collider cc = capGo.GetComponent<Collider>();
-            if (cc != null) Destroy(cc);
+            if (cc != null) DestroySafely(cc);
         }
 
         SphereCollider col = root.GetComponent<SphereCollider>();
@@ -1140,7 +1243,7 @@ public class Level6AcidInjectionController : MonoBehaviour
             panel.transform.localPosition = new Vector3(0f, 0.45f, 0f);
             panel.transform.localScale = new Vector3(0.55f, 0.22f, 0.04f);
             Collider pc = panel.GetComponent<Collider>();
-            if (pc != null) Destroy(pc);
+            if (pc != null) DestroySafely(pc);
             Renderer pr = panel.GetComponent<Renderer>();
             if (pr != null) pr.sharedMaterial = CreateOpaqueMat(name + "_LabelBg", new Color(0.06f, 0.06f, 0.08f));
 
@@ -1178,21 +1281,42 @@ public class Level6AcidInjectionController : MonoBehaviour
     private void EnsureLampFallbacks()
     {
         if (_slurryValveWheel != null && (_slurryLampRed == null || _slurryLampGreen == null))
-            CreateLampPanel("L6_SlurryRoute_LampPanel_Runtime", _slurryValveWheel.position + new Vector3(0.85f, 0.35f, 0.35f), ref _slurryLampRed, ref _slurryLampGreen);
+        {
+            if (!TryUseExistingLampPanel("L6_SlurryRoute_LampPanel_Runtime", ref _slurryLampRed, ref _slurryLampGreen))
+                CreateLampPanel("L6_SlurryRoute_LampPanel_Runtime", _slurryValveWheel.position + new Vector3(0.85f, 0.35f, 0.35f), ref _slurryLampRed, ref _slurryLampGreen);
+        }
 
         if (_acidLampRed == null || _acidLampGreen == null)
         {
-            Vector3 lampPos;
-            if (_calibrationColumn != null) lampPos = _calibrationColumn.position + new Vector3(1.0f, 0.6f, 0f);
-            else if (_acidValveWheel != null) lampPos = _acidValveWheel.position + new Vector3(0.65f, 0.35f, 0.35f);
-            else if (_teleportTargetAcidSkid != null) lampPos = _teleportTargetAcidSkid.position + new Vector3(0.7f, 0.5f, 0f);
-            else lampPos = new Vector3(-15f, 3f, 42f);
-            CreateLampPanel("L6_AcidSkid_LampPanel_Runtime", lampPos, ref _acidLampRed, ref _acidLampGreen);
+            if (!TryUseExistingLampPanel("L6_AcidSkid_LampPanel_Runtime", ref _acidLampRed, ref _acidLampGreen))
+            {
+                Vector3 lampPos;
+                if (_calibrationColumn != null) lampPos = _calibrationColumn.position + new Vector3(1.0f, 0.6f, 0f);
+                else if (_acidValveWheel != null) lampPos = _acidValveWheel.position + new Vector3(0.65f, 0.35f, 0.35f);
+                else if (_teleportTargetAcidSkid != null) lampPos = _teleportTargetAcidSkid.position + new Vector3(0.7f, 0.5f, 0f);
+                else lampPos = new Vector3(-15f, 3f, 42f);
+                CreateLampPanel("L6_AcidSkid_LampPanel_Runtime", lampPos, ref _acidLampRed, ref _acidLampGreen);
+            }
         }
+    }
+
+    private bool TryUseExistingLampPanel(string name, ref Renderer red, ref Renderer green)
+    {
+        Transform panel = _runtimeRoot != null ? _runtimeRoot.transform.Find(name) : null;
+        if (panel == null) return false;
+
+        Transform redLamp = panel.Find(name + "_RedLamp");
+        Transform greenLamp = panel.Find(name + "_GreenLamp");
+        if (red == null && redLamp != null) red = redLamp.GetComponent<Renderer>();
+        if (green == null && greenLamp != null) green = greenLamp.GetComponent<Renderer>();
+        return red != null && green != null;
     }
 
     private void CreateLampPanel(string name, Vector3 pos, ref Renderer red, ref Renderer green)
     {
+        if (TryUseExistingLampPanel(name, ref red, ref green))
+            return;
+
         GameObject panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
         panel.name = name;
         panel.transform.SetParent(_runtimeRoot.transform, true);
@@ -1216,26 +1340,33 @@ public class Level6AcidInjectionController : MonoBehaviour
         green = g.GetComponent<Renderer>();
     }
 
-    private void EnsureInteractable(ref Transform wheel, ref XRGrabInteractable grab, UnityEngine.Events.UnityAction<UnityEngine.XR.Interaction.Toolkit.SelectEnterEventArgs> enter, UnityEngine.Events.UnityAction<UnityEngine.XR.Interaction.Toolkit.SelectExitEventArgs> exit)
+    private void EnsureInteractable(
+        ref Transform wheel,
+        ref XRGrabInteractable grab,
+        UnityEngine.Events.UnityAction<UnityEngine.XR.Interaction.Toolkit.SelectEnterEventArgs> selectEnter,
+        UnityEngine.Events.UnityAction<UnityEngine.XR.Interaction.Toolkit.SelectExitEventArgs> selectExit,
+        UnityEngine.Events.UnityAction<UnityEngine.XR.Interaction.Toolkit.HoverEnterEventArgs> hoverEnter,
+        UnityEngine.Events.UnityAction<UnityEngine.XR.Interaction.Toolkit.HoverExitEventArgs> hoverExit)
     {
         if (wheel == null) return;
 
-        // Remove any existing XRSimpleInteractable yang konflik dengan grab
-        var simple = wheel.GetComponent<XRSimpleInteractable>();
-        if (simple != null) Destroy(simple);
-
-        grab = wheel.GetComponent<XRGrabInteractable>() ?? wheel.gameObject.AddComponent<XRGrabInteractable>();
-        grab.enabled = true;
+        var existingGrab = wheel.GetComponent<XRGrabInteractable>();
+        if (existingGrab != null)
+        {
+            existingGrab.enabled = false;
+            DestroySafely(existingGrab);
+            grab = null;
+        }
 
         if (wheel.GetComponent<Collider>() == null)
         {
             SphereCollider col = wheel.gameObject.AddComponent<SphereCollider>();
-            col.radius = LocalRadiusForWorld(wheel, 0.42f);
+            col.radius = LocalRadiusForWorld(wheel, 0.72f);
             col.isTrigger = false;
         }
         else if (wheel.GetComponent<Collider>() is SphereCollider sphere)
         {
-            sphere.radius = LocalRadiusForWorld(wheel, 0.42f);
+            sphere.radius = LocalRadiusForWorld(wheel, 0.72f);
             sphere.isTrigger = false;
         }
         // Pastikan semua collider enabled
@@ -1251,10 +1382,22 @@ public class Level6AcidInjectionController : MonoBehaviour
         rbExist.isKinematic = true;
         rbExist.useGravity = false;
 
-        grab.selectEntered.RemoveListener(enter);
-        grab.selectExited.RemoveListener(exit);
-        grab.selectEntered.AddListener(enter);
-        grab.selectExited.AddListener(exit);
+        var simple = wheel.GetComponent<XRSimpleInteractable>() ?? wheel.gameObject.AddComponent<XRSimpleInteractable>();
+        simple.colliders.Clear();
+        foreach (var col in wheel.GetComponentsInChildren<Collider>(true))
+            if (col != null) simple.colliders.Add(col);
+
+        simple.selectEntered.RemoveListener(selectEnter);
+        simple.selectExited.RemoveListener(selectExit);
+        simple.hoverEntered.RemoveListener(hoverEnter);
+        simple.hoverExited.RemoveListener(hoverExit);
+        simple.selectEntered.AddListener(selectEnter);
+        simple.selectExited.AddListener(selectExit);
+        simple.hoverEntered.AddListener(hoverEnter);
+        simple.hoverExited.AddListener(hoverExit);
+
+        simple.enabled = false;
+        simple.enabled = true;
     }
 
     private void WireListeners()
@@ -1300,17 +1443,8 @@ public class Level6AcidInjectionController : MonoBehaviour
             _acidArmWired = true;
         }
 
-        if (_btnAcidLocalStart != null && !_localStartWired)
-        {
-            _btnAcidLocalStart.selectEntered.AddListener(_ => PressAcidLocalStart());
-            _localStartWired = true;
-        }
-
-        if (_btnAcidLeakOk != null && !_leakOkWired)
-        {
-            _btnAcidLeakOk.selectEntered.AddListener(_ => PressAcidLeakOk());
-            _leakOkWired = true;
-        }
+        // Field LOCAL START / LEAK OK buttons are no longer part of Level 6 flow.
+        // Acid skid verification is handled by HT report instead.
 
         _acidButtonsWired = _acidPlusWired || _acidMinusWired;
     }
@@ -1330,7 +1464,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         go.name = name;
         go.transform.SetParent(_runtimeRoot.transform, true);
         Collider col = go.GetComponent<Collider>();
-        if (col != null) Destroy(col);
+        if (col != null) DestroySafely(col);
         Renderer renderer = go.GetComponent<Renderer>();
         if (renderer != null) renderer.sharedMaterial = mat;
         go.SetActive(false);
@@ -1450,72 +1584,56 @@ public class Level6AcidInjectionController : MonoBehaviour
         return null;
     }
 
-    private Transform FindNearestSlurryHandwheel()
+    private void CacheHandTrackers()
     {
-        // Preheater outlet handwheel (model Blender) dekat SpawnPoint_Lvl6.
-        // Strategy: cari semua part handwheel terdekat, lalu group semua ke pivot baru
-        // supaya seluruh stir berputar (bukan cuma hub).
-        Vector3 anchor = _teleportTargetSlurryValve != null ? _teleportTargetSlurryValve.position : new Vector3(18f, 2f, 56f);
-        string[] partTokens = {
-            "L5_Condensate_Drain_Handwheel_Hub",
-            "L5_Condensate_Drain_Handwheel_OuterRing",
-            "L5_Condensate_Drain_Handwheel_Spoke_00",
-            "L5_Condensate_Drain_Handwheel_Spoke_01",
-            "L5_Condensate_Drain_Handwheel_Spoke_02",
-            "L5_Condensate_Drain_Handwheel_Spoke_03"
-        };
-
-        // Cari hub terdekat dulu untuk tentukan handwheel mana (ada 2 instance).
-        Transform[] all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
-        Transform nearestHub = null;
-        float bestDist = float.MaxValue;
-        foreach (Transform t in all)
+        if (_leftHandTracker == null)
         {
-            if (t == null) continue;
-            if (t.name.IndexOf("L5_Condensate_Drain_Handwheel_Hub", System.StringComparison.OrdinalIgnoreCase) < 0) continue;
-            float d = Vector3.SqrMagnitude(t.position - anchor);
-            if (d < bestDist) { nearestHub = t; bestDist = d; }
+            _leftHandTracker =
+                FindTransformByName("OLIVIA_Left_TransparentHand") ??
+                FindTransformByName("Left Controller") ??
+                FindTransformByName("Left Hand") ??
+                FindTransformContains("LeftHand") ??
+                FindTransformContains("Left Hand");
         }
-        if (nearestHub == null) return null;
 
-        // Cari semua 6 part di sekitar hub (radius < 0.5m world space, karena handwheel kecil).
-        Vector3 hubPos = nearestHub.position;
-        var parts = new System.Collections.Generic.List<Transform>();
-        foreach (Transform t in all)
+        if (_rightHandTracker == null)
         {
-            if (t == null) continue;
-            string n = t.name;
-            bool match = false;
-            for (int i = 0; i < partTokens.Length; i++)
+            _rightHandTracker =
+                FindTransformByName("OLIVIA_Right_TransparentHand") ??
+                FindTransformByName("Right Controller") ??
+                FindTransformByName("Right Hand") ??
+                FindTransformContains("RightHand") ??
+                FindTransformContains("Right Hand");
+        }
+    }
+
+private GesturalHandwheel FindNearestSlurryHandwheel()
+    {
+        Vector3 anchor = _teleportTargetSlurryValve != null ? _teleportTargetSlurryValve.position : new Vector3(-1.1f, 1.5f, 50.1f);
+        GesturalHandwheel best = null;
+        float bestScore = float.MaxValue;
+
+        GesturalHandwheel[] all = FindObjectsByType<GesturalHandwheel>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < all.Length; i++)
+        {
+            GesturalHandwheel gh = all[i];
+            if (gh == null || gh.transform == null) continue;
+
+            string path = GetPath(gh.transform);
+            if (path.IndexOf("L5_Condensate_Drain_Handwheel", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                path.IndexOf("PreHeater", System.StringComparison.OrdinalIgnoreCase) < 0 &&
+                path.IndexOf("Preheater", System.StringComparison.OrdinalIgnoreCase) < 0)
+                continue;
+
+            float score = Vector3.SqrMagnitude(gh.transform.position - anchor);
+            if (score < bestScore)
             {
-                if (n.IndexOf(partTokens[i], System.StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    match = true;
-                    break;
-                }
+                bestScore = score;
+                best = gh;
             }
-            if (!match) continue;
-            // Skip parts yang lebih dekat ke handwheel kedua (kalau ada 2 instance).
-            if (Vector3.SqrMagnitude(t.position - hubPos) > 1.0f) continue;
-            parts.Add(t);
         }
 
-        if (parts.Count == 0) return nearestHub;
-
-        // Bikin pivot di lokasi hub, lalu parent semua part ke pivot.
-        Transform sharedParent = nearestHub.parent;
-        GameObject pivotGo = new GameObject("L6_SlurryValve_Pivot_Runtime");
-        Transform pivot = pivotGo.transform;
-        if (sharedParent != null) pivot.SetParent(sharedParent, false);
-        pivot.position = hubPos;
-        pivot.rotation = nearestHub.rotation;
-
-        foreach (Transform p in parts)
-        {
-            p.SetParent(pivot, true); // worldPositionStays = true supaya part tidak loncat
-        }
-
-        return pivot;
+        return best;
     }
 
     private Transform FindTransformContains(string token)
@@ -1556,6 +1674,56 @@ public class Level6AcidInjectionController : MonoBehaviour
         return t != null ? t.GetComponent<XRSimpleInteractable>() : null;
     }
 
+private XRSimpleInteractable FindOrCreateSceneInteractable(params string[] names)
+    {
+        for (int i = 0; i < names.Length; i++)
+        {
+            Transform t = FindTransformByName(names[i]);
+            if (t == null) continue;
+
+            XRSimpleInteractable simple = t.GetComponent<XRSimpleInteractable>();
+            if (simple == null)
+                simple = t.gameObject.AddComponent<XRSimpleInteractable>();
+
+            Collider collider = t.GetComponent<Collider>();
+            if (collider == null)
+            {
+                BoxCollider box = t.gameObject.AddComponent<BoxCollider>();
+                MeshFilter mesh = t.GetComponent<MeshFilter>();
+                if (mesh != null && mesh.sharedMesh != null)
+                {
+                    box.center = mesh.sharedMesh.bounds.center;
+                    box.size = mesh.sharedMesh.bounds.size * 1.8f;
+                }
+                else
+                {
+                    box.center = Vector3.zero;
+                    box.size = Vector3.one * 0.18f;
+                }
+                collider = box;
+            }
+
+            collider.enabled = true;
+            collider.isTrigger = false;
+            simple.colliders.Clear();
+            simple.colliders.Add(collider);
+            simple.enabled = false;
+            simple.enabled = true;
+            return simple;
+        }
+
+        return null;
+    }
+
+    private bool HasSceneDcsAcidButtons()
+    {
+        return FindTransformByName("PS_AcidRatio_pr") != null &&
+               FindTransformByName("PS_AcidRatio_mr") != null &&
+               FindTransformByName("PS_AcidStroke_pr") != null &&
+               FindTransformByName("PS_AcidStroke_mr") != null;
+    }
+
+
     private string GetPath(Transform t)
     {
         string path = t.name;
@@ -1571,6 +1739,13 @@ public class Level6AcidInjectionController : MonoBehaviour
     private Vector3 SafeAxis(Vector3 axis, Vector3 fallback)
     {
         return axis.sqrMagnitude > 0.0001f ? axis.normalized : fallback;
+    }
+
+    private void DestroySafely(Object target)
+    {
+        if (target == null) return;
+        if (Application.isPlaying) Destroy(target);
+        else DestroyImmediate(target);
     }
 
     private void ShowAcidControls(bool show)
@@ -1592,8 +1767,27 @@ public class Level6AcidInjectionController : MonoBehaviour
     {
         if (_dcsAcidPanelRoot != null) return;
 
-        GameObject root = new GameObject("L6_DCS_AcidControlPanel_Runtime");
-        if (_runtimeRoot != null) root.transform.SetParent(_runtimeRoot.transform, true);
+        XRSimpleInteractable sceneAcidPlus = _btnAcidPlus;
+        XRSimpleInteractable sceneAcidMinus = _btnAcidMinus;
+        XRSimpleInteractable sceneStrokePlus = _btnAcidStrokePlus;
+        XRSimpleInteractable sceneStrokeMinus = _btnAcidStrokeMinus;
+
+        Transform existingRoot = _runtimeRoot != null ? _runtimeRoot.transform.Find("L6_DCS_AcidControlPanel_Runtime") : null;
+        if (existingRoot == null) existingRoot = FindTransformByName("L6_DCS_AcidControlPanel_Runtime");
+
+        GameObject root;
+        if (existingRoot != null)
+        {
+            root = existingRoot.gameObject;
+            if (_runtimeRoot != null && existingRoot.parent != _runtimeRoot.transform)
+                existingRoot.SetParent(_runtimeRoot.transform, true);
+            _dcsAcidPanelRoot = root;
+        }
+        else
+        {
+            root = new GameObject("L6_DCS_AcidControlPanel_Runtime");
+            if (_runtimeRoot != null) root.transform.SetParent(_runtimeRoot.transform, true);
+        }
 
         // TARUH DI LAYAR KIRI (VW_Side_L_Screen) supaya enak dilihat di layar video wall.
         // Operator menghadap +Z; panel ditaruh tepat di depan layar kiri & menghadap operator (-Z).
@@ -1603,9 +1797,9 @@ public class Level6AcidInjectionController : MonoBehaviour
             Vector3 sc = leftScreen.position;            // (~-5.67, 10.42, 20.02)
             Vector3 panelPos = new Vector3(sc.x, sc.y, sc.z - 0.06f);
             root.transform.position = panelPos;
-            // Konten panel (teks) menghadap local -Z. Supaya terbaca operator (yang menghadap +Z),
-            // panel local +Z harus mengarah +Z (ke dinding) -> rotasi identity. (back = mirror).
-            root.transform.rotation = Quaternion.identity;
+            // Operator berdiri di sisi -Z menghadap +Z. Supaya SEMUA teks panel terbaca
+            // (tidak mirror), konten harus menghadap operator: rotate root 180° Y.
+            root.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
             _dcsAcidPanelRoot = root;
         }
         else
@@ -1625,13 +1819,22 @@ public class Level6AcidInjectionController : MonoBehaviour
         }
 
         // Background plate (1.4m wide x 1.0m tall) — lebih kecil dari sebelumnya
+        if (root.transform.Find("Bg") != null)
+        {
+            BindExistingAcidPanelRefs(root.transform);
+            RestoreSceneAcidButtons(sceneAcidPlus, sceneAcidMinus, sceneStrokePlus, sceneStrokeMinus);
+            WireAcidButtons();
+            UpdateAcidDisplay();
+            return;
+        }
+
         GameObject bg = GameObject.CreatePrimitive(PrimitiveType.Cube);
         bg.name = "Bg";
         bg.transform.SetParent(root.transform, false);
         bg.transform.localPosition = new Vector3(0f, 0f, 0.06f);
         bg.transform.localScale = new Vector3(1.4f, 1.0f, 0.05f);
         Collider bgCol = bg.GetComponent<Collider>();
-        if (bgCol != null) Destroy(bgCol);
+        if (bgCol != null) DestroySafely(bgCol);
         Renderer bgRend = bg.GetComponent<Renderer>();
         if (bgRend != null) bgRend.sharedMaterial = CreateOpaqueMat("L6_DcsAcidPanelBg", new Color(0.04f, 0.05f, 0.09f));
 
@@ -1641,7 +1844,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         titleBg.transform.SetParent(root.transform, false);
         titleBg.transform.localPosition = new Vector3(0f, 0.42f, 0.04f);
         titleBg.transform.localScale = new Vector3(1.38f, 0.16f, 0.01f);
-        Collider tbcol = titleBg.GetComponent<Collider>(); if (tbcol != null) Destroy(tbcol);
+        Collider tbcol = titleBg.GetComponent<Collider>(); if (tbcol != null) DestroySafely(tbcol);
         Renderer tbRend = titleBg.GetComponent<Renderer>();
         if (tbRend != null) tbRend.sharedMaterial = CreateOpaqueMat("L6_DcsAcidPanelTitleBg", new Color(0.10f, 0.40f, 0.65f));
         CreateLabelText(root.transform, "ACID INJECTION CONTROL", new Vector3(0f, 0.42f, 0.0f), 0.30f, Color.white);
@@ -1681,11 +1884,64 @@ public class Level6AcidInjectionController : MonoBehaviour
         if (!_tankSelectWired && _btnAcidTankSelect != null) { _btnAcidTankSelect.selectEntered.AddListener(_ => ToggleAcidTank()); _tankSelectWired = true; }
         if (!_acidArmWired && _btnAcidArm != null) { _btnAcidArm.selectEntered.AddListener(_ => ArmAcidSystem()); _acidArmWired = true; }
 
+        RestoreSceneAcidButtons(sceneAcidPlus, sceneAcidMinus, sceneStrokePlus, sceneStrokeMinus);
+        WireAcidButtons();
         UpdateAcidDisplay();
 
         // Skala panel supaya pas di depan layar kiri (layar 1.0x1.5m; panel 1.4x1.0m).
         if (_dcsAcidPanelRoot != null && FindTransformByName("VW_Side_L_Screen") != null)
             _dcsAcidPanelRoot.transform.localScale = Vector3.one * 0.62f;
+    }
+
+    private void BindExistingAcidPanelRefs(Transform root)
+    {
+        if (root == null) return;
+
+        if (_displayAcidRatio == null) _displayAcidRatio = FindPanelText(root, "ratioValue");
+        if (_displayStrokePercent == null) _displayStrokePercent = FindPanelText(root, "strokeValue");
+        if (_displayTankSelected == null) _displayTankSelected = FindPanelText(root, "TankValue");
+        if (_displayArmStatus == null) _displayArmStatus = FindPanelText(root, "ArmStatus");
+        if (_displayPH == null) _displayPH = FindPanelText(root, "PHValue");
+        if (_displayStatus == null) _displayStatus = FindPanelText(root, "StatusValue");
+
+        if (_btnAcidTankSelect == null) _btnAcidTankSelect = FindPanelInteractable(root, "BtnAcidTankSelect");
+        if (_btnAcidArm == null) _btnAcidArm = FindPanelInteractable(root, "BtnAcidArm");
+    }
+
+    private TMPro.TMP_Text FindPanelText(Transform root, string baseName)
+    {
+        TMPro.TMP_Text[] texts = root.GetComponentsInChildren<TMPro.TMP_Text>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (texts[i].name == baseName + "_TmpHidden")
+                return texts[i];
+        }
+
+        for (int i = 0; i < texts.Length; i++)
+        {
+            if (texts[i].name.IndexOf(baseName, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return texts[i];
+        }
+
+        return null;
+    }
+
+    private XRSimpleInteractable FindPanelInteractable(Transform root, string name)
+    {
+        Transform child = root.Find(name);
+        return child != null ? child.GetComponent<XRSimpleInteractable>() : null;
+    }
+
+    private void RestoreSceneAcidButtons(
+        XRSimpleInteractable sceneAcidPlus,
+        XRSimpleInteractable sceneAcidMinus,
+        XRSimpleInteractable sceneStrokePlus,
+        XRSimpleInteractable sceneStrokeMinus)
+    {
+        if (sceneAcidPlus != null) _btnAcidPlus = sceneAcidPlus;
+        if (sceneAcidMinus != null) _btnAcidMinus = sceneAcidMinus;
+        if (sceneStrokePlus != null) _btnAcidStrokePlus = sceneStrokePlus;
+        if (sceneStrokeMinus != null) _btnAcidStrokeMinus = sceneStrokeMinus;
     }
 
     private void CreateRow(Transform parent, string idPrefix, string label, string unit, string target, float yPos,
@@ -1730,7 +1986,7 @@ public class Level6AcidInjectionController : MonoBehaviour
             rend.sharedMaterial = CreateOpaqueMat(name + "_Mat", color, false);
         }
 
-        // Label text di permukaan button (depan, towards player)
+        // Label text di permukaan button (depan, menghadap player).
         GameObject txtGo = new GameObject("Lbl");
         txtGo.transform.SetParent(btn.transform, false);
         txtGo.transform.localPosition = new Vector3(0f, 0f, -0.55f);
@@ -1768,7 +2024,8 @@ public class Level6AcidInjectionController : MonoBehaviour
         GameObject go = new GameObject(name);
         go.transform.SetParent(parent, false);
         go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.identity;
+        // Flip 180° Y supaya angka terbaca benar oleh operator (tidak mirror).
+        go.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
 
         TextMesh tm = go.AddComponent<TextMesh>();
         tm.text = "--";
@@ -1823,7 +2080,8 @@ public class Level6AcidInjectionController : MonoBehaviour
         GameObject go = new GameObject("Lbl_" + text.Substring(0, System.Math.Min(text.Length, 8)));
         go.transform.SetParent(parent, false);
         go.transform.localPosition = localPos;
-        go.transform.localRotation = Quaternion.identity;
+        // Flip 180° Y supaya teks terbaca benar oleh operator (menghadap -Z), tidak mirror.
+        go.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
         TextMesh tm = go.AddComponent<TextMesh>();
         tm.text = text;
         tm.characterSize = 0.04f * size;
@@ -1919,6 +2177,20 @@ public class Level6AcidInjectionController : MonoBehaviour
         _slurryYawValid = false;
     }
 
+    private void OnSlurryHoverEntered(UnityEngine.XR.Interaction.Toolkit.HoverEnterEventArgs args)
+    {
+        _slurryGrabbed = true;
+        _slurryInteractorAttach = args.interactorObject != null ? args.interactorObject.transform : null;
+        _slurryYawValid = false;
+    }
+
+    private void OnSlurryHoverExited(UnityEngine.XR.Interaction.Toolkit.HoverExitEventArgs args)
+    {
+        _slurryGrabbed = false;
+        _slurryInteractorAttach = null;
+        _slurryYawValid = false;
+    }
+
     private void OnAcidGrabbed(UnityEngine.XR.Interaction.Toolkit.SelectEnterEventArgs args)
     {
         _acidGrabbed = true;
@@ -1950,6 +2222,7 @@ public class Level6AcidInjectionController : MonoBehaviour
 /// Syncer kecil: setiap frame, copy text dari hidden TextMeshProUGUI ke TextMesh legacy.
 /// Supaya code yang set _displayXxx.text bisa tetap pakai TMP API tapi rendering pakai TextMesh.
 /// </summary>
+[ExecuteAlways]
 public class L6PanelTextSyncer : MonoBehaviour
 {
     public TMPro.TMP_Text tmp;

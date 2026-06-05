@@ -1,179 +1,405 @@
-# 🏭 OLIVIA VR — Simulator Pelatihan Operator HPAL Nikel
+# OLIVIA VR — HPAL Nickel Plant Operator Training Simulator
 
-> **AR/VR Industrial Training Simulator** berbasis Unity untuk pelatihan operator pabrik **HPAL (High Pressure Acid Leaching)** nikel.
-> Pemain belajar proses, K3, SOP, dan emergency response melalui 15 level (Level 0 – Level 14) yang merepresentasikan flowsheet HPAL nyata: **Crusher → Slurry → Pre-Heater → Autoclave → Flash Train → CCD → MHP → Tailing → Dry Stack → Emergency K3**.
-
----
-
-## 📌 Ringkasan Singkat
-
-| Item | Detail |
-|------|--------|
-| **Nama Project** | OLIVIA VR — Operasi & Pelatihan VR HPAL Nikel |
-| **Developer** | Ari Prabowo |
-| **Engine** | Unity 6 + URP |
-| **VR Stack** | XR Interaction Toolkit 3.4.1, XR Hands 1.7.3, Input System 1.18 |
-| **Bahasa Kode** | C# (kode/komentar/identifier: **English**) |
-| **Bahasa In-Game** | HUD, voice NPC, chat: **Indonesia** |
-| **Scene Utama** | `Assets/Scenes/Level1.unity` |
-| **Lokasi Project** | `C:\Users\mp2dz\Olivia` |
-| **Total Level** | 15 (Level 0 – Level 14) |
-| **Showcase** | Level 7 (Autoclave X-Ray) & Level 13 (Dry Stack Tailing) |
-| **Tujuan** | Lomba Nasional / Prototype Industrial Training |
+Simulator pelatihan operator pabrik nikel HPAL berbasis Virtual Reality. Setiap level merepresentasikan satu tahap pada flowsheet HPAL nyata, mulai dari Crusher hingga Emergency Response, dengan fokus edukasi proses, keselamatan kerja (K3), dan kepatuhan SOP.
 
 ---
 
-## 🎯 Tujuan Project
+## Daftar Isi
 
-Membangun simulasi VR proses HPAL dari awal sampai skenario emergency, dengan fokus:
-
-- Edukasi proses industri HPAL nikel secara visual dan interaktif
-- Training keselamatan kerja (K3) dan kepatuhan SOP
-- Simulasi peran ganda: **Operator DCS** (control room) dan **Operator Lapangan** (field)
-- Interaksi VR-native dengan APD, valve, panel DCS, X-Ray view, walkie talkie, dan ESD
-- Menunjukkan hubungan langsung antara parameter DCS dan kondisi mesin di lapangan
-- Mengajarkan pengelolaan limbah B3 (tailing) yang aman bagi lingkungan
-
-**Target akhir:** Pemain menyelesaikan Level 0–14, memahami alur HPAL penuh, lulus dengan skor ≥ 70%, dan menerima **Sertifikat K3 Virtual Operator HPAL**.
+1. [Tentang Project](#tentang-project)
+2. [Tech Stack](#tech-stack)
+3. [Konsep Gameplay](#konsep-gameplay)
+4. [Peta Dunia](#peta-dunia)
+5. [Arsitektur Sistem](#arsitektur-sistem)
+6. [Breakdown Per Level (1–13)](#breakdown-per-level-113)
+7. [Parameter SOP Industri](#parameter-sop-industri)
+8. [Catatan Penomoran Level](#catatan-penomoran-level)
+9. [Struktur Folder](#struktur-folder)
+10. [Cara Menjalankan](#cara-menjalankan)
+11. [Kontrol dan Debug](#kontrol-dan-debug)
+12. [Konvensi Pengembangan](#konvensi-pengembangan)
 
 ---
 
-## 🗺️ Peta Dunia (3 Zona)
+## Tentang Project
+
+| | |
+|---|---|
+| Nama | OLIVIA VR — Operasi dan Pelatihan VR HPAL Nikel |
+| Developer | Ari Prabowo |
+| Tipe | Industrial Training Simulator (VR) |
+| Domain | HPAL (High Pressure Acid Leaching) — pengolahan bijih nikel |
+| Tujuan | Lomba Nasional / prototype pelatihan industri |
+| Repository | github.com/arivopwenz/Olivia-HPAL-Training-VR |
+| Showcase | Level 7 (Autoclave X-Ray) dan Level 12 (Dry Stack Tailing) |
+
+OLIVIA adalah training simulator yang mengajarkan:
+
+- Proses industri HPAL nikel secara visual dan interaktif.
+- Keselamatan kerja (K3) dan kepatuhan terhadap SOP.
+- Peran ganda Operator DCS (ruang kontrol) dan Operator Lapangan (field).
+- Penanganan limbah B3 (tailing) yang aman bagi lingkungan.
+- Respons darurat (emergency shutdown).
+
+Target akhir: pemain menyelesaikan seluruh level, memahami alur HPAL secara penuh, dan layak menerima Sertifikat K3 Virtual Operator HPAL.
+
+---
+
+## Tech Stack
+
+| Komponen | Detail |
+|----------|--------|
+| Engine | Unity 6 + Universal Render Pipeline (URP) |
+| VR Framework | XR Interaction Toolkit 3.4.1 |
+| Hand Tracking | XR Hands 1.7.3 |
+| Input | Input System 1.18 (legacy + new) |
+| Bahasa Kode | C# (identifier dan komentar: English) |
+| Bahasa In-Game | Indonesia (HUD, voice NPC) |
+| 3D Modeling | Blender (model mesin diekspor sebagai FBX ke folder Assets/Art) |
+| Scene Utama | Assets/Scenes/Level1.unity (seluruh level berada dalam satu scene) |
+
+---
+
+## Konsep Gameplay
+
+Pilar utama OLIVIA:
+
+1. Sistem Level-Based — setiap level adalah satu tahap pada flowsheet HPAL nyata.
+2. Dual-Role — pemain berpindah peran antara DCS Control Room dan Lapangan tiap level.
+3. Walkie Talkie wajib — setiap level diakhiri laporan via HT (Push To Talk) dengan balasan suara NPC.
+4. X-Ray / Invisible View — melihat proses internal mesin (slurry, agitator, reaksi kimia).
+5. Sinkronisasi DCS dan Lapangan — parameter di DCS mengontrol animasi serta shader mesin secara real-time.
+6. Interaksi VR-Native — gestural handwheel, grab botol sampel, dosing reagen, dan penuangan limestone.
+7. Skor dan Sertifikat K3 — penilaian per level dengan syarat lulus minimal 70%.
+
+---
+
+## Peta Dunia
+
+Dunia game terbagi menjadi dua zona utama:
 
 | Zona | Nama | Isi Utama |
 |------|------|-----------|
-| 🔵 A | **DCS Control Room** | Monitor besar, 14 tombol sistem, parameter (suhu/tekanan/pH/flow/RPM), tombol ESD, walkie talkie |
-| 🟠 B | **Lantai Pabrik Atas** | Autoclave, pipa steam, platform, catwalk, tangga, valve, area inspeksi X-Ray |
-| 🟢 C | **Lantai Pabrik Bawah** | Crusher, Slurry Tank, Pump, Flash Vessel, CCD, MHP, Tailing, Filter Press, Dry Stack |
+| A | DCS Control Room | Monitor utama, 14 tombol sistem, parameter live (suhu, tekanan, pH, flow, RPM), tombol ESD, dan walkie talkie. Pusat kendali operator DCS. |
+| B | Lapangan (Plant Field) | Seluruh mesin proses: Crusher, Slurry Tank, Slurry Pump, Pre-Heater, Autoclave, Flash Vessel, CCD, MHP, Tailing, Filter Press, Dry Stack, beserta pipa, valve, platform, tangga, dan catwalk. |
+
+Pemain berpindah antara kedua zona melalui sistem teleport setiap pergantian fase atau level.
 
 ---
 
-## 🕹️ Mekanik Inti (Pilar Gameplay)
-
-1. **Sistem Level-Based** — 15 level, masing-masing = satu tahap flowsheet HPAL nyata.
-2. **Dual-Role (DCS ↔ Lapangan)** — pemain berpindah peran antara ruang kontrol dan lapangan tiap level.
-3. **Walkie Talkie Wajib (Voice Command)** — setiap level wajib lapor via HT + ada balasan suara NPC sebagai konfirmasi.
-4. **X-Ray / Invisible View** — melihat proses internal mesin (slurry, agitator, reaksi kimia, pemisahan).
-5. **Sinkronisasi DCS ↔ Field** — nilai parameter DCS langsung mengontrol animasi/shader di lapangan (mis. flow rate → kecepatan aliran).
-6. **APD & SafetyGate** — pemain wajib lengkap APD sebelum boleh masuk plant floor.
-7. **Sistem Skor & Sertifikat K3** — penilaian per level, lulus minimal 70%.
-
----
-
-## 🧱 Arsitektur Sistem
+## Arsitektur Sistem
 
 ```
-GameLevelManager (Singleton — Pusat Kontrol)
-    │  state machine 15 level, unlock, parameter (suhu/tekanan/pH/RPM/flow), event, skor
-    │
-    ├── PhaseManager            → sub-state APD & operasional dalam level
-    ├── WalkieTalkieManager     → voice recognizer + PTT + audio balasan NPC
-    ├── PlayerHUD               → quest panel, checklist, notifikasi, fade transisi
-    ├── LevelTeleportManager    → teleport XR Origin antar zona (aman dari snap-back)
-    ├── DCSMonitorUI            → 14 tombol sinkronisasi + parameter + alarm + ESD
-    ├── UniversalTaskMarker     → panah 3D + outline box pada target tugas aktif
-    └── Level{N}Controller      → state machine + mekanik spesifik per level
+GameLevelManager (Singleton — pusat state machine seluruh level)
+    Menyimpan : enum CurrentLevel, data level, target SOP, parameter (suhu/tekanan/pH/RPM/flow)
+    Event     : OnLevelStarted, OnDCSButtonPressed, OnVoiceReportAccepted, OnLevelComplete
+    Notify*   : memajukan flag penyelesaian per level
+
+    PhaseManager                    Sub-state APD (8 item), pin respirator ke socket dada
+    WalkieTalkieManager             Voice recognizer + PTT + balasan suara NPC
+    PlayerHUD                       Quest checklist [OK]/[ ], fade transition, notifikasi
+    LevelTeleportManager            Teleport XR Origin antar zona (anti snap-back)
+    DCSMonitorUI                    14 tombol sinkronisasi + parameter + alarm + ESD
+    UniversalTaskMarker             Panah 3D + wireframe pada target tugas aktif
+
+    Komponen Reusable
+    GesturalHandwheel               Putar valve mengikuti arah tangan VR. Dipakai sebagai mekanik
+                                    level di Level 5 (steam valve) dan Level 7 (autoclave inlet valve).
+                                    Level 8 (flash train) memakai pola putaran gestural yang sama,
+                                    diimplementasikan langsung di Level8FlashTrainController.
+    ProcessPipeFlowAnimator         Animasi gelombang aliran slurry di dalam pipa
+    SlurryConditioningTankRunner    Agitator + solids tersuspensi + panel instrumen live
+
+    Level{N}Controller (Assets/Scripts/Simulation/)
+        Mendengarkan GameLevelManager.OnLevelStarted
+        Menjalankan state machine fase masing-masing
+        Memanggil Notify* untuk memajukan flag level
 ```
 
-**Script utama** ada di `Assets/Scripts/Simulation/` dan `Assets/Scripts/UI/`.
-Tiap level punya controller sendiri: `Level3OreSlurryController.cs` … `Level14EmergencyController.cs`.
+Pola umum tiap controller:
+
+```csharp
+private void OnEnable()  => GameLevelManager.OnLevelStarted += OnLevelStarted;
+private void OnDisable() => GameLevelManager.OnLevelStarted -= OnLevelStarted;
+
+private void OnLevelStarted(GameLevel lvl)
+{
+    if (lvl == GameLevel.LevelX) { AutoFindReferences(); /* aktifkan */ }
+    else { /* nonaktifkan */ }
+}
+```
 
 ---
 
-## 📂 Struktur Dokumen Roadmap
+## Breakdown Per Level (1–13)
 
-Semua dokumen ada di `Assets/Scripts/Roadmap/`. Urutan baca yang disarankan:
+### Level 1 — APD Safety
+Zona: Ruang Loker. Peran: Operator Lapangan.
+- Pakai 8 APD wajib dari rak `Socket_Scanner_*`: Helm, Rompi, Kacamata, Sepatu, Sarung Tangan, Respirator, Ear Protection, dan Walkie Talkie.
+- `SafetyGate` terbuka otomatis saat APD lengkap.
+- Lapor HT "APD lengkap", lalu teleport ke DCS Control Room.
 
-| # | Dokumen | Isi |
-|---|---------|-----|
-| 1 | `PROJECT_CONTEXT.md` | Identitas project, tujuan, zona, parameter, aturan kerja AI |
-| 2 | `Olivia_Roadmap.md` | Roadmap tahap pengembangan + progress % |
-| 3 | `Olivia_Blueprint_Final.md` | Master plan 15 level (cetak biru gameplay) |
-| 4 | `ALUR_FINAL_OLIVIA.md` | **Alur final fix** Level 0–14 (step-by-step) ← lihat file ini |
-| 5 | `BreakdownSistem.md` | Breakdown mekanik teknis ke industri nyata |
-| 6 | `OLIVIA_HPAL_VR_SKILL.md` | Panduan agent AI: arsitektur, pitfalls, debug |
-| 7 | `OLIVIA_AGENT_SKILL.md` | Knowledge pack handoff (versi awal) |
-| 8 | `HPAL_DeepResearch.md` | Riset kimia & proses HPAL |
-| 9 | `HPAL_Mekanisme_Mesin_DeepResearch.md` | Riset mekanisme per mesin |
-| 10 | `GAMEPLAY_Level*.md` | Spesifikasi mekanik per level (5, 6, 7, 8, 9, 13) |
-| 11 | `AUDIT_BUG_DAN_REFACTOR.md` | Daftar bug & prioritas refactor |
-| 12 | `olivia_power_up_advice.md` | Saran peningkatan kualitas |
+### Level 2 — DCS Preparation
+Zona: DCS Control Room. Peran: DCS Operator.
+- Ray controller aktif, respirator otomatis pindah ke socket dada.
+- Tekan tombol DCS 2, cek parameter awal.
+- Lapor HT "siapkan area Crusher", lalu teleport ke lapangan.
 
-**Aset referensi visual:** `Peta dan Alur.png`, `Prototype Machine.png`, `Prototype Machine 2.png`, folder `Reference machine/`.
+### Level 3 — Ore dan Slurry
+Zona: Crusher dan Slurry Tank. Peran: Field Worker.
+- DCS 3, lapor awal, teleport ke lapangan, ambil respirator dari dada.
+- Ore Crusher: belt menyambung crusher ke slurry tank tanpa gap, sekuens startup (sirine, hentakan mundur, eskalator naik), animasi jaw crush, flywheel berputar, dan dust FX. Ore tercacah muncul dari titik discharge lalu diangkut menuju tank.
+- Slurry Tank: tangki open-top dengan agitator berputar mengaduk, solids tersuspensi, serta panel instrumen live (density, level, RPM).
+- Slurry terisi 0 persen hingga 75 persen, X-Ray view aktif.
+- Lapor HT akhir "ore masuk, cairan 75 persen".
+
+### Level 4 — Slurry Pump
+Zona: DCS dan Lapangan (pump). Peran: DCS Operator.
+- DCS 4, atur Flow Rate menuju 450 m3/h melalui tombol `Btn_FlowPlus` / `Btn_FlowMinus` (selesai otomatis pada 450 plus minus 10).
+- Pipa slurry tank ke pump lalu ke pre-heater menampilkan animasi aliran yang hanya aktif saat pump berjalan.
+- Level slurry tank menurun seiring aliran.
+- Lapor HT "slurry pump aktif", lalu "cairan sudah di pre-heater".
+
+### Level 5 — Steam Valve dan Pre-Heater
+Zona: DCS dan Lapangan (pre-heater). Peran: DCS ke Field.
+- DCS 5, lapor awal, teleport ke handwheel pre-heater.
+- Gestural Handwheel: putar mengikuti arah tangan VR dengan model handwheel industrial. Suhu naik 25 ke 200 derajat C, gauge needle bergerak proporsional, steam FX dan audio mendesir mengikuti persentase bukaan.
+- Pada suhu di atas 180 derajat C, lapor HT "katup steam terbuka".
+
+### Level 6 — Acid Injection (enam fase)
+Zona: Lapangan, DCS, lalu Acid Skid. Target: 350 kg/ton, pH 1.0.
+1. Tekan DCS 6.
+2. Lapor "outlet pre-heater dibuka", teleport ke handwheel.
+3. Putar handwheel outlet, cairan mengalir menuju autoclave.
+4. Lapor "slurry masuk autoclave", kembali ke DCS.
+5. DCS Acid Panel (6 tombol): ratio plus minus 10, stroke plus minus 5 persen, swap tank A/B, dan ARM. pH turun 5.0 ke 1.0.
+6. Acid Skid lapangan: tombol LOCAL START (hijau) dan LEAK OK (biru), calibration column terisi.
+7. Lapor HT "acid aktif".
+
+### Level 7 — Autoclave Inspection (Showcase)
+Zona: Platform Autoclave. Target: 250 derajat C, 50 atm, 60 RPM.
+- DCS 7, teleport ke valve, putar handwheel underflow (lampu merah berubah hijau).
+- Teleport ke top deck. X-Ray Vision (X): shell autoclave menjadi transparan biru, slurry naik 0 ke 100 persen menggunakan shader `Olivia/L7SlurryFill` (depth gradient, fresnel, ripple), agitator terlihat berputar di dalam.
+- Acid drop dari nozzle disertai splash FX.
+- Safety drill berjalan otomatis dalam empat langkah.
+- Sekuens akhir: sirine, engine ignition, lalu agitator ramp-up 0 ke 60 RPM.
+- Lapor HT, lalu Mission Complete (pilihan STAY atau KEMBALI KE DCS).
+
+### Level 8 — Flash Train dan Letdown (tiga stage)
+Zona: Lapangan (flash vessel). Target: 47 ke 12 ke 3 ke 1.05 atm.
+- DCS 8, teleport ke depan handwheel.
+- Tiga gestural handwheel (FV1, FV2, FV3) dengan interlock tekanan: putar mengikuti tangan (XRSimpleInteractable, objek tidak ikut tertarik), lima putaran per valve.
+- Pressure cascade panel, vapor FX, dan steam audio aktif.
+- Lapor HT "flash train stable, slurry siap ke CCD".
+
+### Level 9 — CCD (Counter-Current Decantation)
+Zona: Lapangan (CCD) dan Lab QC. Target: wash efficiency di atas 95 persen.
+- DCS 9, teleport ke area CCD.
+- Observasi separation sekitar 14 detik: rake arm berputar, slurry mengendap, PLS overflow menjadi jernih.
+- Grab 3 botol PLS dengan tangan VR (`L9_PLS_SampleStation_Th1` / `Th3` / `Th5` dengan XRGrabInteractable). Grab botol, liquid terisi, sampel terambil.
+- Lab QC Building (`L9_LabBuilding`, permanen di scene): submit (L), spectrometer beranimasi, pop-up hasil (Ni, Co, Fe), lalu ACCEPT.
+- Lapor HT "CCD aktif, PLS lulus QC".
+
+### Level 10 — MHP Precipitation (interaktif penuh)
+Zona: Lapangan (MHP) dan Warehouse. Target: pH 7.0 sampai 7.5, kualitas 92 persen.
+- DCS 10, teleport ke lapangan, operator station dengan tombol dosing muncul.
+- Tiga tahap dosing (tombol atau Space): limestone CaCO3 (pH ke 3.5), kapur Ca(OH)2 (pH ke 5.0), MgO (pH ke 7.5, MHP terbentuk). Panel info live tiap tahap menampilkan reagen, formula, dan reaksi.
+- Sampling berbasis proximity, lalu Lab QC pop-up (Ni 41 persen, Co 3.6 persen, recovery 94 persen), kemudian ACCEPT.
+- Stage gudang: teleport ke warehouse untuk bagging dan dispatch produk MHP ke refinery (animasi smooth pengisian delapan export bag dengan weigh counter).
+- Lapor HT "MHP terbentuk".
+
+### Level 11 — Tailing dan Filter Press (interaktif penuh)
+Zona: Lapangan (tailing). Target: pH 8.0, moisture di bawah 25 persen.
+- DCS 11, teleport ke lapangan, operator station muncul.
+- Tahap 1 Netralisasi: limestone menaikkan pH 2.3 ke 8.0 (jarum pH bergerak, beacon hijau), disertai limestone pour stream.
+- Tahap 2 Filter Press: 16 plate merapat, moisture cake turun 60 ke 22 persen, cake muncul progresif di conveyor.
+- Inspeksi cake, lalu Compliance QC (pH baku mutu, moisture, filtrat jernih), kemudian ACCEPT.
+- Lapor HT "limbah dialirkan".
+
+### Level 12 — Dry Stack Tailing (Showcase)
+Zona: Dry Stack Facility (DSTF). Target: timbunan unsaturated dan stabil.
+- DCS 12, teleport ke DSTF.
+- Tahap 1 Stacking: cake dipadatkan dalam terraced lift di atas geomembrane liner, disertai dust FX.
+- Tahap 2 Closure: safe cover (rehab grass cap), piezometer aman, polishing pond menjadi jernih.
+- Inspeksi, lalu Compliance QC (geomembrane intact, empat piezometer, rembesan menuju WWTP, closure dan revegetasi), kemudian ACCEPT.
+- Lapor HT "dry stack aman, pH 8.5".
+
+### Level 13 — Emergency K3 (ESD)
+Zona: DCS Control Room. Skenario realistis tanpa ledakan.
+- Pemicu mendadak: kebocoran H2SO4 atau steam leak, ditandai alarm, asap, lampu merah, dan countdown.
+- Acknowledge alarm, lapor HT evakuasi, lalu tekan tombol ESD. Seluruh valve asam dan steam menutup, pompa mati.
+- Berhasil: sistem aman dan evakuasi sukses. Gagal: ESD terlambat ditekan sehingga shutdown dengan damage.
+
+Status: Level 1–12 sudah berfungsi dan terverifikasi (playable). Level 13 dalam tahap design.
 
 ---
 
-## 🦺 Sistem APD (Level 1)
-
-Pemain tidak boleh masuk plant floor jika APD belum lengkap (`SafetyGate.cs`).
-
-| No | APD | Fungsi |
-|----|-----|--------|
-| 1 | Safety Helmet | Lindungi kepala dari benda jatuh |
-| 2 | Safety Vest / Rompi | Visibilitas + pelindung dada |
-| 3 | Safety Glasses | Lindungi dari percikan H2SO4 |
-| 4 | Safety Shoes | Lindungi kaki dari asam & benda berat |
-| 5 | Chemical Gloves | Kontak pipa & peralatan berasam |
-| 6 | Respirator / Masker | Wajib area asam & uap panas |
-| 7 | Ear Protection | Lindungi dari bising mesin |
-| 8 | Walkie Talkie / HT | Komunikasi DCS ↔ Lapangan (wajib semua level) |
-
----
-
-## 📊 Parameter SOP Patokan Gameplay
+## Parameter SOP Industri
 
 | Parameter | Target | Level |
 |-----------|--------|-------|
-| Flow Rate Slurry | 450 m³/h | 4 |
-| Suhu Pre-Heater | 180–200 °C | 5 |
-| Dosis Asam (H2SO4) | 350 kg/ton bijih → pH 1.0 | 6 |
-| Suhu Autoclave | 250–255 °C | 7–8 |
-| Tekanan Autoclave | 45–50 atm | 7–8 |
-| RPM Agitator | 60 RPM | 7–8 |
-| Flash Train | 47 → 12 → 3 → 1.05 atm | 8 |
-| Wash Efficiency CCD | ≥ 95% | 9 |
-| Netralisasi Tailing | pH 8.0–9.0 | 13 |
-| Moisture Tailing Cake | < 25% | 13 |
+| Flow Rate Slurry | 450 m3/h | 4 |
+| Suhu Pre-Heater | 180–200 derajat C | 5 |
+| Dosis Asam (H2SO4) | 350 kg/ton menuju pH 1.0 | 6 |
+| Suhu Autoclave | 250–255 derajat C | 7 |
+| Tekanan Autoclave | 45–50 atm | 7 |
+| RPM Agitator | 60 RPM | 7 |
+| Flash Train (tiga stage) | 47 ke 12 ke 3 ke 1.05 atm | 8 |
+| CCD Wash Efficiency | di atas 95 persen | 9 |
+| MHP Precipitation | pH 7.0–7.5, kualitas 92 persen | 10 |
+| Netralisasi Tailing | pH 8.0–9.0 | 11 |
+| Moisture Tailing Cake | di bawah 25 persen | 11–12 |
 
-> Nilai bersifat edukatif/simulasi. Untuk akurasi industri lebih dalam, lihat `HPAL_DeepResearch.md`.
-
----
-
-## 📈 Status Progress
-
-| Tahap | Progress |
-|-------|----------|
-| Arsitektur Dasar | ~45% |
-| Level Manager & UI 14 Tombol | berjalan |
-| Voice Reply System (NPC Audio) | berjalan |
-| Level 0–7 (Tutorial → Autoclave) | implementasi mekanik aktif |
-| Level 8–9 (Flash Train, CCD) | spesifikasi + controller dibuat |
-| Level 13 (Dry Stack) | dibuat & terverifikasi (showcase 2) |
-| Level 14 (Emergency K3) | logika ESD awal ada |
-| Polish & Scoring | berikutnya |
-
-> **Strategi:** *Greybox-first* — semua level fungsional dulu dengan asset primitif, polish model 3D HPAL belakangan.
+Sumber riset: Nickel Institute, serta studi kasus HPAL Moa Bay, Coral Bay, dan Taganito.
 
 ---
 
-## 🛠️ Konvensi & Workflow
+## Catatan Penomoran Level
 
-- **Kode**: English. **In-game text**: Indonesia (kasual).
-- **Slurry**: warna **ungu** (`Slurry_Fill.mat`). Pipa transparan alpha 0.06–0.08.
-- **Audio**: prosedural (`AudioClip.Create`), tanpa aset audio eksternal.
-- **VR Teleport**: selalu `XROrigin.MoveCameraToWorldLocation` + `MatchOriginUpCameraForward` (jangan set `transform.position` langsung).
-- **Setelah edit script**: `refresh_unity` (compile) → cek `read_console` → save scene (bukan saat play mode).
-- **Greybox-first**, perubahan kecil & bertahap, jelaskan rencana sebelum edit besar.
+Nomor display tidak sama dengan enum internal. Level 9 lama (Flash Vessel) telah digabung ke Level 8 sehingga nomor display bergeser. Enum internal sengaja tidak diubah demi menjaga serialisasi scene.
 
----
-
-## 🚀 Cara Memulai (untuk Developer / AI Agent)
-
-1. Buka project Unity di `C:\Users\mp2dz\Olivia`, scene `Assets/Scenes/Level1.unity`.
-2. Baca `PROJECT_CONTEXT.md` → `ALUR_FINAL_OLIVIA.md` → `OLIVIA_HPAL_VR_SKILL.md`.
-3. Untuk test cepat level tertentu: gunakan `[ContextMenu]` debug skip di komponen `GameLevelManager` (mis. *"DEBUG: Skip ke Level 7"*).
-4. Sebelum menambah mekanik baru: cek SOP nyata di dokumen DeepResearch, pilih angle VR-native, lalu dokumentasikan di `GAMEPLAY_LevelN_*.md`.
+| Display | Enum Internal | Controller | Tombol DCS |
+|---------|---------------|------------|------------|
+| Level 8 | Level8_Monitoring | Level8FlashTrainController | 8 |
+| Level 9 | Level10_CCD | Level10CCDController | 9 |
+| Level 10 | Level11_MHP | Level11MHPController | 10 |
+| Level 11 | Level12_TailingDischarge | Level12TailingFilterController | 11 |
+| Level 12 | Level13_TailingWaste | Level13DryStackController | 12 |
+| Level 13 | Level14_Emergency | — | ESD |
 
 ---
 
-*OLIVIA VR — belajar mengoperasikan pabrik HPAL nikel dengan aman, dari Crusher sampai Dry Stack, tanpa risiko nyata.*
+## Struktur Folder
+
+```
+Assets/
+├── Scenes/
+│   └── Level1.unity                    Scene utama (seluruh level)
+│
+├── Scripts/
+│   ├── Simulation/                     Controller per level dan sistem inti
+│   │   ├── GameLevelManager.cs
+│   │   ├── PhaseManager.cs
+│   │   ├── WalkieTalkieManager.cs
+│   │   ├── GesturalHandwheel.cs
+│   │   ├── ProcessPipeFlowAnimator.cs
+│   │   ├── SlurryConditioningTankRunner.cs
+│   │   ├── Level3OreSlurryController.cs
+│   │   ├── Level4SlurryPumpController.cs
+│   │   ├── Level5SteamValveController.cs
+│   │   ├── Level6AcidInjectionController.cs
+│   │   ├── Level7AutoclaveController.cs
+│   │   ├── Level8FlashTrainController.cs
+│   │   ├── Level10CCDController.cs
+│   │   ├── Level11MHPController.cs
+│   │   ├── Level12TailingFilterController.cs
+│   │   └── Level13DryStackController.cs
+│   ├── UI/                             PlayerHUD, UniversalTaskMarker, DCS panels
+│   ├── System/                         Teleport, interactor recovery
+│   └── Roadmap/                        Dokumentasi design dan README
+│
+├── Shaders/
+│   └── L7SlurryFill.shader             Custom water shader untuk autoclave
+│
+├── Materials/
+│   └── Color Utama/                    Slurry_Fill, Pipe_Transparent, DCS Machine, Industrial_*
+│
+└── Art/                                Model 3D (Blender ke FBX) per mesin
+    ├── DCSControlRoom/                 DCS Control Room, panel DCS, support rig
+    ├── Level1APDStationBlender/        Stasiun/rak APD (Level 1)
+    ├── APDRoom/                        Ruang loker APD
+    ├── Level2OreCrusherBlender/        Ore Crusher dan belt conveyor (Level 3)
+    ├── Level3SlurryTankBlender/        Slurry Tank
+    ├── Level3SlurryWaterTankBlender/   Slurry Water Tank
+    ├── Level3SlurryWaterTanksBlender/  Set Slurry Water Tanks
+    ├── Level3_WaterSteamFX/            Efek air dan uap (Level 3)
+    ├── SlurryToPreheaterPipe/          Pipa Slurry Tank ke Pre-Heater
+    ├── Level4SlurryPumpBlender/        Slurry Pump (Level 4)
+    ├── Level5PreHeaterBlender/         Pre-Heater (Level 5)
+    ├── Level5Handwheel/                Handwheel/valve Pre-Heater (Level 5)
+    ├── PreheaterAutoclavePipe/         Pipa Pre-Heater ke Autoclave
+    ├── AcidInjectionSystemRedesign/    Sistem injeksi asam (Level 6)
+    ├── Level7AutoclaveBlender/         Autoclave reaktor (Level 7)
+    ├── AutoclaveToFlashPipe/           Pipa Autoclave ke Flash Vessel
+    ├── FlashVesselTrainRedesign/       Flash Vessel Train tiga stage (Level 8)
+    ├── FlashCCDIndustrialBlender/      Area Flash dan CCD (industrial)
+    ├── FlashCCDIndustrialUVRedesign/   UV dan tekstur Flash/CCD
+    ├── CCDThickenerRedesign/           CCD Thickener (Level 9)
+    ├── CCDIndustrialUVRedesign/        CCD industrial dengan UV mapping
+    ├── CCDConnectionPipes/             Pipa koneksi antar thickener CCD
+    ├── CCDProcessPipesBlender/         Pipa proses CCD (PLS overflow dan underflow)
+    ├── Lab/                            Gedung Lab QC, CCDLab.fbx (Level 9)
+    ├── Level11PurificationMHPUVRedesign/   Purification dan MHP precipitation (Level 10)
+    ├── Level13TailingDryStackRedesign/     Tailing dan Dry Stack (Level 11–12)
+    ├── Level13DryStackBlender/             Dry Stack Facility (Level 12)
+    ├── Level13DryStackIndustrialUVRedesign/    Dry Stack industrial dengan UV
+    ├── Level13DryStackStorageAreaUVRedesign/   Area penyimpanan Dry Stack
+    ├── OreTanggaIndustrialAccessUVRedesign/    Tangga akses industri area Ore
+    ├── GlobalIndustrialStairsCatwalksUVRedesign/   Tangga dan catwalk global
+    ├── TaskHintArrowBlender/           Model panah petunjuk tugas
+    └── _BlenderScripts/                Script pendukung pembuatan model
+```
+
+---
+
+## Cara Menjalankan
+
+1. Buka project di Unity 6 pada path `C:\Users\mp2dz\Olivia`.
+2. Buka scene `Assets/Scenes/Level1.unity`.
+3. Tekan Play menggunakan VR headset atau XR Device Simulator.
+4. Untuk melompat ke level tertentu, klik kanan komponen `GameLevelManager` di Inspector, lalu pilih `DEBUG: Skip ke Level N`.
+
+Untuk membuat atau mengubah model mesin: model dibuat di Blender, kemudian diekspor sebagai berkas FBX ke folder `Assets/Art/<nama-mesin>/`. Unity meng-import otomatis. Material di-assign kembali di Unity menggunakan URP/Lit karena node material Blender tidak terbawa pada FBX.
+
+---
+
+## Kontrol dan Debug
+
+| Tombol | Aksi | Level |
+|--------|------|-------|
+| R / F | Buka / tutup valve | 5 |
+| 1 / 2 / 3 | Putar handwheel FV1 / FV2 / FV3 | 8 |
+| G | Grab sampel terdekat | 9 |
+| L | Submit sampel ke Lab QC | 9 |
+| Enter | ACCEPT hasil lab atau compliance | 9–12 |
+| Space / 1 | Dosing atau aksi tahap | 10, 11, 12 |
+| T (tahan) | Voice report HT (Push To Talk) | semua |
+| X | Toggle X-Ray | 7 |
+
+---
+
+## Konvensi Pengembangan
+
+Bahasa dan Gaya
+- Kode, identifier, dan komentar menggunakan English. Teks in-game (HUD, voice NPC) menggunakan Bahasa Indonesia kasual.
+- Greybox-first: utamakan fungsional terlebih dahulu, polish visual menyusul.
+
+VR dan Interaksi
+- Teleport wajib menggunakan `XROrigin.MoveCameraToWorldLocation` dan `MatchOriginUpCameraForward`. Jangan men-set `transform.position` langsung karena menyebabkan player snap-back.
+- Tombol VR menggunakan `XRSimpleInteractable` dan `BoxCollider` dengan registrasi collider eksplisit, ditambah keyboard fallback. `UnityEngine.UI.Button` saja tidak dapat diklik oleh ray XR pada world-space canvas.
+- Handwheel pada Level 5 dan Level 7 menggunakan komponen `GesturalHandwheel` agar berputar mengikuti tangan tanpa objek ikut tertarik. Level 8 memakai pola yang sama secara inline di controller-nya.
+
+Audio
+- Audio dibuat prosedural via `AudioClip.Create` dengan sample generation (sine, noise, envelope). Tidak menggunakan berkas audio eksternal.
+
+Material dan Visual
+- Material URP/Lit di-copy dari template `DCS Machine.mat` via `AssetDatabase.CopyAsset` agar shader keyword tetap terjaga.
+- Slurry menggunakan `Slurry_Fill.mat`, pipa transparan menggunakan `Pipe_Transparent.mat`.
+- TextMesh runtime memerlukan font built-in (`LegacyRuntime.ttf`) dan assign `font.material`.
+
+3D Model
+- Model dibuat di Blender, lalu diekspor sebagai FBX ke `Assets/Art/`.
+- Material di-assign kembali di Unity karena node Blender tidak terbawa pada FBX.
+
+Scene dan State
+- Simpan scene (`MarkSceneDirty` dan `SaveScene`) hanya saat tidak dalam play mode.
+- Elemen interaktif yang dibangun runtime tidak perlu disimpan; objek scene permanen wajib disimpan.
+- Nilai serialized pada scene menimpa default kode, sehingga keduanya perlu di-set.
+
+Workflow
+- Setelah mengedit script: refresh/compile, periksa console error, perbaiki, lalu lakukan play-test.
+- Pesan commit menggunakan Bahasa Indonesia, dan push dilakukan manual saat diminta.
+
+---
+
+OLIVIA VR — belajar mengoperasikan pabrik HPAL nikel dengan aman, dari Crusher hingga Dry Stack, tanpa risiko nyata.

@@ -90,7 +90,7 @@ public class Level5SteamValveController : MonoBehaviour
 
     [Header("=== HUD ===")]
     [TextArea(2, 4)] [SerializeField] private string _pesanMulai =
-        "Grab handwheel steam valve dengan grip controller (auto-buka), atau tekan R (buka) / F (tutup) di keyboard.";
+        "Dekatkan tangan ke ring steam valve, lalu gerakkan tangan kiri-kanan/melingkar mengikuti setir sampai suhu naik.";
     [TextArea(2, 4)] [SerializeField] private string _pesanSuhuTercapai =
         "Suhu Pre-Heater mencapai target! Tahan T dan lapor: 'katup steam terbuka'.";
     [TextArea(2, 4)] [SerializeField] private string _pesanValvePenuh =

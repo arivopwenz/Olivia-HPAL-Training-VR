@@ -657,25 +657,79 @@ public class Level3OreSlurryController : MonoBehaviour
     private IEnumerator AnimasikanOreMasukKeTank()
     {
         EnsureOrePathRuntime();
+
+        // === MODE PHYSICS: ore berjalan di atas collider belt pakai gravitasi ===
+        var beltPhysics = CariOreBeltPhysics();
+        if (beltPhysics != null)
+        {
+            beltPhysics.SetRunning(true);
+
+            // TUNGGU sampai SEMUA ore benar-benar jatuh masuk tank (physics).
+            float timeout = 60f;
+            float waited = 0f;
+            while (!beltPhysics.SemuaOreMasukTank && waited < timeout)
+            {
+                waited += Time.deltaTime;
+                yield return null;
+            }
+
+            beltPhysics.SetRunning(false);
+            yield break;
+        }
+
+        // === FALLBACK: animasi path lama (kalau komponen physics tidak ada) ===
         SetConveyorOreFxAktif(true);
 
         if (_oreMover != null && _oreStartPoint != null)
             _oreMover.position = _oreStartPoint.position;
 
-        float elapsed = 0f;
-        while (elapsed < _durasiGerakOre)
+        _runtimeOreConveyorTime = 0f;
+        if (_pakaiOreAsliDariBelt)
         {
-            elapsed += Time.deltaTime;
-            float oreT = _durasiGerakOre <= 0f ? 1f : Mathf.Clamp01(elapsed / _durasiGerakOre);
-            if (_oreMover != null)
-                _oreMover.position = HitungPosisiOre(oreT);
-            yield return null;
+            for (int i = 0; i < _sceneOrePieces.Count; i++)
+                if (_sceneOrePieces[i] != null) _sceneOrePieces[i].FellIntoTank = false;
+        }
+
+        if (_pakaiOreAsliDariBelt && _sceneOrePieces.Count > 0)
+        {
+            float timeout = 40f;
+            float waited = 0f;
+            while (!SemuaOreSudahMasukTank() && waited < timeout)
+            {
+                waited += Time.deltaTime;
+                if (_oreMover != null)
+                    _oreMover.position = HitungPosisiOre(Mathf.Clamp01(waited / Mathf.Max(0.01f, _durasiGerakOre)));
+                yield return null;
+            }
+        }
+        else
+        {
+            float elapsed = 0f;
+            while (elapsed < _durasiGerakOre)
+            {
+                elapsed += Time.deltaTime;
+                float oreT = _durasiGerakOre <= 0f ? 1f : Mathf.Clamp01(elapsed / _durasiGerakOre);
+                if (_oreMover != null)
+                    _oreMover.position = HitungPosisiOre(oreT);
+                yield return null;
+            }
         }
 
         if (_oreMover != null && _oreEndPoint != null)
             _oreMover.position = _oreEndPoint.position;
 
         SetConveyorOreFxAktif(false);
+    }
+
+    private OreBeltConveyorPhysics _oreBeltPhysicsCache;
+    private OreBeltConveyorPhysics CariOreBeltPhysics()
+    {
+        if (_oreBeltPhysicsCache != null)
+            return _oreBeltPhysicsCache;
+        var root = GameObject.Find("Level3_Runtime_Ore_Belt_Flow");
+        if (root != null)
+            _oreBeltPhysicsCache = root.GetComponent<OreBeltConveyorPhysics>();
+        return _oreBeltPhysicsCache;
     }
 
     private IEnumerator AnimasikanIsiSlurrySampaiBatas()
@@ -1854,7 +1908,6 @@ public class Level3OreSlurryController : MonoBehaviour
         if (_sceneOrePieces.Count == 0)
             return;
 
-        float globalT = _durasiGerakOre <= 0.01f ? 1f : Mathf.Clamp01(_runtimeOreConveyorTime / _durasiGerakOre);
         for (int i = 0; i < _sceneOrePieces.Count; i++)
         {
             RuntimeOrePiece ore = _sceneOrePieces[i];
@@ -1864,9 +1917,11 @@ public class Level3OreSlurryController : MonoBehaviour
             if (!ore.Transform.gameObject.activeSelf)
                 ore.Transform.gameObject.SetActive(true);
 
-            float pathT = Mathf.Clamp01(ore.Offset + globalT * speed * ore.SpeedMul * 5.25f);
+            // Gerak KONTINU sepanjang belt berdasar waktu conveyor (bukan dibatasi _durasiGerakOre),
+            // supaya ore benar-benar berjalan PELAN sampai jatuh ke tank (pathT mencapai 1.0).
+            float pathT = Mathf.Clamp01(ore.Offset + _runtimeOreConveyorTime * speed * ore.SpeedMul * 0.9f);
             Vector3 dir = HitungArahOreRuntime(pathT);
-            ore.Transform.position = HitungPosisiOreRuntime(pathT, ore.Lateral, 0.04f);
+            ore.Transform.position = HitungPosisiOreRuntime(pathT, ore.Lateral, 0.55f);
             if (dir.sqrMagnitude > 0.001f)
                 ore.Transform.rotation = Quaternion.LookRotation(dir, Vector3.up);
 
@@ -1878,6 +1933,22 @@ public class Level3OreSlurryController : MonoBehaviour
             if (pathT >= 0.995f)
                 ore.FellIntoTank = true;
         }
+    }
+
+    /// <summary>True kalau SEMUA ore di belt sudah jatuh/masuk ke tank.</summary>
+    private bool SemuaOreSudahMasukTank()
+    {
+        if (_sceneOrePieces.Count == 0)
+            return false;
+        for (int i = 0; i < _sceneOrePieces.Count; i++)
+        {
+            RuntimeOrePiece ore = _sceneOrePieces[i];
+            if (ore == null || ore.Transform == null)
+                continue;
+            if (!ore.FellIntoTank)
+                return false;
+        }
+        return true;
     }
 
     private GameObject _waterPourGo;

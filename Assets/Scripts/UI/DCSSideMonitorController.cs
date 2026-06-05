@@ -415,13 +415,13 @@ public class DCSSideMonitorController : MonoBehaviour
 
             case GameLevelManager.GameLevel.Level6_AcidInjection:
                 c.side = Side.Left;
-                c.title = "ACID INJECTION";
-                c.status = "MODE: LEVEL 6  •  DCS " + dcs;
-                c.route = "PROCESS ROUTE\nPre-Heater outlet -> Autoclave\nH2SO4 dosing skid -> autoclave";
-                c.field = "FIELD STATE\nSkid asam di sisi kiri plant.\nVerifikasi LOCAL START + LEAK OK.";
-                c.actions = "CHECKLIST\n[ ] Tekan DCS 6\n[ ] Set acid 350 kg/t + stroke ([+]/[-])\n[ ] Putar valve slurry preheater\n[ ] Verifikasi skid asam\n[ ] Lapor 'acid aktif'";
-                c.setpoints = $"ACID SETPOINT\nDose: {acid:F0} kg/t (TGT 350)\nStroke: {stroke:F0}% (TGT 70)\npH Leach: {ph:F2} (TGT 1.0)";
-                c.alarm = "H2SO4 korosif. Cek containment & APD asam.";
+                c.title = "AUTOCLAVE MONITORING";
+                c.status = "MODE: LEVEL 6 - DCS " + dcs;
+                c.route = "AUTOCLAVE PARAMETER\nPre-Heater outlet -> Autoclave\nPantau reactor setelah slurry masuk";
+                c.field = "FIELD STATE\nCek parameter utama di layar DCS.\nPastikan suhu, tekanan, dan RPM stabil.";
+                c.actions = "CHECKLIST\n[ ] Tekan DCS 6\n[ ] Lapor HT outlet preheater\n[ ] Putar valve slurry preheater\n[ ] Pantau suhu/tekanan/RPM\n[ ] Lapor parameter stabil";
+                c.setpoints = $"AUTOCLAVE\nTemp: {temp:F1} C (TGT 252)\nPressure: {pressure:F1} atm (TGT 47.5)\nAgitator: {rpm:F0} RPM (TGT 60)\npH: {ph:F2}";
+                c.alarm = "Pantau parameter autoclave seperti layout DCS awal.";
                 c.flow01 = 0.55f;
                 break;
 

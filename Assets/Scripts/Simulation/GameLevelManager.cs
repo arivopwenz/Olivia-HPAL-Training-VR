@@ -1237,8 +1237,24 @@ public class GameLevelManager : MonoBehaviour
 
         if (!_level6AcidComplete)
         {
-            Log("VOICE", "Verifikasi skid asam di field: buka valve H2SO4 sampai flow masuk autoclave.", "orange");
-            return false;
+            bool matchField = VoiceCocokDenganSalahSatuAlias(keyword,
+                "field acid skid aman",
+                "acid skid aman",
+                "skid asam aman",
+                "area acid skid aman",
+                "tidak ada bocor",
+                "leak inspection ok",
+                "acid skid ready");
+
+            if (!matchField)
+            {
+                Log("VOICE", "Verifikasi acid skid lewat HT dulu. Sebut 'field acid skid aman'.", "orange");
+                return false;
+            }
+
+            OnVoiceReportAccepted?.Invoke(keyword);
+            Log("VOICE REPORT", $"Laporan FIELD ACID SKID Level 6 diterima: '<i>{keyword}</i>'. Acid flow diizinkan.", "cyan");
+            return true;
         }
 
         string frasaAkhir = string.IsNullOrEmpty(data.laporanVoiceLengkap)
@@ -2183,7 +2199,7 @@ public class GameLevelManager : MonoBehaviour
         // Trigger laporan outlet preheater supaya phase masuk ke teleport ke field slurry valve.
         OnVoiceReportAccepted?.Invoke("outlet preheater dibuka");
         TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl6", fallbackName: "SpawnPoint_DCS");
-        Log("DEBUG", "Skip ke Level 6. Putar handwheel preheater → cairan masuk autoclave → lapor 'slurry masuk autoclave' → set acid 350/stroke 70%/ARM → field LOCAL START + LEAK OK → lapor akhir.", "yellow");
+        Log("DEBUG", "Skip ke Level 6. Putar handwheel preheater -> cairan masuk autoclave -> lapor 'slurry masuk autoclave' -> set acid 350/stroke 70%/ARM -> lapor HT 'field acid skid aman' -> lapor akhir.", "yellow");
     }
 
     [ContextMenu("DEBUG: Skip ke Level 6 - Acid Skid (Field)")]
@@ -2200,7 +2216,7 @@ public class GameLevelManager : MonoBehaviour
         SetAcidRatio(350f);
         SetPH(1.0f);
         TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl6_AcidSkid", fallbackName: "SpawnPoint_Lvl6");
-        Log("DEBUG", "Skip ke Level 6 acid skid. Tekan LOCAL START → tunggu 8 detik → tekan LEAK OK → cairan naik di calibration column → lapor akhir.", "yellow");
+        Log("DEBUG", "Skip ke Level 6 acid skid. Lapor HT 'field acid skid aman' -> cairan naik di calibration column -> lapor akhir.", "yellow");
     }
 
     [ContextMenu("DEBUG: Skip ke Level 7 (Autoclave Inspection)")]

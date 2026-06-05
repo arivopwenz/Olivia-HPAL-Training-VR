@@ -545,6 +545,10 @@ public class Level10CCDController : MonoBehaviour
     /// </summary>
     private Transform ResolveFieldStandSpot()
     {
+        // Prioritaskan SpawnPoint_Lvl10 yang sudah di-set manual di scene
+        if (_teleportTargetField != null)
+            return _teleportTargetField;
+
         if (_ccdField == null)
             AutoFindReferences();
         if (_ccdField == null)
@@ -853,6 +857,7 @@ public class Level10CCDController : MonoBehaviour
     [SerializeField] private GameObject _qcLabFbxOverride; // optional: assign FBX manually
 
     private GameObject[] _ccdSampleStations = new GameObject[3];
+    private GameObject[] _ccdSampleBottles = new GameObject[3];
     private Transform[] _ccdStationFillLiquid = new Transform[3];
     private float[] _ccdBottleFillProgress = new float[3];
     private bool[] _ccdBottleFilling = new bool[3];
@@ -892,6 +897,23 @@ public class Level10CCDController : MonoBehaviour
         UpdateCCDProximity();
         UpdateCCDBottleFill();
         BillboardStationLabels();
+        // Keyboard fallback G: grab sample terdekat (untuk desktop simulator tanpa VR controller)
+        if (Input.GetKeyDown(KeyCode.G) && _ccdStationsBuilt)
+        {
+            Vector3 head = GetPlayerHead(); head.y = 0f;
+            for (int i = 0; i < 3; i++)
+            {
+                if (_ccdSampleTaken[i] || _ccdBottleFilling[i]) continue;
+                if (_ccdSampleStations[i] == null) continue;
+                Vector3 sPos = _ccdSampleStations[i].transform.position; sPos.y = 0f;
+                if (Vector3.Distance(head, sPos) <= 4f) // 4m radius untuk keyboard
+                {
+                    _ccdBottleFilling[i] = true;
+                    if (_hud != null) _hud.ShowNotifPublic($"Mengambil sample PLS Thickener {(i == 0 ? 1 : i == 1 ? 3 : 5)}...", 3f);
+                    break;
+                }
+            }
+        }
         // Manual submit: tekan L kalau semua sample terambil.
         if (Input.GetKeyDown(KeyCode.L) && AllPLSSamplesTaken() && !_ccdLabSubmitted)
             SubmitPLSToLab();
@@ -926,28 +948,65 @@ public class Level10CCDController : MonoBehaviour
         if (_ccdStationsBuilt) return;
         _ccdStationsBuilt = true;
 
-        // Tempatkan 3 pedestal sample TEPAT DI DEPAN tiap thickener (sisi -Z, arah player),
-        // di atas tanah/walkway supaya bisa didekati. Pakai sumbu X tiap tank (CCD1/2/3),
-        // bukan di tengah tank (yang bikin botol nyangkut di dalam tank — bug lama).
-        float[] tankX = { 15.0f, 1.6f, -11.7f };  // CCD1, CCD2, CCD3 center X
-        float frontZ = 105.0f;                      // sedikit di depan dinding tank (z~108)
-        float groundY = 0.0f;
-
-        if (_ccdField != null)
+        // Cari sample station yang sudah permanen di scene (pre-placed).
+        // Nama: L9_PLS_SampleStation_Th1, Th3, Th5.
+        int[] thNos = { 1, 3, 5 };
+        bool allFound = true;
+        for (int i = 0; i < 3; i++)
         {
-            var rends = _ccdField.GetComponentsInChildren<Renderer>();
-            if (rends.Length > 0)
+            string goName = $"L9_PLS_SampleStation_Th{thNos[i]}";
+            var existing = GameObject.Find(goName);
+            if (existing == null)
             {
-                var b = rends[0].bounds; foreach (var r in rends) b.Encapsulate(r.bounds);
-                frontZ = b.min.z - 1.5f;   // 1.5m di depan muka tank
-                groundY = Mathf.Max(0f, b.min.y + 0.05f);
+                // Cari termasuk inactive
+                foreach (var g in Resources.FindObjectsOfTypeAll<GameObject>())
+                {
+                    if (g.name == goName && g.scene.IsValid()) { existing = g; break; }
+                }
+            }
+            if (existing != null)
+            {
+                existing.SetActive(true);
+                _ccdSampleStations[i] = existing;
+                // Cari liquid fill child
+                var liq = existing.transform.Find("BottleLiquid");
+                if (liq != null) _ccdStationFillLiquid[i] = liq;
+                // Cari bottle dan pasang XRGrabInteractable
+                var bottleTf = existing.transform.Find("Bottle");
+                if (bottleTf != null)
+                {
+                    _ccdSampleBottles[i] = bottleTf.gameObject;
+                    EnsureBottleGrabbable(bottleTf.gameObject);
+                }
+                // Cari label child
+                var lbl = existing.transform.Find("StationLabel");
+                if (lbl == null)
+                {
+                    // Cari TextMesh child (label floating)
+                    var tm = existing.GetComponentInChildren<TextMesh>();
+                    if (tm != null) _ccdStationLabels[i] = tm.transform;
+                }
+                else _ccdStationLabels[i] = lbl;
+            }
+            else
+            {
+                allFound = false;
             }
         }
 
-        for (int i = 0; i < 3; i++)
+        // Fallback: kalau station belum ada di scene, build runtime (backward compat)
+        if (!allFound)
         {
-            Vector3 pos = new Vector3(tankX[i], groundY, frontZ);
-            _ccdSampleStations[i] = BuildCCDStationVisual(i, pos);
+            float[] tankX = { 15.0f, 1.6f, -11.7f };
+            float frontZ = 108.0f;
+            float groundY = 0.05f;
+
+            for (int i = 0; i < 3; i++)
+            {
+                if (_ccdSampleStations[i] != null) continue; // sudah found
+                Vector3 pos = new Vector3(tankX[i], groundY, frontZ);
+                _ccdSampleStations[i] = BuildCCDStationVisual(i, pos);
+            }
         }
     }
 
@@ -1036,17 +1095,56 @@ public class Level10CCDController : MonoBehaviour
 
     private readonly Transform[] _ccdStationLabels = new Transform[3];
 
+    /// <summary>
+    /// Pasang XRGrabInteractable ke botol sample supaya bisa di-grab tangan VR.
+    /// Botol isKinematic=false, useGravity=false (melayang di tangan).
+    /// Saat di-grab → sample terambil → botol menghilang (atau attach ke player).
+    /// </summary>
+    private void EnsureBottleGrabbable(GameObject bottle)
+    {
+        if (bottle == null) return;
+
+        // Collider (wajib untuk XR grab)
+        var col = bottle.GetComponent<Collider>();
+        if (col == null)
+        {
+            var sc = bottle.AddComponent<SphereCollider>();
+            sc.radius = 0.5f; // radius relatif terhadap scale botol
+            sc.isTrigger = false;
+        }
+
+        // Rigidbody (wajib untuk XRGrabInteractable)
+        var rb = bottle.GetComponent<Rigidbody>();
+        if (rb == null)
+        {
+            rb = bottle.AddComponent<Rigidbody>();
+        }
+        rb.isKinematic = true;
+        rb.useGravity = false;
+
+        // XRGrabInteractable
+        var grab = bottle.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+        if (grab == null)
+        {
+            grab = bottle.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+        }
+        grab.throwOnDetach = false;
+        grab.movementType = UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable.MovementType.Instantaneous;
+    }
+
     private void UpdateCCDProximity()
     {
+        // Sekarang pakai GRAB mechanic — cek apakah botol sudah di-grab pemain.
         if (!_ccdStationsBuilt) return;
-        Vector3 head = GetPlayerHead();
         for (int i = 0; i < 3; i++)
         {
             if (_ccdSampleTaken[i] || _ccdBottleFilling[i]) continue;
-            if (_ccdSampleStations[i] == null) continue;
-            Vector3 a = head; a.y = 0f;
-            Vector3 b = _ccdSampleStations[i].transform.position; b.y = 0f;
-            if (Vector3.Distance(a, b) <= _ccdSampleProximityRadius)
+            if (_ccdSampleBottles[i] == null) continue;
+
+            // Cek apakah botol sudah di-grab (isSelected = sedang dipegang)
+            var grab = _ccdSampleBottles[i].GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+            if (grab == null) continue;
+            if (grab.isSelected)
             {
                 _ccdBottleFilling[i] = true;
                 if (_hud != null) _hud.ShowNotifPublic($"Mengambil sample PLS Thickener {(i == 0 ? 1 : i == 1 ? 3 : 5)}...", 3f);
@@ -1071,6 +1169,9 @@ public class Level10CCDController : MonoBehaviour
             {
                 _ccdSampleTaken[i] = true;
                 _ccdBottleFilling[i] = false;
+                // Botol sudah terambil — sembunyikan (sample masuk inventory/rack)
+                if (_ccdSampleBottles[i] != null)
+                    _ccdSampleBottles[i].SetActive(false);
                 if (_ccdStationLabels[i] != null)
                 {
                     var tm = _ccdStationLabels[i].GetComponent<TextMesh>();
@@ -1092,87 +1193,90 @@ public class Level10CCDController : MonoBehaviour
         if (_ccdLabBuilt) return;
         _ccdLabBuilt = true;
 
-        // Posisi lab: DI DEPAN train CCD (sisi player, -Z), agak ke kiri supaya tidak menutupi
-        // pedestal sample. Reachable jalan kaki dari titik observasi. Menghadap ke tank (+Z).
-        Vector3 labOrigin = transform.position + new Vector3(-10f, 0f, -8f);
-        if (_ccdField != null)
+        // Cari lab building yang sudah permanen di scene (pre-placed)
+        var existing = GameObject.Find("L9_LabBuilding");
+        if (existing == null)
         {
-            var rends = _ccdField.GetComponentsInChildren<Renderer>();
-            if (rends.Length > 0)
-            {
-                var b = rends[0].bounds; foreach (var r in rends) b.Encapsulate(r.bounds);
-                // Sudut depan-kiri train: x = tepi kiri tank (CCD3 ~ -11.7) geser kiri lagi,
-                // z = di depan muka tank supaya sejajar pedestal sample.
-                float frontZ = b.min.z - 4.0f;
-                labOrigin = new Vector3(-20f, 0f, frontZ);
-            }
+            foreach (var g in Resources.FindObjectsOfTypeAll<GameObject>())
+                if (g.name == "L9_LabBuilding" && g.scene.IsValid()) { existing = g; break; }
         }
 
-        GameObject fbxPrefab = _qcLabFbxOverride;
-#if UNITY_EDITOR
-        // Prioritaskan CCDLab.fbx (lab khusus Level 9, lebih detail) baru fallback ke QCLab.fbx
-        if (fbxPrefab == null)
-            fbxPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/Lab/CCDLab.fbx");
-        if (fbxPrefab == null)
-            fbxPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/Lab/QCLab.fbx");
-#endif
-        if (fbxPrefab == null) fbxPrefab = Resources.Load<GameObject>("CCDLab");
-        if (fbxPrefab == null) fbxPrefab = Resources.Load<GameObject>("QCLab");
-
-        if (fbxPrefab != null)
+        if (existing != null)
         {
-            var inst = Instantiate(fbxPrefab);
-            inst.name = "L9_LabBuilding";
-            inst.transform.SetParent(transform, false);
-            inst.transform.position = labOrigin;
-            inst.transform.rotation = Quaternion.identity;
-            _ccdLabBuilding = inst;
-
-            // Coba nama child versi CCDLab.fbx (baru) DULU; fallback ke nama lama (QCLab.fbx).
-            _ccdLabAnalyzerRotor = FindDeepChild(inst.transform, "CCDLab_Spectrometer_Rotor")
-                                ?? FindDeepChild(inst.transform, "Lab_Analyzer_Rotor");
-            _ccdLabResultScreen = FindDeepChild(inst.transform, "CCDLab_ResultScreen")
-                                ?? FindDeepChild(inst.transform, "Lab_ResultScreen");
-            _ccdLabSlotLiquids[0] = FindDeepChild(inst.transform, "CCDLab_InletLiquid_1")
-                                  ?? FindDeepChild(inst.transform, "Lab_SlotLiquid_1");
-            _ccdLabSlotLiquids[1] = FindDeepChild(inst.transform, "CCDLab_InletLiquid_2")
-                                  ?? FindDeepChild(inst.transform, "Lab_SlotLiquid_2");
-            _ccdLabSlotLiquids[2] = FindDeepChild(inst.transform, "CCDLab_InletLiquid_3")
-                                  ?? FindDeepChild(inst.transform, "Lab_SlotLiquid_3");
-            for (int i = 0; i < 3; i++)
-            {
-                if (_ccdLabSlotLiquids[i] != null)
-                {
-                    var s = _ccdLabSlotLiquids[i].localScale;
-                    _ccdLabSlotBaseY[i] = s.y;
-                    _ccdLabSlotLiquids[i].localScale = new Vector3(s.x, s.y * 0.02f, s.z);
-                }
-            }
-            if (_ccdLabResultScreen != null)
-            {
-                var st = new GameObject("ScreenText");
-                st.transform.SetParent(_ccdLabResultScreen, false);
-                st.transform.localPosition = new Vector3(0, 0, 0.7f);
-                st.transform.localScale = Vector3.one * 0.6f;
-                var tm = st.AddComponent<TextMesh>();
-                tm.text = "QC LAB\nStandby...";
-                tm.fontSize = 40; tm.characterSize = 0.05f; tm.anchor = TextAnchor.MiddleCenter;
-                tm.alignment = TextAlignment.Center; tm.color = new Color(0.4f, 0.9f, 0.7f);
-                _ccdLabScreenText = tm;
-            }
-            var sign = new GameObject("Lab_Sign");
-            sign.transform.SetParent(inst.transform, false);
-            sign.transform.localPosition = new Vector3(0, 3.9f, 3.5f);
-            var stm = sign.AddComponent<TextMesh>();
-            stm.text = "LAB QC PLS";
-            stm.fontSize = 60; stm.characterSize = 0.04f; stm.anchor = TextAnchor.MiddleCenter;
-            stm.alignment = TextAlignment.Center; stm.color = new Color(0.2f, 0.9f, 1f);
-            Debug.Log("[Level9 CCD] Lab QC dari Blender FBX ter-load.");
+            existing.SetActive(true);
+            _ccdLabBuilding = existing;
         }
         else
         {
-            Debug.LogWarning("[Level9 CCD] QCLab.fbx tidak ditemukan. Lab QC akan pakai canvas pop-up saja.");
+            // Fallback: instantiate dari FBX kalau tidak ada di scene
+            Vector3 labOrigin = new Vector3(-20f, 0f, 104f);
+            GameObject fbxPrefab = _qcLabFbxOverride;
+#if UNITY_EDITOR
+            if (fbxPrefab == null)
+                fbxPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/Lab/CCDLab.fbx");
+            if (fbxPrefab == null)
+                fbxPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/Lab/QCLab.fbx");
+#endif
+            if (fbxPrefab == null) fbxPrefab = Resources.Load<GameObject>("CCDLab");
+            if (fbxPrefab == null) fbxPrefab = Resources.Load<GameObject>("QCLab");
+
+            if (fbxPrefab != null)
+            {
+                var inst = Instantiate(fbxPrefab);
+                inst.name = "L9_LabBuilding";
+                inst.transform.SetParent(transform, false);
+                inst.transform.position = labOrigin;
+                inst.transform.rotation = Quaternion.identity;
+                _ccdLabBuilding = inst;
+            }
         }
+
+        if (_ccdLabBuilding == null)
+        {
+            Debug.LogWarning("[Level9 CCD] Lab QC tidak ditemukan di scene dan FBX gagal load.");
+            return;
+        }
+
+        // Resolve references dari lab building
+        _ccdLabAnalyzerRotor = FindDeepChild(_ccdLabBuilding.transform, "CCDLab_Spectrometer_Rotor")
+                            ?? FindDeepChild(_ccdLabBuilding.transform, "Lab_Analyzer_Rotor");
+        _ccdLabResultScreen = FindDeepChild(_ccdLabBuilding.transform, "CCDLab_ResultScreen")
+                            ?? FindDeepChild(_ccdLabBuilding.transform, "Lab_ResultScreen");
+        _ccdLabSlotLiquids[0] = FindDeepChild(_ccdLabBuilding.transform, "CCDLab_InletLiquid_1")
+                              ?? FindDeepChild(_ccdLabBuilding.transform, "Lab_SlotLiquid_1");
+        _ccdLabSlotLiquids[1] = FindDeepChild(_ccdLabBuilding.transform, "CCDLab_InletLiquid_2")
+                              ?? FindDeepChild(_ccdLabBuilding.transform, "Lab_SlotLiquid_2");
+        _ccdLabSlotLiquids[2] = FindDeepChild(_ccdLabBuilding.transform, "CCDLab_InletLiquid_3")
+                              ?? FindDeepChild(_ccdLabBuilding.transform, "Lab_SlotLiquid_3");
+        for (int i = 0; i < 3; i++)
+        {
+            if (_ccdLabSlotLiquids[i] != null)
+            {
+                var s = _ccdLabSlotLiquids[i].localScale;
+                _ccdLabSlotBaseY[i] = s.y;
+                _ccdLabSlotLiquids[i].localScale = new Vector3(s.x, s.y * 0.02f, s.z);
+            }
+        }
+        if (_ccdLabResultScreen != null)
+        {
+            var st = new GameObject("ScreenText");
+            st.transform.SetParent(_ccdLabResultScreen, false);
+            st.transform.localPosition = new Vector3(0, 0, 0.7f);
+            st.transform.localScale = Vector3.one * 0.6f;
+            var tm = st.AddComponent<TextMesh>();
+            tm.text = "QC LAB\nStandby...";
+            tm.fontSize = 40; tm.characterSize = 0.05f; tm.anchor = TextAnchor.MiddleCenter;
+            tm.alignment = TextAlignment.Center; tm.color = new Color(0.4f, 0.9f, 0.7f);
+            _ccdLabScreenText = tm;
+        }
+        var sign = new GameObject("Lab_Sign");
+        sign.transform.SetParent(_ccdLabBuilding.transform, false);
+        sign.transform.localPosition = new Vector3(0, 3.9f, 3.5f);
+        var stm = sign.AddComponent<TextMesh>();
+        stm.text = "LAB QC PLS";
+        stm.fontSize = 60; stm.characterSize = 0.04f; stm.anchor = TextAnchor.MiddleCenter;
+        stm.alignment = TextAlignment.Center; stm.color = new Color(0.2f, 0.9f, 1f);
+        Debug.Log("[Level9 CCD] Lab QC resolved (scene atau fallback FBX).");
     }
 
     private void SubmitPLSToLab()

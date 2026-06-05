@@ -270,10 +270,16 @@ public class DCSMonitorUI : MonoBehaviour
                 break;
 
             case GameLevelManager.GameLevel.Level6_AcidInjection:
-                txtStatusFase.text = "STATUS: INJEKSI ASAM SULFAT";
-                txtStatusFase.color = warnaKuning;
+                txtStatusFase.text = "STATUS: AUTOCLAVE MONITORING";
+                txtStatusFase.color = warnaHijau;
+                _mesinAktif = true;
+                _targetSuhu = 252f;
+                _targetTekanan = 47.5f;
+                _targetRPM = 60f;
                 SetValve(ref _valveAcidFeed, false);
-                TriggerAlarm("PERHATIAN — INJEKSI H₂SO₄ DIMULAI!", false);
+                if (panelTaskMesin != null) panelTaskMesin.SetActive(true);
+                if (txtStatusMesin != null) { txtStatusMesin.text = "AKTIF"; txtStatusMesin.color = warnaHijau; }
+                TriggerAlarm("AUTOCLAVE MONITORING AKTIF - PANTAU SUHU, TEKANAN, DAN RPM", false);
                 break;
 
             case GameLevelManager.GameLevel.Level7_Autoclave:

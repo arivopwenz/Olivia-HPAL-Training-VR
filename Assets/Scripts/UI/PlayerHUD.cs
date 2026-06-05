@@ -803,7 +803,7 @@ public class PlayerHUD : MonoBehaviour
             lines.Add($"{Check(slurryMasuk)} Putar valve preheater (cairan masuk autoclave)");
             lines.Add($"{Check(slurryReport)} Lapor HT: 'slurry masuk autoclave'");
             lines.Add($"{Check(dcsAcidReady)} DCS: set acid 350 + stroke 70% + ARM");
-            lines.Add($"{Check(acidComplete)} Field acid skid: tekan LOCAL START + LEAK OK");
+            lines.Add($"{Check(acidComplete)} Lapor HT field: 'field acid skid aman'");
             // Lapor akhir hanya ter-check kalau acid complete + final voice accepted.
             bool laporAkhirAcidOk = acidComplete && _voiceReportSelesai;
             lines.Add($"{Check(laporAkhirAcidOk)} Lapor HT akhir: 'acid aktif, pH 1.0'");
