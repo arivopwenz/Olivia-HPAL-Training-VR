@@ -51,7 +51,7 @@ public class Level3OreSlurryController : MonoBehaviour
     [SerializeField] private float _offsetAmanDiAtasLantai = 0.15f;
     [SerializeField] private float _jarakRaycastLantai = 40f;
     [SerializeField] private bool _gunakanRaycastLantaiSaatTeleport = false;
-    [SerializeField] private bool _teleportKeTitikObservasi = true;
+    [SerializeField] private bool _teleportKeTitikObservasi = false;
 
     [Header("=== Safety Runtime ===")]
     [SerializeField] private bool _buatPlatformObservasiOtomatis = true;
@@ -188,6 +188,7 @@ public class Level3OreSlurryController : MonoBehaviour
     private void Awake()
     {
         _hud = UnityEngine.Object.FindFirstObjectByType<PlayerHUD>();
+        EnsureLevel3SpawnTargets();
         if (_playerRigRoot == null && Camera.main != null)
             _playerRigRoot = Camera.main.transform.root;
 
@@ -256,6 +257,7 @@ public class Level3OreSlurryController : MonoBehaviour
         _sequenceSudahDimulai = false;
         _teleportSudahDimulai = false;
         _slurry25SudahTriggered = false;
+        EnsureLevel3SpawnTargets();
         AktifkanGlowMaskerDiBaju(false);
         HideArrow();
         HentikanAgitator();
@@ -820,6 +822,27 @@ public class Level3OreSlurryController : MonoBehaviour
 
         if (restoreController)
             _playerCharacterController.enabled = true;
+    }
+
+    private void EnsureLevel3SpawnTargets()
+    {
+        if (_teleportTargetField == null || _teleportTargetField.name == "SpawnPoint_DCS")
+            _teleportTargetField = FindSceneTransform("SpawnPoint_Lvl3") ?? _teleportTargetField;
+
+        if (_teleportTargetObservation == null)
+            _teleportTargetObservation = FindSceneTransform("SpawnPoint_Lvl3 - Slurry Tank") ?? _teleportTargetObservation;
+    }
+
+    private Transform FindSceneTransform(string exactName)
+    {
+        GameObject go = GameObject.Find(exactName);
+        if (go != null) return go.transform;
+
+        foreach (Transform t in UnityEngine.Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (t != null && t.name == exactName && t.gameObject.scene.IsValid())
+                return t;
+
+        return null;
     }
 
     private void ResetVisualState()

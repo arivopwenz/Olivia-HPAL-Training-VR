@@ -37,6 +37,8 @@ public class Level7AutoclaveController : MonoBehaviour
     [Header("=== Underflow Inlet Valve ===")]
     [Tooltip("Pivot runtime hasil group L7_LiquidUnderflow_Handwheel_Hub + Spokes + OuterRing.")]
     [SerializeField] private Transform _inletValvePivot;
+    [Tooltip("Visual/interactable handwheel redesign yang diputar player. Diutamakan: L7_L5_Condensate_Drain_Handwheel_StirRedesign_Scene.")]
+    [SerializeField] private Transform _inletValveWheel;
     [SerializeField] private XRGrabInteractable _inletValveGrab;
     [SerializeField] private Vector3 _inletValveAxisLocal = Vector3.up;
     [SerializeField] private float _inletValveFullOpenDegrees = 1080f;
@@ -318,6 +320,8 @@ public class Level7AutoclaveController : MonoBehaviour
             if (_inletValveOpenPercent >= 0.99f && !_slurryFillStarted)
             {
                 _slurryFillStarted = true;
+                GameLevelManager.Instance?.NotifyLevel7GaugesLogged();
+                if (_hud != null) _hud.ShowNotifPublic("Valve inlet terbuka penuh. Task valve diterima.", 4f);
                 StartSequence(SlurryFillCoroutine());
             }
         }
@@ -349,28 +353,11 @@ public class Level7AutoclaveController : MonoBehaviour
         TeleportPlayerToTopDeck();
         yield return new WaitForSeconds(fadeDur * 0.5f);
 
-        // === STEP 2: TUNGGU PLAYER LAPOR HT MANUAL: "Slurry mulai masuk autoclave" ===
-        yield return StartCoroutine(WaitForVoiceReport(
-            "LAPOR HT (tahan T): 'Slurry mulai masuk autoclave dari underflow.'\nSetelah laporan diterima, tekan X untuk aktifkan X-Ray.", 12f));
-        GameLevelManager.Instance?.NotifyLevel7GaugesLogged();
-
-        // === STEP 3: Tunggu player tekan X untuk X-Ray (shell BARU transparan di sini) ===
-        _phase = Phase.XrayDanMonitor;
-        float remindTimer = 0f;
-        while (!_xrayActive)
-        {
-            remindTimer += Time.deltaTime;
-            if (remindTimer >= 8f)
-            {
-                if (_hud != null) _hud.ShowNotifPublic("Tekan [X] untuk aktifkan X-Ray Vision (lihat dalam autoclave).", 6f);
-                remindTimer = 0f;
-            }
-            yield return null;
-        }
-
-        // === STEP 4: X-Ray aktif → animasi slurry naik 0% → 50% (setengah) ===
+        // === STEP 2: Cairan masuk autoclave (OTOMATIS, tanpa task X-Ray). ===
+        // X-Ray diaktifkan diam-diam agar cairan terlihat naik di dalam shell — bukan task player.
+        if (!_xrayActive) ToggleXRay();
         _phase = Phase.SlurryRising;
-        if (_hud != null) _hud.ShowNotifPublic("X-RAY ON: Pantau slurry naik dari bawah ke setengah autoclave.", 8f);
+        if (_hud != null) _hud.ShowNotifPublic("Slurry masuk autoclave, cairan naik...", 6f);
         EnsureSlurryFlowAudio();
         StartAudio(_slurryFlowAudio, _slurryFlowVolume);
 
@@ -385,20 +372,25 @@ public class Level7AutoclaveController : MonoBehaviour
         }
         StopAudio(_slurryFlowAudio);
 
-        // === STEP 5: Acid drop dari atas (3.5 detik) ===
+        // === STEP 3: Acid drop dari atas ===
         if (_hud != null) _hud.ShowNotifPublic("Acid sulfuric injection dari pipa atas...", 5f);
         EnsureAcidDropEffect();
         yield return StartCoroutine(AcidDropCoroutine());
 
-        // === STEP 6: TUNGGU PLAYER LAPOR HT MANUAL: "Autoclave terisi, mesin siap" ===
-        yield return StartCoroutine(WaitForVoiceReport(
-            "LAPOR HT (tahan T): 'Autoclave terisi setengah, acid masuk, mesin siap dinyalakan.'\nSetelah laporan diterima, mesin akan menyala.", 12f));
-
-        // === STEP 7: Siren + Engine + Agitator ramp-up ===
-        GameLevelManager.Instance?.NotifyLevel7SafetyDrillDone();
+        // Task X-Ray, scale, gauge, sample, dan safety drill DIHAPUS dari quest.
+        // Auto-complete flag-nya supaya penyelesaian level tetap konsisten.
+        GameLevelManager.Instance?.NotifyLevel7XrayActivated();
         GameLevelManager.Instance?.NotifyLevel7ScaleMarked();
+        GameLevelManager.Instance?.NotifyLevel7GaugesLogged();
         GameLevelManager.Instance?.NotifyLevel7SampleTaken();
+        GameLevelManager.Instance?.NotifyLevel7SafetyDrillDone();
+
+        // === STEP 4: Mesin startup (siren + engine + agitator ramp-up) ===
         yield return StartCoroutine(StartupSequenceCoroutine());
+
+        // === STEP 5: LANGSUNG LAPOR HT (satu-satunya laporan level ini) ===
+        yield return StartCoroutine(WaitForVoiceReport(
+            "LAPOR HT (tahan T): 'DCS, autoclave normal, suhu 250 derajat, tekanan 50 atm, agitator 60 RPM.'", 12f));
 
         _phase = Phase.Selesai;
         ShowMissionCompleteUI();
@@ -407,7 +399,7 @@ public class Level7AutoclaveController : MonoBehaviour
     private IEnumerator StartupSequenceCoroutine()
     {
         if (_hud != null) _hud.ShowNotifPublic(
-            "LAPOR HT: 'Autoclave terisi penuh, parameter normal. Mulai proses oksidasi.'", 6f);
+            "Autoclave terisi penuh, parameter normal. Menyalakan mesin...", 6f);
         yield return new WaitForSeconds(2f);
 
         // Siren startup (alarm bahwa rotor akan mulai berputar).
@@ -438,11 +430,8 @@ public class Level7AutoclaveController : MonoBehaviour
 
         StartLiquidSwirl();
         if (_hud != null) _hud.ShowNotifPublic(
-            "Mesin sudah hidup. Proses autoclave berjalan. Misi selesai!", 6f);
+            "Mesin sudah hidup. Proses autoclave berjalan.", 6f);
         yield return new WaitForSeconds(2f);
-
-        _phase = Phase.Selesai;
-        ShowMissionCompleteUI();
     }
 
     public void ConfirmSafetyDrillStep()
@@ -939,12 +928,17 @@ public class Level7AutoclaveController : MonoBehaviour
 
     private void EnsureInletValvePivot()
     {
-        if (_inletGH != null) return;
-
         Transform hub = FindByNameInactive("L7_LiquidUnderflow_Handwheel_Hub");
-        if (hub == null) return;
+        Transform l7SceneWheel = FindByNameInactive("L7_L5_Condensate_Drain_Handwheel_StirRedesign_Scene")
+                              ?? FindByNameInactive("L7_L5_Condensate_Drain_Handwheel_StirRedesign_Runtime")
+                              ?? FindByNameInactive("L7_L5_Condensate_Drain_Handwheel_StirRedesign");
 
-        if (_inletValvePivot == null)
+        if (_inletGH != null && _inletValveWheel == l7SceneWheel && _inletValveWheel != null)
+            return;
+
+        if (hub == null && l7SceneWheel == null) return;
+
+        if (_inletValvePivot == null && hub != null)
         {
             GameObject pivotGo = new GameObject("L7_InletValve_Pivot_Runtime");
             Transform pivot = pivotGo.transform;
@@ -968,20 +962,65 @@ public class Level7AutoclaveController : MonoBehaviour
             Transform p = FindByNameInactive(token);
             if (p != null) parts.Add(p);
         }
-        Transform l5Visual = ReplaceInletHandwheelVisualWithL5Model(hub, parts.ToArray());
+        Transform l5Visual = l7SceneWheel != null ? l7SceneWheel : ReplaceInletHandwheelVisualWithL5Model(hub, parts.ToArray());
         if (l5Visual != null)
         {
-            parts.Clear();
-            parts.Add(hub);
-            parts.Add(l5Visual);
-        }
-        _handwheelParts = parts.ToArray();
+            _inletValveWheel = l5Visual;
+            // Matikan HANYA renderer FBX lama (hub/ring/spoke). JANGAN matikan wheel redesign
+            // yang visible — ia bisa jadi CHILD dari hub, jadi GetComponentsInChildren pada hub
+            // akan ikut mematikannya kalau tidak di-exclude (ini yang bikin steer hilang saat play).
+            foreach (var p in parts)
+            {
+                if (p == null) continue;
+                foreach (var rr in p.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (rr == null) continue;
+                    if (rr.transform == l5Visual || rr.transform.IsChildOf(l5Visual)) continue;
+                    rr.enabled = false;
+                }
+            }
 
-        // BARU: putaran PERSIS seperti Level 8 Flash Vessel (GesturalHandwheel di hub).
-        _inletGH = hub.GetComponent<GesturalHandwheel>();
-        if (_inletGH == null) _inletGH = hub.gameObject.AddComponent<GesturalHandwheel>();
+            // SAFETY: pastikan wheel redesign (stir gauge) SELALU aktif + renderer nyala saat
+            // level mulai. Mencegah kasus stir gauge hilang kalau renderer-nya ke-disable di
+            // sesi/proses sebelumnya, atau ter-mark occludee static & sempat ke-cull.
+            if (!l5Visual.gameObject.activeSelf) l5Visual.gameObject.SetActive(true);
+            foreach (var rr in l5Visual.GetComponentsInChildren<Renderer>(true))
+            {
+                if (rr == null) continue;
+                rr.enabled = true;
+#if UNITY_EDITOR
+                var flags = UnityEditor.GameObjectUtility.GetStaticEditorFlags(rr.gameObject);
+                if ((flags & UnityEditor.StaticEditorFlags.OccludeeStatic) != 0
+                    || (flags & UnityEditor.StaticEditorFlags.OccluderStatic) != 0)
+                {
+                    UnityEditor.GameObjectUtility.SetStaticEditorFlags(rr.gameObject,
+                        flags & ~(UnityEditor.StaticEditorFlags.OccludeeStatic | UnityEditor.StaticEditorFlags.OccluderStatic));
+                }
+#endif
+            }
+        }
+
+        Transform wheelRoot = _inletValveWheel != null ? _inletValveWheel : hub;
+        if (wheelRoot == null) return;
+
+        _handwheelParts = _inletValveWheel != null ? new[] { _inletValveWheel } : parts.ToArray();
+        if (hub != null && wheelRoot != hub)
+        {
+            var oldSimple = hub.GetComponent<XRSimpleInteractable>();
+            if (oldSimple != null) Destroy(oldSimple);
+            var oldSphere = hub.GetComponent<SphereCollider>();
+            if (oldSphere != null) Destroy(oldSphere);
+        }
+
+        // Putaran PERSIS seperti Level 5 Steam Valve:
+        // GesturalHandwheel ditempel di root visual handwheel, bukan di hub lama,
+        // supaya collider/hover/select yang dipakai player berada di model redesign.
+        _inletGH = wheelRoot.GetComponent<GesturalHandwheel>();
+        if (_inletGH == null) _inletGH = wheelRoot.gameObject.AddComponent<GesturalHandwheel>();
         _inletGH.fullOpenDegrees = _inletValveFullOpenDegrees;
-        _inletGH.Setup(hub, _handwheelParts);
+        _inletGH.gesturalGain = 1.0f;
+        _inletGH.debugKey = KeyCode.R;
+        _inletGH.Setup(wheelRoot, null);
     }
 
     private Transform ReplaceInletHandwheelVisualWithL5Model(Transform hub, Transform[] oldParts)
@@ -993,7 +1032,11 @@ public class Level7AutoclaveController : MonoBehaviour
         if (existing != null)
             return existing;
 
-        Transform source = FindByNameInactive("L5_Condensate_Drain_Handwheel_StirRedesign");
+        Transform source = FindByNameInactive("L5_SteamValve_Handwheel_Redesign");
+        if (source == null)
+            source = FindByNameContainsInactive("L5_SteamValve_Handwheel_Redesign");
+        if (source == null)
+            source = FindByNameInactive("L5_Condensate_Drain_Handwheel_StirRedesign");
         if (source == null)
             source = FindByNameContainsInactive("L5_Condensate_Drain_Handwheel_StirRedesign");
         if (source == null)
@@ -1591,6 +1634,13 @@ public class Level7AutoclaveController : MonoBehaviour
         _inletValveOpenPercent = 0f;
         _inletValveGrabbed = false;
         _inletYawValid = false;
+        if (_inletGH != null && _inletValveWheel != null)
+        {
+            _inletGH.fullOpenDegrees = _inletValveFullOpenDegrees;
+            _inletGH.gesturalGain = 1.0f;
+            _inletGH.debugKey = KeyCode.R;
+            _inletGH.Setup(_inletValveWheel, null);
+        }
         _agitatorAngle = 0f;
         _agitatorRunning = false;
         _agitatorCurrentRPM = 0f;

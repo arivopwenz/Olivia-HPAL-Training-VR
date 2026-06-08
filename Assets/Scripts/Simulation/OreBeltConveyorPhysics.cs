@@ -44,6 +44,7 @@ public class OreBeltConveyorPhysics : MonoBehaviour
 
     private readonly List<Rigidbody> _ores = new List<Rigidbody>();
     private readonly List<Vector3> _spawnPositions = new List<Vector3>();
+    private readonly List<Quaternion> _spawnRotations = new List<Quaternion>();
     private readonly HashSet<Rigidbody> _fellIntoTank = new HashSet<Rigidbody>();
     private readonly Dictionary<Rigidbody, float> _stallTimer = new Dictionary<Rigidbody, float>();
     private bool _running;
@@ -66,6 +67,7 @@ public class OreBeltConveyorPhysics : MonoBehaviour
 
         _ores.Clear();
         _spawnPositions.Clear();
+        _spawnRotations.Clear();
 
         foreach (Transform child in transform)
         {
@@ -101,9 +103,11 @@ public class OreBeltConveyorPhysics : MonoBehaviour
             rb.isKinematic = true;        // diam dulu sampai SetRunning(true)
             rb.interpolation = RigidbodyInterpolation.Interpolate;
             rb.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+            rb.freezeRotation = true;     // JANGAN menggelinding/berputar — hanya bergerak (translasi).
 
             _ores.Add(rb);
             _spawnPositions.Add(child.position);
+            _spawnRotations.Add(child.rotation);
         }
     }
 
@@ -207,7 +211,8 @@ public class OreBeltConveyorPhysics : MonoBehaviour
             float z = _beltZ + Mathf.Lerp(-1.2f, 1.2f, Mathf.Repeat(i * 0.37f, 1f));
 
             rb.transform.position = new Vector3(x, surfaceY + halfH + 0.15f, z);
-            rb.transform.rotation = Random.rotation;
+            // Orientasi TETAP (rotasi authored) — tidak random, tidak menggelinding.
+            rb.transform.rotation = i < _spawnRotations.Count ? _spawnRotations[i] : Quaternion.identity;
             if (!rb.isKinematic)
             {
                 rb.linearVelocity = Vector3.zero;
@@ -247,13 +252,24 @@ public class OreBeltConveyorPhysics : MonoBehaviour
             // tetapi tidak overshoot. Gravitasi tetap aktif menjatuhkan ore ke dalam tank.
             if (pos.x <= _headX)
             {
-                Vector3 toTank = new Vector3(_tankCenterX - pos.x, 0f, _tankCenterZ - pos.z);
-                if (toTank.sqrMagnitude > 0.01f) toTank.Normalize();
-                Vector3 v = rb.linearVelocity;
-                float chuteSpeed = _conveyorSpeed * 0.45f; // pelan, biar tidak melayang
-                v.x = toTank.x * chuteSpeed;
-                v.z = toTank.z * chuteSpeed;
-                rb.linearVelocity = v;
+                // Arahkan ore LANGSUNG ke titik di DALAM tank (turun + ke pusat tank),
+                // bukan cuma horizontal — supaya tidak nyangkut di bibir tank / chute.
+                Vector3 target = new Vector3(_tankCenterX, _tankCatchY, _tankCenterZ);
+                Vector3 toTank = target - pos;
+                float dist = toTank.magnitude;
+                if (dist > 0.01f) toTank /= dist;
+                rb.linearVelocity = toTank * _conveyorSpeed;
+
+                // ANTI-NYANGKUT di chute: kalau sudah dekat tank ATAU terlalu lama di zona ini,
+                // paksa masuk tank (slurry menggantikan ore secara visual).
+                float prevChute; _stallTimer.TryGetValue(rb, out prevChute);
+                prevChute += Time.fixedDeltaTime;
+                _stallTimer[rb] = prevChute;
+                if (dist <= 1.5f || prevChute > 2.5f)
+                {
+                    _fellIntoTank.Add(rb);
+                    rb.transform.gameObject.SetActive(false);
+                }
                 continue;
             }
 

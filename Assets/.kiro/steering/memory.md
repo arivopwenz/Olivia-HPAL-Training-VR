@@ -760,3 +760,150 @@ Pump tie-in detail (3 rubber exp-joint y2.55/2.8/3.05, hazard y4.4, `DischargeKn
 **Rekomendasi disampaikan ke user** (belum dikerjakan): LOD groups (0 sekarang) untuk mesin jauh, `QualitySettings.layerCullDistances` untuk pisah area jauh (Dry Stack z~230 vs CCD z~110), pertimbangkan turunkan far plane 1000 (opsional, hati2 clip struktur besar lintas-plant). Rebake occlusion tiap layout mesin berubah (overhead maintenance nyata mengingat sering replace FBX instance).
 
 **Files**: Assets/Scenes/Level1_MainBroken.unity (static flags + camera occ + saved), Assets/Scenes/Level1_MainBroken/OcclusionCullingData.asset (BARU, 814KB bake). Tidak ada .cs diubah.
+
+
+---
+
+### 2026-06-08 (Part 52) — FIX FATAL: masker & HT hilang gara-gara Occludee Static (occlusion culling, BUKAN frustum)
+
+**User**: setelah bake occlusion Part 51, masker & HT KADANG tidak nampak (fatal). Tanya: occlusion culling atau frustum culling?
+
+**JAWABAN: OCCLUSION CULLING.** Akar masalah: bulk-marking Part 51 menandai objek **Occludee Static** secara luas. Masker & HT itu objek BERGERAK (di-equip/menempel ke player). Static occlusion menganggap posisi occludee TETAP di posisi saat bake → begitu objek dibawa pindah, sistem culling pakai cell baked lama → objek ke-cull (hilang) walau di depan mata. Frustum culling TIDAK begini (pakai bounds aktual real-time). **Prinsip: objek yang TRANSLASI saat runtime TIDAK BOLEH Occludee/Occluder Static.**
+
+**Culprit spesifik (verified)**: `APD Level 2/Socket_Scanner_RespiratorMask/RespiratorMask` & `APD Level 2/Socket_Scanner_WalkieTalkie/Walkie Talkie` — keduanya Occludee Static. Plus seluruh subtree `XR Origin (XR Rig)` (controller visual, `TorsoAnchor/Socket_WalkieTalkie/WT_ChestDock_Visual`, dll) ikut ke-mark.
+
+**FIX (execute_code, edit-mode)**:
+1. Clear flag `OccludeeStatic|OccluderStatic` rekursif dari subtree: `XR Origin (XR Rig)`, `APD Level 2` + objek nama mengandung walkie/masker/respirator/mask/helm/kacamata/sarung/earplug/rompi/sepatu/scanner/held/carry/handheld. → **45 flag dibersihkan**.
+2. `StaticOcclusionCulling.Clear()` + `Compute()` rebake → umbra 298080→**295936** (lebih kecil, konsisten objek bergerak dikeluarkan dari occludee set).
+3. `SaveOpenScenes()`. Verifikasi: RespiratorMask & Walkie Talkie `Occludee=False Occluder=False`; leftover static di XR/APD = **0**; `cam.useOcclusionCulling=True` (occlusion tetap jalan utk mesin statis); sceneDirty=False.
+
+**Hasil**: masker/HT (& semua item equippable + isi XR rig) kini DINAMIS → tak pernah di-cull static occlusion → tampil benar kapan pun in-view (cuma frustum-cull by bounds aktual). Occlusion benefit utk mesin statis tetap ada.
+
+**LESSON occlusion culling (WAJIB)**: sebelum bake, EXCLUDE dari Occludee/Occluder Static: (a) semua child `XR Origin`/player rig, (b) semua prop equippable/held (APD, masker, HT, scanner), (c) apa pun yang re-parent/translasi saat runtime. Rotator-in-place (handwheel/agitator/flywheel) relatif aman (bounds tetap) tapi sebaiknya occludee-only, bukan occluder. Heuristik exclude Part 51 KURANG kata kunci ini → menyebabkan bug. Scene: Level1_MainBroken.unity.
+
+**Files**: Assets/Scenes/Level1_MainBroken.unity (clear static flags XR/APD + rebake occlusion, saved), Assets/Scenes/Level1_MainBroken/OcclusionCullingData.asset (re-baked). Belum di-commit/push (user belum minta).
+
+
+---
+
+### 2026-06-08 (Part 53) — FIX HT lengket gak bisa di-grab + buat Socket_Gloves_Baju di dada
+
+**User**: (1) HT (Walkie Talkie) gak bisa diambil sama sekali — lengket/nempel terus (regresi setelah rescript). Awalnya bisa grab → lapor → balik ke posisi. (2) Buat socket sarung tangan di dada (TorsoAnchor) seperti masker, nempel di bawah-tengah badan.
+
+**Struktur socket dada (TorsoAnchor child XR Origin, localPos 0,1.04,0.22)**:
+- `Socket_Respirator_Baju` (masker) localPos (0.22,-0.08,0.02): **XRSocketInteractor + BoxCollider** (bersih, jadi acuan).
+- `Socket_WalkieTalkie` (HT) localPos (-0.22,-0.08,0.02): XRSocketInteractor + BoxCollider + **WalkieTalkieWearableSocket** (script custom = biang lengket).
+
+**ROOT CAUSE (2 loop re-dock per-frame yang bertengkar dgn XRSocketInteractor)**:
+1. `WalkieTalkieWearableSocket.LateUpdate` → `DockNow()` TIAP FRAME saat HT tidak `isSelected` (DockNow juga `SelectExit` SEMUA interactor termasuk socket).
+2. `PhaseManager.Update` → tiap 0.25s panggil `PastikanWalkieTalkieAdaDiSocketDada()` (→ DockNow) saat `WalkieBelumDiSocketDada()` true. Begitu HT di-grab keluar socket, parent berubah → `WalkieBelumDiSocketDada()` true → tiap 0.25s HT direnggut balik ke dada = gak bisa dipegang.
+
+**FIX (2 file, compile 0 error)**:
+- `WalkieTalkieWearableSocket.cs` LateUpdate di-rewrite: deteksi `heldByHand` = `_grab.isSelected` oleh interactor NON-`XRSocketInteractor` (tangan/ray). Saat heldByHand → JANGAN dock (biarkan dibawa). Saat transisi dilepas (`_wasSelected` true→false) → `DockNow()` SEKALI saja. Saat idle → biarkan XRSocketInteractor dada menahan HT (seperti masker), TANPA DockNow per-frame → HT tetap bisa di-grab. `_wasSelected` sekarang lacak heldByHand.
+- `PhaseManager.cs`: tambah `WalkieSedangDipegangPlayer()` (cek grab.isSelected oleh interactor non-socket). Guard kondisi Update re-dock: tambah `&& !WalkieSedangDipegangPlayer()` → tidak menarik HT balik selama dipegang player.
+- Blok di `WalkieTalkieManager.cs` (PTT show/hide HT di tangan) TIDAK disentuh — event-driven (tekan/lepas T), bukan per-frame, sudah benar (re-enable grab + dock sekali saat selesai).
+
+**Socket sarung tangan dada (request #2)**: duplikat `Socket_Respirator_Baju` → rename `Socket_Gloves_Baju`, child TorsoAnchor, localPos **(0, -0.22, 0.04)** (bawah-tengah dada), buang child duplikat + komponen WalkieTalkieWearableSocket bila ke-copy → tersisa **XRSocketInteractor + BoxCollider** (identik pola masker). Verified: 3 socket dada (Respirator 0.22/-0.08, WalkieTalkie -0.22/-0.08, Gloves 0/-0.22) semua socketInteractor=True. Scene saved.
+
+**CATATAN**: socket gloves dibuat sesuai permintaan "buat soketnya aja" — belum di-wire ke objek gloves/flow gameplay (objek `Gloves` masih di `APD Level 2/Socket_Scanner_Gloves` + ada `Socket_Gloves` di Main Camera). Kalau mau gloves otomatis nempel & flow APD pakai socket dada ini, perlu wiring tambahan (PhaseManager/Level controller) — tanya user dulu.
+
+**LESSON**: untuk item wearable di socket dada, PAKAI XRSocketInteractor saja (seperti masker) — jangan tambah script yang DockNow/SelectExit tiap frame (bertengkar dgn socket → item lengket/gak bisa di-grab). Re-dock paksa HARUS guard "sedang dipegang player" (cek interactor non-socket).
+
+**Files**: Assets/Scripts/Simulation/WalkieTalkieWearableSocket.cs (LateUpdate rewrite), Assets/Scripts/Simulation/PhaseManager.cs (WalkieSedangDipegangPlayer + guard Update), Assets/Scenes/Level1_MainBroken.unity (Socket_Gloves_Baju, saved). Belum commit/push (user belum minta).
+
+
+---
+
+### 2026-06-08 (Part 54) — Level 3: hapus teleport observasi ngawur (tetap di SpawnPoint_Lvl3) + fix ChoicePanel button VR-clickable
+
+**User**: (1) Setelah ore masuk semua, player malah ke-teleport ke spot ngawur (di dalam/dekat tank lihat agitator). Mau TETAP di SpawnPoint_Lvl3. (2) `Level3_ChoicePanel_Auto` button cuma bisa diklik mouse, bukan VR.
+
+**FIX #1 — teleport observasi**: di `Level3OreSlurryController`, saat ore sampai slurry (`NotifyLevel3OreReachedSlurry`) ada `if(_teleportKeTitikObservasi && _teleportTargetObservation!=null) TeleportPlayer(_teleportTargetObservation)` → `_teleportTargetObservation` = "SpawnPoint_Lvl3 - Slurry Tank" = spot ngawur di tank. Solusi: matikan `_teleportKeTitikObservasi`. Ubah default field `true`→`false` DI KODE, + set nilai SERIALIZED di komponen scene `false` (tadinya True, override default — pakai SerializedObject). Player tetap di `_teleportTargetField`=SpawnPoint_Lvl3 (posisi field observasi). Scene saved. (GOTCHA dikonfirmasi lagi: serialized scene value override code default → wajib set keduanya.)
+
+**FIX #2 — ChoicePanel button VR (`LevelTransitionChoicePanel.cs`)**: panel SUDAH attach XRSimpleInteractable+BoxCollider, TAPI `AttachXrSimpleInteractable` set `bc.size = rect.sizeDelta` → untuk button anchor-stretch (anchorMin≠anchorMax, offset 0), `sizeDelta`≈(0,0) → collider nyaris nol → ray VR tak pernah kena (mouse kena via GraphicRaycaster). FIX: `Canvas.ForceUpdateCanvases()` lalu pakai `rect.rect.width/height` (fallback hitung dari fraksi anchor × ukuran canvas parent bila rect belum valid), `bc.size=(w,h,20)`, register `simple.colliders` eksplisit. **VERIFIED play-mode**: collider Btn_Lanjut & Btn_Lihat = (430,187,20) → ≈0.43×0.19m dunia, xrSimple=True, collidersReg=1 (sebelumnya ~0). Ray VR sekarang kena.
+
+**LESSON (VR world-space button)**: BoxCollider untuk XRSimpleInteractable di UI anchor-stretch JANGAN pakai `rect.sizeDelta` (≈0). Pakai `rect.rect.width/height` setelah `Canvas.ForceUpdateCanvases()`, atau hitung dari fraksi anchor × ukuran parent. Tambah ketebalan Z (≥20 canvas unit) supaya ray kena.
+
+**Files**: Assets/Scripts/Simulation/Level3OreSlurryController.cs (default flag false), Assets/Scripts/UI/LevelTransitionChoicePanel.cs (collider sizing fix), Assets/Scenes/Level1_MainBroken.unity (_teleportKeTitikObservasi=false serialized, saved). 0 compile error. Belum commit/push.
+
+
+---
+
+### 2026-06-08 (Part 55) — Ore di belt JANGAN menggelinding (freezeRotation) tapi tetap bergerak
+
+**User**: ore di conveyor belt Level 3 (`Level3_Runtime_Ore_Belt_Flow` > `Ore_Rock_On_Belt_00..07`, komponen `OreBeltConveyorPhysics`) saat run MENGGELINDING/berputar. Mau tetap bergerak maju tapi animasi diam (tanpa rotasi).
+
+**Sebab**: ore = Rigidbody dinamis didorong velocity + gesekan belt → akumulasi angular velocity = menggelinding. Plus `ResetOreToBelt()` set `rb.transform.rotation = Random.rotation` (orientasi acak tiap reset).
+
+**FIX (`OreBeltConveyorPhysics.cs`, 4 edit, 0 error)**:
+- `SetupOres()`: tambah `rb.freezeRotation = true;` (kunci SEMUA rotasi fisika; translasi tetap jalan). Tambah list `_spawnRotations` + capture `child.rotation` saat setup (sejajar `_ores`/`_spawnPositions`).
+- `ResetOreToBelt()`: ganti `Random.rotation` → `_spawnRotations[i]` (orientasi authored TETAP, tidak acak/berputar).
+- Translasi (`vel.x/z = horiz * _conveyorSpeed` di FixedUpdate) TIDAK disentuh → ore tetap bergerak maju ke tank.
+
+**VERIFIED play-mode**: `freezeRotation=True`, `angularVelocity.magnitude=0` semua ore, rotasi euler konstan sebelum/sesudah. CATATAN verifikasi: posisi tampak diam saat probe karena **frame play mode tidak maju di antara execute_code call** (Thread.Sleep memblok main thread; MCP probe cepat tak nge-tick FixedUpdate) — ini artefak test, BUKAN regresi. `freezeRotation` hanya kunci rotasi, tak pernah posisi; logika translasi utuh → gerak maju tetap jalan.
+
+**LESSON**: (1) untuk objek "bergerak tapi jangan berputar" → `Rigidbody.freezeRotation=true` (kunci rotasi, translasi via velocity tetap). (2) Verifikasi GERAK runtime via MCP tidak andal: `Thread.Sleep` di execute_code memblok tick Unity; probe antar-call kadang 0 frame maju → posisi tampak statis palsu. Pakai play asli user untuk konfirmasi gerak, atau Physics.Simulate manual.
+
+**Files**: Assets/Scripts/Simulation/OreBeltConveyorPhysics.cs (freezeRotation + spawn rotation tetap). Tidak ada scene save (perubahan kode runtime; komponen di objek runtime). Belum commit/push.
+
+
+---
+
+### 2026-06-08 (Part 56) — FIX ore nyangkut di chute (Ore_Rock_On_Belt_10/11 stuck di bibir tank)
+
+**User**: 1 ore (`Ore_Rock_On_Belt_10`) stuck di (99.5, 10.49, 56) — area chute/bibir tank, gak masuk tank.
+
+**Sebab**: di `OreBeltConveyorPhysics.FixedUpdate`, cabang chute (`pos.x <= _headX=100`) kode LAMA cuma dorong HORIZONTAL (`v.x/v.z` ke pusat tank) + andalkan gravitasi turun. Ore yang ke-nudge naik (anti-stall, y=10.49 di atas head belt 9.25) nyangkut di collider chute → gravitasi gak bisa narik turun → stuck selamanya. Tak ada timeout/force-catch.
+
+**FIX (`OreBeltConveyorPhysics.cs` cabang chute)**: arahkan velocity LANGSUNG ke titik DALAM tank 3D `(tankCenterX, tankCatchY, tankCenterZ)` (turun + ke pusat, full _conveyorSpeed) + ANTI-NYANGKUT: akumulasi `_stallTimer` di chute, force-catch (`_fellIntoTank.Add` + `SetActive(false)`) bila `dist<=1.5` ATAU `prevChute>2.5s`. Slurry menggantikan ore secara visual di tank.
+
+**VERIFIED play-mode**: SetRunning(true) → ore bergerak naik belt (x 138→100) → masuk tank progresif → **12/12 fell, SemuaOreMasukTank=True, 0 ore tersisa** (termasuk ore10/11 yg tadinya stuck). 
+
+**LESSON KRITIS (MCP play-test)**: setelah edit script, `manage_editor play` LANGSUNG kadang JALANKAN ASSEMBLY LAMA (domain belum reload) → fix tampak "gagal". Tanda: field runtime baru (mis. `_stallTimer` entry) tak muncul walau logika seharusnya set. SOLUSI: setelah edit, WAJIB `refresh_unity(compile=request, scope=scripts, wait_for_ready)` + cek `EditorApplication.isCompiling==false` SEBELUM `play`. (Part 55 frame-not-advancing + Part 56 stale-assembly = dua jebakan verifikasi MCP play-mode.) Frame play mode JUGA hanya maju kalau tidak diblok Thread.Sleep; poll lintas call tanpa sleep → frame maju normal (terbukti frame 1→247→729).
+
+**Files**: Assets/Scripts/Simulation/OreBeltConveyorPhysics.cs (chute drive-to-tank + force-catch). Belum commit/push.
+
+
+---
+
+### 2026-06-08 (Part 57) — UniversalTaskMarker per-task Level 4 (Slurry Pump)
+
+**User**: Level 4 belum punya UniversalTaskMarker untuk SETIAP task (cuma DCS button + HT).
+
+**Sebab**: `UniversalTaskMarker.ResolveTarget` case Level4_SlurryPump lama cuma `if(!SudahTekanTombolDcs) DcsButton(4); if(!SudahLaporanHt) WalkieTalkie;` → task flow-rate, observasi pump, observasi preheater TIDAK ada marker.
+
+**FIX (`UniversalTaskMarker.cs`)**: case Level4 → `ResolveLevel4Target()` baru, phase-aware pakai `_glm.CurrentLevel4Phase` (enum `Level4Phase`, backing field `_level4Phase`):
+- Idle/MenungguTombolDcs → `FindDcsButton(4)`
+- AturFlowRate → `FindByName("Btn_FlowPlus","Widget_FlowRate","A_PARAM_Flow_PLUS")` (tombol + flow di meja DCS)
+- MenungguLaporanFlow → `FindWalkieTalkie()` (lapor awal "slurry pump aktif")
+- ObservasiPump → `FindByName("SlurryPump_Field","PumpMotor_Audio")`
+- ObservasiPreheater → `FindByName("Level5_PreHeater_Blender_Industrial_UV_Overview (1)", ...)` (instance z~56 dekat pump)
+- MenungguLaporanAkhir → `FindWalkieTalkie()` (lapor akhir "cairan sudah di preheater")
+- KembaliKeDcs/Selesai → null
+
+**Nama objek verified di scene**: Btn_FlowPlus ADA (-4.33,9.46,17.74), SlurryPump_Field ADA (90.37,0.5,56.43), PumpMotor_Audio ADA. **PreHeater_Field_1/PreHeater_Field TIDAK ADA** (controller AutoFind pakai nama itu tapi objek scene-nya `Level5_PreHeater_Blender_Industrial_UV_Overview (1)` @ z56.21) → pakai nama itu utk marker.
+
+**VERIFIED play-mode (reflection, set `_level4Phase` tiap nilai, invoke ResolveLevel4Target)**: Idle/MenungguTombolDcs→Tombol DCS 4, AturFlowRate→Btn_FlowPlus, ObservasiPump→SlurryPump_Field, ObservasiPreheater→Level5_PreHeater...(1), MenungguLaporanFlow & MenungguLaporanAkhir→Walkie Talkie, KembaliKeDcs/Selesai→null. SEMUA task Level 4 kini punya marker. 0 compile error.
+
+**LESSON**: UniversalTaskMarker resolver per-level = switch by level lalu (untuk level multi-step) by phase controller (`CurrentLevelNPhase`). Verifikasi cepat: set backing field enum fase via reflection + invoke resolver method (tak perlu main full level). Nama target WAJIB dicek ada di scene dulu (PreHeater_Field_1 ternyata nama mati).
+
+**Files**: Assets/Scripts/UI/UniversalTaskMarker.cs (ResolveLevel4Target + case Level4). Belum commit/push.
+
+
+---
+
+### 2026-06-08 (Part 58) — Level 6 fixes: spawn field/DCS, task masker, steer hilang (occlusion handwheel)
+
+**User (4 hal)**: (1) spawn field Level 6 ketinggian, mau pas di SpawnPoint_Lvl6; (2) balik ke DCS malah tenggelam; (3) tambah task pakai masker di field sebelum lapor HT; (4) steer/handwheel hilang saat play (ada di edit).
+
+**Diagnosa teleport**: pola KANONIK proyek (LevelTeleportManager/Level10/14) = spawn point = posisi KAKI; teleport = `MoveCameraToWorldLocation(feet + up*CameraYOffset)` + `MatchOriginUpCameraForward`. Level 6 `TeleportPlayer` SALAH: `MoveCameraToWorldLocation(target)` + `SetPositionAndRotation(target)` (double, tanpa CameraYOffset). CameraYOffset=1.36. SpawnPoint_Lvl6 di y=1.53 padahal lantai field (Industrial_Site_Ground) y=0 → feet melayang 1.53m. SpawnPoint_DCS y=8.36 (benar, Level 2 pakai ini).
+
+**FIX (1+2) — `Level6AcidInjectionController.TeleportPlayer` → kanonik**: `cameraTarget = target.position + up*origin.CameraYOffset; MoveCameraToWorldLocation(cameraTarget); MatchOriginUpCameraForward(...)`. HAPUS `SetPositionAndRotation(target)` override (else-branch fallback hanya saat XROrigin null, kompensasi camY). + **turunkan SpawnPoint_Lvl6 y 1.53→0.05** (ke lantai). VERIFIED play (invoke TeleportPlayer reflection): SpawnPoint_Lvl6 → rigY=0.05 camY=1.41 (berdiri di lantai, tak melayang); SpawnPoint_DCS → rigY=8.36 camY=9.72 (sama Level 2, tak tenggelam).
+
+**FIX (3) — task masker**: `PlayerHUD` checklist Level 6, sisip `{Check(PhaseManager.isRespiratorWorn)} Pakai masker (APD wajib sebelum kerja di lapangan)` setelah lapor outlet, sebelum "Putar valve preheater". + `UniversalTaskMarker.ResolveLevel6Target`: setelah Level6OutletReportDone, jika `!isRespiratorWorn` → marker arahkan ke `RespiratorMask`/`Socket_Respirator_Baju` (sebelum valve).
+
+**FIX (4) — STEER HILANG saat play = OCCLUSION CULLING lagi**: 115 part handwheel/valve/wheel/spoke ber-OccludeeStatic (dari bulk-mark Part 51; exclude-occluder TAPI tetap occludee). Part kecil dekat occluder besar (autoclave) → di-false-cull bake → hilang di play (ada di edit krn occlusion cuma aktif runtime). FIX: clear Occludee+Occluder dari part nama mengandung handwheel/valve/spoke/wheel/stir/grip/_rim/steer/knob/lever (**105 dibersihkan**) → rebake occlusion (umbra 295936→292176) → save scene.
+
+**LESSON**: (a) Teleport XR HARUS kanonik: spawn=KAKI, `MoveCameraToWorldLocation(feet+up*CameraYOffset)`, JANGAN tambah `SetPositionAndRotation(spawn)` (bikin rig-root di spawn → kamera +1.36 ketinggian). (b) Occlusion culling = musuh berulang objek interaktif/kecil (handwheel, masker, HT) → SELALU exclude dari OccludeeStatic sebelum bake. Part 52 (masker/HT) + Part 58 (handwheel) pola sama.
+
+**Files**: Level6AcidInjectionController.cs (TeleportPlayer kanonik), PlayerHUD.cs (task masker L6), UniversalTaskMarker.cs (marker masker L6), Level1_MainBroken.unity (SpawnPoint_Lvl6 y→0.05, clear 105 occludee handwheel, rebake occlusion, saved). 0 compile error. Belum commit/push.

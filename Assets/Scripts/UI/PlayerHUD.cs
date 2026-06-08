@@ -861,6 +861,8 @@ public class PlayerHUD : MonoBehaviour
             bool acidComplete = GameLevelManager.Instance.Level6AcidComplete;
 
             lines.Add($"{Check(outletDone)} Lapor HT: 'outlet preheater dibuka'");
+            bool maskerDipakaiL6 = PhaseManager.Instance == null || PhaseManager.Instance.isRespiratorWorn;
+            lines.Add($"{Check(maskerDipakaiL6)} Pakai masker (APD wajib sebelum kerja di lapangan)");
             lines.Add($"{Check(slurryMasuk)} Putar valve preheater (cairan masuk autoclave)");
             lines.Add($"{Check(slurryReport)} Lapor HT: 'slurry masuk autoclave'");
             lines.Add($"{Check(acidDoseReady)} Atur Acid Dose 350 kg/ton");
@@ -881,15 +883,11 @@ public class PlayerHUD : MonoBehaviour
             // Pakai flag granular: GaugesLogged = fill 100%, Xray = X-Ray seen, SafetyDrillDone = drill done.
             bool dcsDone = _dcsTombolDitekan;
             bool valveOpened = glm != null && glm.Level7GaugesLogged; // Slurry fill 100%
-            bool xrayDone = glm != null && glm.Level7XrayActivated;
-            bool safetyDone = glm != null && glm.Level7SafetyDrillDone;
             bool inspected = glm != null && glm.Level7AutoclaveInspected;
             bool laporOk = inspected && _voiceReportSelesai;
 
             lines.Add($"{Check(dcsDone)} Klik tombol DCS 7 (start autoclave route)");
             lines.Add($"{Check(valveOpened)} Putar valve inlet → cairan masuk autoclave");
-            lines.Add($"{Check(xrayDone)} Aktifkan X-Ray (X) untuk monitor cairan + agitator");
-            lines.Add($"{Check(safetyDone)} Konfirmasi safety drill 4 step (S): PSV/ESD/Quench/Exit");
             lines.Add($"{Check(laporOk)} Lapor HT: 'autoclave normal, suhu 250, tekanan 50, agitator 60 RPM'");
             txtParameterInfo.text = string.Join("\n", lines);
             return;

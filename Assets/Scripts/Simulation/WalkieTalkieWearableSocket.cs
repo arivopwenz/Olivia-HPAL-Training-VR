@@ -28,26 +28,44 @@ public sealed class WalkieTalkieWearableSocket : MonoBehaviour
         if (_walkie == null)
             return;
 
-        bool selected = _grab != null && _grab.isSelected;
-        if (selected && !_wasSelected && markTakenOnGrab)
-            PhaseManager.Instance?.OnWalkieTalkieTaken();
-        _wasSelected = selected;
+        // HT dianggap "diambil player" HANYA jika dipegang interactor tangan/ray,
+        // BUKAN oleh XRSocketInteractor dada (socket yang menahannya saat idle).
+        bool heldByHand = false;
+        if (_grab != null && _grab.isSelected)
+        {
+            foreach (var itr in _grab.interactorsSelecting)
+            {
+                if (!(itr is UnityEngine.XR.Interaction.Toolkit.Interactors.XRSocketInteractor))
+                {
+                    heldByHand = true;
+                    break;
+                }
+            }
+        }
 
-        bool taken = !requireWalkieTaken || (PhaseManager.Instance != null && PhaseManager.Instance.isWalkieTalkieTaken);
-        if (!taken)
-            return;
+        if (heldByHand && !_wasSelected && markTakenOnGrab)
+            PhaseManager.Instance?.OnWalkieTalkieTaken();
 
         if (_displayStabilizer != null)
             _displayStabilizer.enabled = false;
 
-        if (selected)
+        if (heldByHand)
         {
+            // Sedang dipegang player: biarkan dibawa & dipakai lapor. JANGAN dock.
             if (_rigidbody != null)
                 _rigidbody.useGravity = false;
-            return;
         }
+        else if (_wasSelected)
+        {
+            // BARU dilepas frame ini -> kembalikan ke dock dada SEKALI saja (bukan tiap frame).
+            bool taken = !requireWalkieTaken || (PhaseManager.Instance != null && PhaseManager.Instance.isWalkieTalkieTaken);
+            if (taken)
+                DockNow();
+        }
+        // Saat idle & tidak dipegang: biarkan XRSocketInteractor dada yang menahan HT
+        // (seperti masker). TIDAK ada DockNow paksa per-frame -> HT tetap bisa di-grab.
 
-        DockNow();
+        _wasSelected = heldByHand;
     }
 
     public void DockNow()
@@ -56,6 +74,13 @@ public sealed class WalkieTalkieWearableSocket : MonoBehaviour
             ResolveWalkie();
         if (_walkie == null)
             return;
+
+        if (_grab != null && _grab.isSelected && _grab.interactionManager != null)
+        {
+            var selecting = new System.Collections.Generic.List<UnityEngine.XR.Interaction.Toolkit.Interactors.IXRSelectInteractor>(_grab.interactorsSelecting);
+            foreach (var interactor in selecting)
+                _grab.interactionManager.SelectExit(interactor, _grab);
+        }
 
         if (_rigidbody != null)
         {
@@ -75,7 +100,10 @@ public sealed class WalkieTalkieWearableSocket : MonoBehaviour
         _walkie.localScale = dockLocalScale;
 
         foreach (Renderer renderer in _walkie.GetComponentsInChildren<Renderer>(true))
-            if (renderer != null) renderer.enabled = true;
+        {
+            if (renderer == null) continue;
+            PhaseManager.PaksaRendererApdSelaluTerlihat(renderer);
+        }
 
         // HT harus tetap bisa di-grab manual oleh player saat ter-dock di dada.
         if (_grab != null) _grab.enabled = true;

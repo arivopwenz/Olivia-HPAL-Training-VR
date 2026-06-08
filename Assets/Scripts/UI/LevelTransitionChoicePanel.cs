@@ -226,15 +226,39 @@ public class LevelTransitionChoicePanel : MonoBehaviour
     private void AttachXrSimpleInteractable(GameObject btn, Action onSelect)
     {
         var rect = btn.GetComponent<RectTransform>();
+
+        // Pastikan layout canvas terhitung supaya ukuran rect valid.
+        // PENTING: untuk button anchor-stretch, rect.sizeDelta = ~0 (bukan ukuran asli),
+        // sehingga collider lama nyaris tak berukuran -> ray VR tidak pernah kena.
+        Canvas.ForceUpdateCanvases();
+        float w = rect.rect.width;
+        float h = rect.rect.height;
+        if (w < 1f || h < 1f)
+        {
+            // Fallback: hitung dari fraksi anchor x ukuran canvas parent.
+            var parentRect = _canvas != null ? _canvas.GetComponent<RectTransform>() : null;
+            float pw = parentRect != null ? parentRect.rect.width : (_ukuranCanvas.x / _scaleCanvas);
+            float ph = parentRect != null ? parentRect.rect.height : (_ukuranCanvas.y / _scaleCanvas);
+            w = Mathf.Max(w, (rect.anchorMax.x - rect.anchorMin.x) * pw);
+            h = Mathf.Max(h, (rect.anchorMax.y - rect.anchorMin.y) * ph);
+        }
+
         var bc = btn.GetComponent<BoxCollider>();
         if (bc == null) bc = btn.AddComponent<BoxCollider>();
         bc.isTrigger = true;
-        bc.size = new Vector3(rect.sizeDelta.x, rect.sizeDelta.y, 4f);
+        bc.size = new Vector3(Mathf.Max(w, 10f), Mathf.Max(h, 10f), 20f);
         bc.center = Vector3.zero;
 
         var simple = btn.GetComponent<XRSimpleInteractable>();
         if (simple == null) simple = btn.AddComponent<XRSimpleInteractable>();
+        // Daftarkan collider secara eksplisit supaya XR ray pasti meng-hit interactable ini.
+        if (!simple.colliders.Contains(bc))
+        {
+            simple.colliders.Clear();
+            simple.colliders.Add(bc);
+        }
         simple.selectEntered.AddListener(_ => onSelect?.Invoke());
+        // Hover juga memicu (beberapa rig pakai hover+trigger), tapi select sudah cukup.
     }
 
     private static Image BuatImage(string name, Transform parent, Color color)

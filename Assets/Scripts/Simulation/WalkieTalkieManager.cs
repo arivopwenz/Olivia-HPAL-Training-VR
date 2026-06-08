@@ -656,6 +656,15 @@ public class WalkieTalkieManager : MonoBehaviour
                 // Pastikan walkie active supaya tetap visible dan bisa di-grab.
                 if (!_walkieTalkieInHand.activeSelf)
                     _walkieTalkieInHand.SetActive(true);
+
+                foreach (var renderer in _walkieTalkieInHand.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (renderer == null) continue;
+                    PhaseManager.PaksaRendererApdSelaluTerlihat(renderer);
+                }
+
+                if (PhaseManager.Instance != null && PhaseManager.Instance.isWalkieTalkieTaken)
+                    PhaseManager.Instance.PastikanWalkieTalkieAdaDiSocketDada();
             }
         }
     }

@@ -86,6 +86,17 @@ public class LevelTeleportManager : MonoBehaviour
             return;
         }
 
+        if (level == GameLevelManager.GameLevel.Level3_OreSlurry)
+        {
+            Transform dcsSpawn = FindSpawnPoint("SpawnPoint_DCS");
+            if (dcsSpawn != null && config.spawnPoint != dcsSpawn)
+            {
+                config.spawnPoint = dcsSpawn;
+                config.overrideRotation = false;
+                if (_debugLog) Debug.Log("[LevelTeleportManager] Level 3 start dipaksa di SpawnPoint_DCS untuk klik tombol DCS 3.");
+            }
+        }
+
         if (config.spawnPoint == null)
         {
             Debug.LogWarning($"[LevelTeleportManager] SpawnPoint Transform untuk {level} BELUM DI-ASSIGN di Inspector!");
@@ -225,6 +236,8 @@ public class LevelTeleportManager : MonoBehaviour
 
         if (config.spawnPoint == null)
             config.spawnPoint = FindSpawnPoint(spawnName);
+        else if (level == GameLevelManager.GameLevel.Level3_OreSlurry && config.spawnPoint.name != "SpawnPoint_DCS")
+            config.spawnPoint = FindSpawnPoint("SpawnPoint_DCS") ?? config.spawnPoint;
 
         config.autoNotifyDcsViewed = autoNotifyDcsViewed;
     }

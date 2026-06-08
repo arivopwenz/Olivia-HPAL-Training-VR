@@ -2400,11 +2400,21 @@ private XRSimpleInteractable FindOrCreateSceneInteractable(params string[] names
         XROrigin origin = _playerRigRoot.GetComponent<XROrigin>();
         if (origin != null)
         {
-            origin.MoveCameraToWorldLocation(target.position);
+            // Pola KANONIK (sama LevelTeleportManager/Level10/14): spawn point = posisi KAKI.
+            // Camera target = kaki + CameraYOffset supaya player BERDIRI pas di titik
+            // (tidak melayang dan tidak tenggelam). JANGAN lagi SetPositionAndRotation(target)
+            // karena itu menaruh rig-root di titik + kamera 1.36m di atas = player ketinggian.
+            Vector3 cameraTarget = target.position + Vector3.up * origin.CameraYOffset;
+            origin.MoveCameraToWorldLocation(cameraTarget);
             origin.MatchOriginUpCameraForward(Vector3.up, target.forward);
         }
-        // Fallback: juga set position/rotation langsung supaya pasti pindah.
-        _playerRigRoot.SetPositionAndRotation(target.position, target.rotation);
+        else
+        {
+            // Fallback tanpa XROrigin: kompensasi tinggi kamera supaya kaki mendarat di target.
+            UnityEngine.Camera cam = UnityEngine.Camera.main;
+            float camY = cam != null ? Mathf.Max(0f, cam.transform.position.y - _playerRigRoot.position.y) : 1.36f;
+            _playerRigRoot.SetPositionAndRotation(target.position - new Vector3(0f, camY, 0f), target.rotation);
+        }
         if (wasEnabled) cc.enabled = true;
     }
 

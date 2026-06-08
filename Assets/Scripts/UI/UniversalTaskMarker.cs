@@ -3,12 +3,12 @@ using UnityEngine;
 /// <summary>
 /// OLIVIA VR - UniversalTaskMarker.cs
 ///
-/// Sistem universal yang menampilkan PANAH BESAR 3D + OUTLINE BOX di object target aktif
+/// Sistem universal yang menampilkan PANAH BESAR 3D + OUTLINE DINAMIS di object target aktif
 /// untuk SETIAP level dan task. Bekerja otomatis berdasarkan state GameLevelManager.
 ///
 /// Fitur:
 ///   - Panah 3D besar berputar di atas target object
-///   - Outline wireframe box (12 edges) di sekeliling target
+///   - Outline wireframe dinamis: box / sphere-rings / capsule-rings sesuai bentuk target
 ///   - Auto-resolve target berdasarkan level + phase
 ///   - Pulse animation (scale + color)
 ///   - Auto-hide saat task selesai, lalu pindah ke target berikutnya
@@ -33,32 +33,38 @@ public sealed class UniversalTaskMarker : MonoBehaviour
     [Header("=== Outline ===")]
     [SerializeField] private Color outlineColor = new Color(1f, 0.85f, 0.1f, 0.9f);
     [SerializeField] private float outlineWidth = 0.012f;
-    [SerializeField] private float outlinePadding = 0.06f;
+    [SerializeField] private float outlinePadding = 0.025f;
     [SerializeField] private float outlinePulseSpeed = 2.2f;
 
     [Header("=== Polling ===")]
     [SerializeField] private float updateInterval = 0.2f;
-    [SerializeField] private float minimumBoundsSize = 1.2f;
+    [SerializeField] private float minimumBoundsSize = 0.18f;
     [SerializeField] private float ccdCloseHideDistance = 0.35f;
 
     private GameObject _arrowRoot;
     private Material _arrowMat;
     private readonly LineRenderer[] _outlineEdges = new LineRenderer[12];
+    private readonly LineRenderer[] _roundedLines = new LineRenderer[7];
     private Material _lineMat;
     private Transform _currentTarget;
     private float _nextUpdate;
     private GameLevelManager _glm;
+    private enum MarkerShape { Box, Sphere, Capsule }
+    private struct MarkerShapeInfo
+    {
+        public Bounds bounds;
+        public MarkerShape shape;
+    }
 
     private void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
-        arrowScale = Mathf.Max(arrowScale, 1.05f);
-        arrowHeightAboveTarget = Mathf.Max(arrowHeightAboveTarget, 1.25f);
-        outlineWidth = Mathf.Max(outlineWidth, 0.028f);
-        outlinePadding = Mathf.Max(outlinePadding, 0.22f);
+        arrowScale = Mathf.Max(arrowScale, 0.35f);
+        arrowHeightAboveTarget = Mathf.Max(arrowHeightAboveTarget, 0.45f);
+        outlineWidth = Mathf.Max(outlineWidth, 0.012f);
+        outlinePadding = Mathf.Clamp(outlinePadding, 0.01f, 0.08f);
         CreateArrow();
-        CreateOutline();
         SetVisible(false);
     }
 
@@ -139,8 +145,7 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         float pulse = 0.85f + 0.15f * Mathf.Sin(Time.time * outlinePulseSpeed);
         _arrowRoot.transform.localScale = Vector3.one * arrowScale * pulse;
 
-        // Outline
-        DrawOutline(bounds, outlineColor * pulse);
+        DisableOutline();
     }
 
     /// <summary>
@@ -185,9 +190,7 @@ public sealed class UniversalTaskMarker : MonoBehaviour
                 return null; // panah/marker Level 3 dimatikan (ganggu observasi)
 
             case GameLevelManager.GameLevel.Level4_SlurryPump:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(4);
-                if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
-                return null;
+                return ResolveLevel4Target();
 
             case GameLevelManager.GameLevel.Level5_SteamValve:
                 return ResolveLevel5Target();
@@ -240,15 +243,54 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         PhaseManager pm = PhaseManager.Instance;
         if (pm == null) return null;
 
-        if (!pm.isHelmetWorn) return FindByName("Socket_Scanner_Hat");
-        if (!pm.isVestWorn) return FindByName("Socket_Scanner_Rompi");
-        if (!pm.isGlassesWorn) return FindByName("Socket_Scanner_Glassess");
-        if (!pm.isBootsWorn) return FindByName("Socket_Scanner_Boots");
-        if (!pm.isGlovesWorn) return FindByName("Socket_Scanner_Gloves");
-        if (!pm.isRespiratorWorn) return FindByName("Socket_Scanner_RespiratorMask");
-        if (!pm.isEarplugWorn) return FindByName("Socket_Scanner_EarPlug");
-        if (!pm.isWalkieTalkieTaken) return FindByName("Socket_Scanner_WalkieTalkie");
+        if (!pm.isHelmetWorn) return FindByName("Helmet", "Socket_Scanner_Hat");
+        if (!pm.isVestWorn) return FindByName("Vest", "Socket_Scanner_Rompi");
+        if (!pm.isGlassesWorn) return FindByName("Glassess", "Glasses", "Socket_Scanner_Glassess");
+        if (!pm.isBootsWorn) return FindByName("Boots", "Socket_Scanner_Boots");
+        if (!pm.isGlovesWorn) return FindByName("Gloves", "Socket_Scanner_Gloves");
+        if (!pm.isRespiratorWorn) return FindByName("RespiratorMask", "Socket_Scanner_RespiratorMask");
+        if (!pm.isEarplugWorn) return FindByName("EarPlug", "Socket_Scanner_EarPlug");
+        if (!pm.isWalkieTalkieTaken) return FindByName("Walkie Talkie", "Socket_Scanner_WalkieTalkie");
         return null; // semua APD lengkap
+    }
+
+    private Transform ResolveLevel4Target()
+    {
+        // Marker per task Level 4 (Slurry Pump), digerakkan oleh fase.
+        switch (_glm.CurrentLevel4Phase)
+        {
+            case GameLevelManager.Level4Phase.Idle:
+            case GameLevelManager.Level4Phase.MenungguTombolDcs:
+                // Task 1: klik tombol DCS 4
+                return FindDcsButton(4);
+
+            case GameLevelManager.Level4Phase.AturFlowRate:
+                // Task 2: atur flow rate 450 m3/h -> arahkan ke tombol [+] flow di meja DCS
+                return FindByName("Btn_FlowPlus", "Widget_FlowRate", "A_PARAM_Flow_PLUS");
+
+            case GameLevelManager.Level4Phase.MenungguLaporanFlow:
+                // Task 3: lapor HT awal "slurry pump aktif"
+                return FindWalkieTalkie();
+
+            case GameLevelManager.Level4Phase.ObservasiPump:
+                // Observasi: arahkan ke slurry pump
+                return FindByName("SlurryPump_Field", "PumpMotor_Audio", "SlurryPump");
+
+            case GameLevelManager.Level4Phase.ObservasiPreheater:
+                // Task 4: slurry mencapai Pre-Heater -> arahkan ke pre-heater (instance dekat pump, z~56)
+                return FindByName(
+                    "Level5_PreHeater_Blender_Industrial_UV_Overview (1)",
+                    "Level5_PreHeater_Blender_Industrial_UV_Overview",
+                    "PreHeater_Field_1", "PreHeater_Field");
+
+            case GameLevelManager.Level4Phase.MenungguLaporanAkhir:
+                // Task 5: lapor HT akhir "cairan sudah di preheater"
+                return FindWalkieTalkie();
+
+            default:
+                // KembaliKeDcs / Selesai: tidak ada marker
+                return null;
+        }
     }
 
     private Transform ResolveLevel5Target()
@@ -265,6 +307,9 @@ public sealed class UniversalTaskMarker : MonoBehaviour
     {
         if (!_glm.SudahTekanTombolDcs) return FindDcsButton(6);
         if (!_glm.Level6OutletReportDone) return FindWalkieTalkie();
+        // Setelah lapor outlet & sampai di lapangan: WAJIB pakai masker dulu sebelum operasi valve.
+        if (PhaseManager.Instance != null && !PhaseManager.Instance.isRespiratorWorn)
+            return FindByName("RespiratorMask", "Socket_Respirator_Baju", "Socket_Scanner_RespiratorMask");
         if (!_glm.Level6SlurryMasukAutoclave)
             return FindByName("L6_SlurryValve_Pivot_Runtime", "L5_Condensate_Drain_Handwheel_Hub", "L6_SlurryRoute_ValveWheel_Runtime");
         if (!_glm.Level6SlurryReportDone) return FindWalkieTalkie();
@@ -289,7 +334,11 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         // Step 1: Player belum buka valve → arahkan ke handwheel inlet
         if (!_glm.Level7GaugesLogged) // GaugesLogged = slurry fill 100%
         {
-            return FindByName("L7_InletValve_Pivot_Runtime", "L7_LiquidUnderflow_Handwheel_Hub");
+            return FindByName(
+                "L7_L5_Condensate_Drain_Handwheel_StirRedesign_Scene",
+                "L7_L5_Condensate_Drain_Handwheel_StirRedesign_Runtime",
+                "L7_InletValve_Pivot_Runtime",
+                "L7_LiquidUnderflow_Handwheel_Hub");
         }
         // Step 2: Setelah valve dibuka & cairan penuh → arahkan ke autoclave shell (X-Ray target)
         if (!_glm.Level7XrayActivated)
@@ -486,10 +535,44 @@ public sealed class UniversalTaskMarker : MonoBehaviour
             lr.enabled = false;
             _outlineEdges[i] = lr;
         }
+
+        for (int i = 0; i < _roundedLines.Length; i++)
+        {
+            GameObject line = new GameObject("UTM_Rounded_" + i);
+            line.transform.SetParent(transform, false);
+            LineRenderer lr = line.AddComponent<LineRenderer>();
+            lr.useWorldSpace = true;
+            lr.positionCount = 0;
+            lr.widthMultiplier = outlineWidth;
+            lr.material = _lineMat;
+            lr.startColor = outlineColor;
+            lr.endColor = outlineColor;
+            lr.loop = true;
+            lr.enabled = false;
+            _roundedLines[i] = lr;
+        }
     }
 
-    private void DrawOutline(Bounds bounds, Color color)
+    private void DrawOutline(MarkerShapeInfo shape, Color color)
     {
+        if (shape.shape == MarkerShape.Sphere)
+        {
+            DrawSphereOutline(shape.bounds, color);
+            return;
+        }
+
+        if (shape.shape == MarkerShape.Capsule)
+        {
+            DrawCapsuleOutline(shape.bounds, color);
+            return;
+        }
+
+        DrawBoxOutline(shape.bounds, color);
+    }
+
+    private void DrawBoxOutline(Bounds bounds, Color color)
+    {
+        SetRoundedLinesVisible(0);
         Bounds b = bounds;
         b.Expand(outlinePadding);
 
@@ -514,8 +597,82 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         }
     }
 
+    private void DrawSphereOutline(Bounds bounds, Color color)
+    {
+        SetBoxEdgesVisible(false);
+        Bounds b = bounds;
+        b.Expand(outlinePadding);
+        float radius = Mathf.Max(b.extents.x, b.extents.y, b.extents.z);
+        DrawCircle(_roundedLines[0], b.center, Vector3.up, radius, color);
+        DrawCircle(_roundedLines[1], b.center, Vector3.right, radius, color);
+        DrawCircle(_roundedLines[2], b.center, Vector3.forward, radius, color);
+        SetRoundedLinesVisible(3);
+    }
+
+    private void DrawCapsuleOutline(Bounds bounds, Color color)
+    {
+        SetBoxEdgesVisible(false);
+        Bounds b = bounds;
+        b.Expand(outlinePadding);
+        float radius = Mathf.Max(0.06f, Mathf.Min(b.extents.x, b.extents.z));
+        float topY = b.center.y + Mathf.Max(0f, b.extents.y - radius);
+        float botY = b.center.y - Mathf.Max(0f, b.extents.y - radius);
+        Vector3 top = new Vector3(b.center.x, topY, b.center.z);
+        Vector3 bot = new Vector3(b.center.x, botY, b.center.z);
+        DrawCircle(_roundedLines[0], top, Vector3.up, radius, color);
+        DrawCircle(_roundedLines[1], bot, Vector3.up, radius, color);
+        DrawCircle(_roundedLines[2], b.center, Vector3.right, Mathf.Max(radius, b.extents.y), color);
+        DrawCircle(_roundedLines[3], b.center, Vector3.forward, Mathf.Max(radius, b.extents.y), color);
+        SetRoundedLinesVisible(4);
+    }
+
+    private void DrawCircle(LineRenderer lr, Vector3 center, Vector3 normal, float radius, Color color)
+    {
+        if (lr == null) return;
+        const int segments = 64;
+        lr.positionCount = segments;
+        lr.loop = true;
+        lr.enabled = true;
+        lr.startColor = color;
+        lr.endColor = color;
+
+        Vector3 axisA = Vector3.Cross(normal, Vector3.up);
+        if (axisA.sqrMagnitude < 0.0001f)
+            axisA = Vector3.Cross(normal, Vector3.right);
+        axisA.Normalize();
+        Vector3 axisB = Vector3.Cross(normal, axisA).normalized;
+
+        for (int i = 0; i < segments; i++)
+        {
+            float a = (i / (float)segments) * Mathf.PI * 2f;
+            lr.SetPosition(i, center + (axisA * Mathf.Cos(a) + axisB * Mathf.Sin(a)) * radius);
+        }
+    }
+
+    private MarkerShapeInfo CalculateShape(Transform target)
+    {
+        Bounds bounds = CalculateBounds(target);
+        MarkerShape markerShape = DetectShape(target, bounds);
+        return new MarkerShapeInfo { bounds = bounds, shape = markerShape };
+    }
+
     private Bounds CalculateBounds(Transform target)
     {
+        bool targetKecilApd = IsSmallWearableTarget(target);
+        Collider[] colliders = target.GetComponentsInChildren<Collider>(true);
+        bool hasColliderBounds = false;
+        Bounds colliderBounds = new Bounds(target.position, Vector3.one * 0.1f);
+        if (!targetKecilApd)
+        {
+            foreach (Collider c in colliders)
+            {
+                if (c == null || !c.enabled) continue;
+                if (ShouldIgnoreBoundsObject(c.transform)) continue;
+                if (!hasColliderBounds) { colliderBounds = c.bounds; hasColliderBounds = true; }
+                else colliderBounds.Encapsulate(c.bounds);
+            }
+        }
+
         Renderer[] renderers = target.GetComponentsInChildren<Renderer>(true);
         bool has = false;
         Bounds bounds = new Bounds(target.position, Vector3.one * 0.2f);
@@ -523,16 +680,93 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         {
             if (r == null || !r.enabled) continue;
             if (r is LineRenderer) continue; // skip our own outlines
+            if (ShouldIgnoreBoundsObject(r.transform)) continue;
             if (!has) { bounds = r.bounds; has = true; }
             else bounds.Encapsulate(r.bounds);
         }
-        if (!has) bounds = new Bounds(target.position, Vector3.one * 0.3f);
+        if (!has && hasColliderBounds) bounds = colliderBounds;
+        else if (!has) bounds = new Bounds(target.position, Vector3.one * minimumBoundsSize);
         Vector3 size = bounds.size;
-        size.x = Mathf.Max(size.x, minimumBoundsSize);
-        size.y = Mathf.Max(size.y, minimumBoundsSize);
-        size.z = Mathf.Max(size.z, minimumBoundsSize);
+        float minSize = targetKecilApd ? 0.08f : minimumBoundsSize;
+        size.x = Mathf.Max(size.x, minSize);
+        size.y = Mathf.Max(size.y, minSize);
+        size.z = Mathf.Max(size.z, minSize);
         bounds.size = size;
         return bounds;
+    }
+
+    private bool IsSmallWearableTarget(Transform target)
+    {
+        if (target == null) return false;
+        string n = target.name.ToLowerInvariant();
+        return n.Contains("respirator")
+            || n.Contains("mask")
+            || n.Contains("helmet")
+            || n.Contains("earplug")
+            || n.Contains("walkie")
+            || n.Contains("glove")
+            || n.Contains("boot")
+            || n.Contains("glass")
+            || n.Contains("vest");
+    }
+
+    private bool ShouldIgnoreBoundsObject(Transform t)
+    {
+        while (t != null)
+        {
+            string n = t.name.ToLowerInvariant();
+            if (n.Contains("label") || n.Contains("text") || n.Contains("canvas") ||
+                n.Contains("socket") || n.Contains("scanner") || n.Contains("marker") ||
+                n.Contains("taskhint") || n.Contains("arrow") || n.Contains("outline") ||
+                n.Contains("line") || n.Contains("guide"))
+                return true;
+            t = t.parent;
+        }
+        return false;
+    }
+
+    private MarkerShape DetectShape(Transform target, Bounds bounds)
+    {
+        string targetName = target != null ? target.name.ToLowerInvariant() : string.Empty;
+        if (targetName.Contains("respirator") || targetName.Contains("mask") || targetName.Contains("helmet"))
+            return MarkerShape.Sphere;
+        if (targetName.Contains("earplug"))
+            return MarkerShape.Capsule;
+
+        Collider[] colliders = target.GetComponentsInChildren<Collider>(true);
+        foreach (Collider c in colliders)
+        {
+            if (c == null || !c.enabled) continue;
+            if (c is SphereCollider) return MarkerShape.Sphere;
+            if (c is CapsuleCollider) return MarkerShape.Capsule;
+            if (c is BoxCollider) return MarkerShape.Box;
+        }
+
+        Vector3 s = bounds.size;
+        float max = Mathf.Max(s.x, s.y, s.z);
+        float min = Mathf.Max(0.0001f, Mathf.Min(s.x, s.y, s.z));
+        if (max <= 0.9f && max / min < 1.55f)
+            return MarkerShape.Sphere;
+        if (s.y > Mathf.Max(s.x, s.z) * 1.8f && Mathf.Abs(s.x - s.z) <= Mathf.Max(s.x, s.z) * 0.35f)
+            return MarkerShape.Capsule;
+        return MarkerShape.Box;
+    }
+
+    private void SetBoxEdgesVisible(bool visible)
+    {
+        for (int i = 0; i < 12; i++)
+            if (_outlineEdges[i] != null) _outlineEdges[i].enabled = visible;
+    }
+
+    private void SetRoundedLinesVisible(int visibleCount)
+    {
+        for (int i = 0; i < _roundedLines.Length; i++)
+        {
+            if (_roundedLines[i] == null) continue;
+            bool visible = i < visibleCount;
+            _roundedLines[i].enabled = visible;
+            if (!visible) _roundedLines[i].positionCount = 0;
+        }
     }
 
     private bool IsCcdLevel()
@@ -544,6 +778,13 @@ public sealed class UniversalTaskMarker : MonoBehaviour
     {
         if (_arrowRoot != null) _arrowRoot.SetActive(visible);
         for (int i = 0; i < 12; i++)
-            if (_outlineEdges[i] != null) _outlineEdges[i].enabled = visible;
+            if (_outlineEdges[i] != null) _outlineEdges[i].enabled = false;
+        SetRoundedLinesVisible(0);
+    }
+
+    private void DisableOutline()
+    {
+        SetBoxEdgesVisible(false);
+        SetRoundedLinesVisible(0);
     }
 }

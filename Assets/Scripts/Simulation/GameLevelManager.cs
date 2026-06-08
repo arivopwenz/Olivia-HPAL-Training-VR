@@ -1728,7 +1728,7 @@ public class GameLevelManager : MonoBehaviour
         if (_currentLevel != GameLevel.Level7_Autoclave) return;
         if (_level7GaugesLogged) return;
         _level7GaugesLogged = true;
-        Log("LEVEL 7", "Cluster gauge tercatat di logbook.", "cyan");
+        Log("LEVEL 7", "Valve inlet autoclave terbuka. Task valve diterima.", "cyan");
         TryCompleteLevel7Inspection();
     }
 

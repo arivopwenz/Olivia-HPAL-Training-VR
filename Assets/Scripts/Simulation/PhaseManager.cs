@@ -66,6 +66,8 @@ public class PhaseManager : MonoBehaviour
     private bool _levelStartedSubscribed;
     private float _pastikanMaskerDadaSampai;
     private float _nextMaskerDadaEnsure;
+    private float _pastikanWalkieDadaSampai;
+    private float _nextWalkieDadaEnsure;
     private float _nextRayRecovery;
 
     public const int TOTAL_APD = 8;
@@ -153,16 +155,25 @@ public class PhaseManager : MonoBehaviour
             XRInteractorRecovery.PulihkanRayInteractor();
         }
 
+        bool diLevel1 = GameLevelManager.Instance != null &&
+                        GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level1_APD;
+        bool levelSetelahApd = GameLevelManager.Instance != null &&
+                               GameLevelManager.Instance.CurrentLevel > GameLevelManager.GameLevel.Level1_APD;
+
+        if (levelSetelahApd && isWalkieTalkieTaken && !WalkieSedangDipegangPlayer() &&
+            (WalkieBelumDiSocketDada() || Time.unscaledTime <= _pastikanWalkieDadaSampai) &&
+            Time.unscaledTime >= _nextWalkieDadaEnsure)
+        {
+            _nextWalkieDadaEnsure = Time.unscaledTime + 0.25f;
+            PastikanWalkieTalkieAdaDiSocketDada();
+        }
+
         if (!_otomatisSimpanRespiratorSaatLevel2) return;
 
         // Khusus Level 1: kalau masker belum dipakai, biarkan di rak APD (Socket_Scanner_RespiratorMask),
         // jangan paksa pindah ke dada.
-        bool diLevel1 = GameLevelManager.Instance != null &&
-                        GameLevelManager.Instance.CurrentLevel == GameLevelManager.GameLevel.Level1_APD;
         if (diLevel1 && !isRespiratorWorn) return;
 
-        bool levelSetelahApd = GameLevelManager.Instance != null &&
-                               GameLevelManager.Instance.CurrentLevel > GameLevelManager.GameLevel.Level1_APD;
         bool maskerBelumDiDada = MaskerBelumDiSocketDada();
         bool jagaMaskerDadaTerus = levelSetelahApd && maskerBelumDiDada;
         if (!jagaMaskerDadaTerus && Time.unscaledTime > _pastikanMaskerDadaSampai) return;
@@ -510,6 +521,10 @@ public class PhaseManager : MonoBehaviour
 
         // HT: tandai sudah diambil supaya WalkieTalkieWearableSocket auto-dock ke dada (tetap bisa di-grab manual).
         OnWalkieTalkieTaken();
+        _pastikanWalkieDadaSampai = Time.unscaledTime + 4f;
+        _nextWalkieDadaEnsure = 0f;
+        PastikanWalkieTalkieAdaDiSocketDada();
+        StartCoroutine(PastikanWalkieTalkieDadaBeberapaFrame());
         // Kacamata: otomatis terpasang di wajah & ikut player tiap naik level (Level 2+).
         PindahkanKacamataKeWajah();
 
@@ -597,6 +612,104 @@ public class PhaseManager : MonoBehaviour
             Log("GLOVES WAIST", "Gloves moved to waist socket. Grab before entering Pre-Heater area.", "cyan");
     }
 
+    private IEnumerator PastikanWalkieTalkieDadaBeberapaFrame()
+    {
+        yield return null;
+        PastikanWalkieTalkieAdaDiSocketDada();
+        yield return new WaitForSecondsRealtime(0.25f);
+        PastikanWalkieTalkieAdaDiSocketDada();
+        yield return new WaitForSecondsRealtime(0.75f);
+        PastikanWalkieTalkieAdaDiSocketDada();
+    }
+
+    private bool WalkieBelumDiSocketDada()
+    {
+        Transform walkie = CariTransformScene("Walkie Talkie");
+        Transform socketTransform = CariTransformScene("Socket_WalkieTalkie");
+        if (walkie == null || socketTransform == null) return true;
+        if (!walkie.gameObject.activeInHierarchy) return true;
+        if (walkie.parent != socketTransform && !walkie.IsChildOf(socketTransform)) return true;
+
+        Renderer[] renderers = walkie.GetComponentsInChildren<Renderer>(true);
+        if (renderers == null || renderers.Length == 0) return true;
+        foreach (Renderer r in renderers)
+        {
+            if (r == null) continue;
+            if (!r.enabled || !r.gameObject.activeInHierarchy) return true;
+        }
+        return false;
+    }
+
+    // True jika HT sedang dipegang player (interactor tangan/ray, bukan socket dada).
+    // Dipakai untuk MENCEGAH dock-paksa berkala saat player sedang membawa HT.
+    private bool WalkieSedangDipegangPlayer()
+    {
+        Transform walkie = CariTransformScene("Walkie Talkie");
+        if (walkie == null) return false;
+        var grab = walkie.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+        if (grab == null || !grab.isSelected) return false;
+        foreach (var itr in grab.interactorsSelecting)
+            if (!(itr is UnityEngine.XR.Interaction.Toolkit.Interactors.XRSocketInteractor))
+                return true;
+        return false;
+    }
+
+    public void PastikanWalkieTalkieAdaDiSocketDada()
+    {
+        OnWalkieTalkieTaken();
+
+        WalkieTalkieWearableSocket socket = UnityEngine.Object.FindFirstObjectByType<WalkieTalkieWearableSocket>(FindObjectsInactive.Include);
+        if (socket != null)
+        {
+            socket.DockNow();
+            Log("HT", "Walkie Talkie dipastikan dock di Socket_WalkieTalkie dada.", "cyan");
+            return;
+        }
+
+        Transform walkie = CariTransformScene("Walkie Talkie");
+        Transform socketTransform = CariTransformScene("Socket_WalkieTalkie");
+        if (walkie == null || socketTransform == null)
+        {
+            Log("HT", "Tidak bisa dock HT: object Walkie Talkie atau Socket_WalkieTalkie belum ketemu.", "orange");
+            return;
+        }
+
+        var grab = walkie.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+        if (grab != null && grab.isSelected && grab.interactionManager != null)
+        {
+            var selecting = new List<UnityEngine.XR.Interaction.Toolkit.Interactors.IXRSelectInteractor>(grab.interactorsSelecting);
+            foreach (var interactor in selecting)
+                grab.interactionManager.SelectExit(interactor, grab);
+        }
+
+        Rigidbody rb = walkie.GetComponent<Rigidbody>();
+        if (rb != null)
+        {
+            if (!rb.isKinematic)
+            {
+                rb.linearVelocity = Vector3.zero;
+                rb.angularVelocity = Vector3.zero;
+            }
+            rb.isKinematic = true;
+            rb.useGravity = false;
+        }
+
+        walkie.gameObject.SetActive(true);
+        walkie.SetParent(socketTransform, false);
+        walkie.localPosition = Vector3.zero;
+        walkie.localRotation = Quaternion.Euler(8f, -18f, -6f);
+        walkie.localScale = new Vector3(0.16f, 0.37f, 0.06f);
+
+        foreach (Renderer r in walkie.GetComponentsInChildren<Renderer>(true))
+        {
+            if (r == null) continue;
+            PaksaRendererApdSelaluTerlihat(r);
+        }
+        foreach (Collider c in walkie.GetComponentsInChildren<Collider>(true))
+            if (c != null) c.enabled = true;
+        if (grab != null) grab.enabled = true;
+    }
+
     private IEnumerator PastikanGlovePinggangBeberapaFrame()
     {
         yield return null;
@@ -649,7 +762,12 @@ public class PhaseManager : MonoBehaviour
 
         _respiratorObject.gameObject.SetActive(true);
         foreach (Renderer r in _respiratorObject.GetComponentsInChildren<Renderer>(true))
-            if (r != null) r.enabled = true;
+        {
+            if (r == null) continue;
+            PaksaRendererApdSelaluTerlihat(r);
+            SetRendererAlpha(r, 1f);
+            BuatMaterialSolid(r);
+        }
         foreach (Collider c in _respiratorObject.GetComponentsInChildren<Collider>(true))
             if (c != null) c.enabled = true;
         if (grab != null) grab.enabled = true;
@@ -873,7 +991,7 @@ public class PhaseManager : MonoBehaviour
         foreach (Renderer mr in _respiratorObject.GetComponentsInChildren<Renderer>(true))
         {
             if (mr == null) continue;
-            mr.enabled = true;
+            PaksaRendererApdSelaluTerlihat(mr);
             SetRendererAlpha(mr, 1f);
             BuatMaterialSolid(mr);
         }
@@ -923,7 +1041,33 @@ public class PhaseManager : MonoBehaviour
                 m.renderQueue = -1;
                 m.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
             }
+            if (m.HasProperty("_Cull"))
+                m.SetFloat("_Cull", 0f);
         }
+        if (Application.isPlaying)
+            r.materials = mats;
+        else
+            r.sharedMaterials = mats;
+    }
+
+    public static void PaksaRendererApdSelaluTerlihat(Renderer r)
+    {
+        if (r == null) return;
+
+        r.enabled = true;
+        r.forceRenderingOff = false;
+        r.allowOcclusionWhenDynamic = false;
+        r.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+        var mats = Application.isPlaying ? r.materials : r.sharedMaterials;
+        for (int i = 0; i < mats.Length; i++)
+        {
+            Material m = mats[i];
+            if (m == null) continue;
+            if (m.HasProperty("_Cull"))
+                m.SetFloat("_Cull", 0f);
+        }
+
         if (Application.isPlaying)
             r.materials = mats;
         else
