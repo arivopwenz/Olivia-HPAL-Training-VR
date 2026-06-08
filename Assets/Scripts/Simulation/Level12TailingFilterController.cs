@@ -267,13 +267,13 @@ public class Level12TailingFilterController : MonoBehaviour
 
         var txt = MakeText(_qcCanvas.transform, new Vector3(0f, 0f, -0.02f), 0.05f, TextAnchor.MiddleCenter, new Color(0.85f, 1f, 0.9f));
         txt.text =
-            "=== COMPLIANCE QC — TAILING DISCHARGE ===\n" +
+            "=== COMPLIANCE QC - TAILING DISCHARGE ===\n" +
             "pH tailing netral : 8.2   (baku mutu 6-9)\n" +
             "Moisture cake     : 22 %  (< 25% -> dry-stack OK)\n" +
             "Filtrat -> WWTP   : jernih, TSS rendah\n" +
             "Logam berat (Fe/Mn/Cr) : di bawah baku mutu\n" +
             "Gypsum + residu stabil | beacon HIJAU\n" +
-            "VERDICT: AMAN LINGKUNGAN — cake siap ke DRY STACK";
+            "VERDICT: AMAN LINGKUNGAN - cake siap ke DRY STACK";
 
         var btn = GameObject.CreatePrimitive(PrimitiveType.Cube);
         btn.name = "L11_QC_Accept";
@@ -325,18 +325,18 @@ public class Level12TailingFilterController : MonoBehaviour
         ShowButton(false); ShowInfo(false);
     }
 
-    private void UpdateInfo()
+private void UpdateInfo()
     {
         if (_infoText == null || _infoPanel == null || !_infoPanel.activeSelf) return;
         string body;
         if (_stage == 0)
-            body = "PENGOLAHAN LIMBAH HPAL — TAHAP 1/2 NETRALISASI\n" +
+            body = "PENGOLAHAN LIMBAH HPAL - TAHAP 1/2 NETRALISASI\n" +
                    "Reagen : LIMESTONE CaCO3 / KAPUR Ca(OH)2\n" +
                    "Reaksi : H2SO4 sisa + CaCO3 -> CaSO4 + H2O + CO2\n" +
                    "Fungsi : netralkan asam + endapkan logam berat\n" +
                    "Target pH : 2.3 -> 8.0 (baku mutu lingkungan 6-9)";
         else if (_stage == 1)
-            body = "TAHAP 2/2 — FILTER PRESS (plate & frame)\n" +
+            body = "TAHAP 2/2 - FILTER PRESS (plate & frame)\n" +
                    "Dewatering tailing: tekan slurry, filtrat keluar\n" +
                    "Filtrat jernih -> WWTP ; padatan jadi CAKE\n" +
                    "Target moisture cake : 60% -> < 25% (stackable)";
@@ -451,7 +451,9 @@ public class Level12TailingFilterController : MonoBehaviour
             if (rig != null) _playerRigRoot = rig.transform;
         }
         if (_teleportTargetDcs == null) { var g = GameObject.Find("SpawnPoint_DCS"); if (g != null) _teleportTargetDcs = g.transform; }
-        if (_rig == null) _rig = GameObject.Find("Level13_DryStack_BlenderRig") ?? GameObject.Find("Final_FilterPress_Unit");
+        if (_rig == null) _rig = GameObject.Find("Level12_13_Tailing_IndustrialUV_BlenderRig_V3")
+            ?? GameObject.Find("Final_FilterPress_Unit")
+            ?? GameObject.Find("Level13_DryStack_BlenderRig");
         if (_rig == null) return;
         if (_agitatorRoot == null) { var t = FindChild("Polishing_Agitator_Root"); if (t != null) _agitatorRoot = t; }
         if (_limestonePour == null) _limestonePour = Child("Limestone_Pour_Stream");

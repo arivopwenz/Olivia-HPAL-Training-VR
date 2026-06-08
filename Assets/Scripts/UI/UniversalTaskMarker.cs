@@ -38,6 +38,8 @@ public sealed class UniversalTaskMarker : MonoBehaviour
 
     [Header("=== Polling ===")]
     [SerializeField] private float updateInterval = 0.2f;
+    [SerializeField] private float minimumBoundsSize = 1.2f;
+    [SerializeField] private float ccdCloseHideDistance = 0.35f;
 
     private GameObject _arrowRoot;
     private Material _arrowMat;
@@ -51,6 +53,10 @@ public sealed class UniversalTaskMarker : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
+        arrowScale = Mathf.Max(arrowScale, 1.05f);
+        arrowHeightAboveTarget = Mathf.Max(arrowHeightAboveTarget, 1.25f);
+        outlineWidth = Mathf.Max(outlineWidth, 0.028f);
+        outlinePadding = Mathf.Max(outlinePadding, 0.22f);
         CreateArrow();
         CreateOutline();
         SetVisible(false);
@@ -113,7 +119,8 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         if (cam != null)
         {
             float dist = Vector3.Distance(cam.position, _currentTarget.position);
-            if (dist < 2.0f)
+            float hideDistance = IsCcdLevel() ? ccdCloseHideDistance : 2.0f;
+            if (dist < hideDistance)
             {
                 SetVisible(false);
                 return;
@@ -199,9 +206,7 @@ public sealed class UniversalTaskMarker : MonoBehaviour
                 return null;
 
             case GameLevelManager.GameLevel.Level10_CCD:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(9);
-                if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
-                return FindByName("CCD_BlenderRig", "CCD_Field");
+                return ResolveLevel10CcdTarget();
 
             case GameLevelManager.GameLevel.Level11_MHP:
                 if (!_glm.SudahTekanTombolDcs) return FindDcsButton(10);
@@ -264,7 +269,14 @@ public sealed class UniversalTaskMarker : MonoBehaviour
             return FindByName("L6_SlurryValve_Pivot_Runtime", "L5_Condensate_Drain_Handwheel_Hub", "L6_SlurryRoute_ValveWheel_Runtime");
         if (!_glm.Level6SlurryReportDone) return FindWalkieTalkie();
         if (!_glm.Level6DcsAcidReady)
-            return FindByName("Btn_AcidPlus", "Btn_AcidArm", "Btn_AcidStrokePlus");
+        {
+            if (!_glm.Level6AcidDoseReady)
+                return FindByName("PS_AcidRatio_pr", "Btn_AcidPlus", "A_PARAM_AcidRatio_PLUS");
+            if (!_glm.Level6PumpStrokeReady)
+                return FindByName("PS_AcidStroke_pr", "Btn_AcidStrokePlus", "A_PARAM_AcidStroke_PLUS");
+            if (!_glm.Level6PhLeachReady)
+                return FindByName("PS_pH_mr", "Btn_pH_Minus", "A_PARAM_pH_MINUS");
+        }
         if (!_glm.Level6AcidComplete)
             return FindByName("L6_AcidSkid_BtnLocalStart_Runtime", "L6_AcidSkid_BtnLeakOk_Runtime", "Transparent_CalibrationColumn");
         if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
@@ -306,12 +318,25 @@ public sealed class UniversalTaskMarker : MonoBehaviour
                 return FindByName("FV2_To_FV3_InterstageLetdownValve_BypassHandwheel");
             if (!l8.Fv3Stable)
                 return FindByName("FV3_SteamValve_Handwheel");
-            if (!l8.AllSamplesTaken())
-                return FindByName("FV1_XRay_SlurryPool_Ghost", "FlashLetdown_SampleStation_Backplate");
             if (!l8.IsCompleted && !_glm.SudahLaporanHt)
                 return FindWalkieTalkie();
             return null;
         }
+
+        if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
+        return null;
+    }
+
+    private Transform ResolveLevel10CcdTarget()
+    {
+        if (!_glm.SudahTekanTombolDcs) return FindDcsButton(9);
+
+        Level10CCDController ccd = FindFirstObjectByType<Level10CCDController>(FindObjectsInactive.Include);
+        if (!_glm.Level10CCDComplete)
+            return ccd != null ? ccd.GetCurrentTaskMarkerTarget() : FindByName("CCD_BlenderRig", "CCD_Field");
+
+        if (!_glm.Level10SamplePLSAccepted)
+            return ccd != null ? ccd.GetCurrentTaskMarkerTarget() : FindByName("L9_PLS_SampleStation_Th1", "L9_LabBuilding", "CCD_Field");
 
         if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
         return null;
@@ -502,7 +527,17 @@ public sealed class UniversalTaskMarker : MonoBehaviour
             else bounds.Encapsulate(r.bounds);
         }
         if (!has) bounds = new Bounds(target.position, Vector3.one * 0.3f);
+        Vector3 size = bounds.size;
+        size.x = Mathf.Max(size.x, minimumBoundsSize);
+        size.y = Mathf.Max(size.y, minimumBoundsSize);
+        size.z = Mathf.Max(size.z, minimumBoundsSize);
+        bounds.size = size;
         return bounds;
+    }
+
+    private bool IsCcdLevel()
+    {
+        return _glm != null && _glm.CurrentLevel == GameLevelManager.GameLevel.Level10_CCD;
     }
 
     private void SetVisible(bool visible)

@@ -66,8 +66,7 @@ public class DCSStationController : MonoBehaviour
     {
         _panelRoot = GameObject.Find(_panelRootName)?.transform;
         _buttonRoot = GameObject.Find(_buttonRootName)?.transform;
-        _font = Resources.GetBuiltinResource<TMP_FontAsset>("LiberationSans SDF.asset");
-        if (_font == null) _font = TMP_Settings.defaultFontAsset;
+        _font = TMP_Settings.defaultFontAsset;
 
         BuildStationDefs();
         BindStations();
@@ -143,29 +142,34 @@ public class DCSStationController : MonoBehaviour
         {
             s.value = s.start;
 
-            // readout: create a 3D TMP at DISP anchor
+            // Reuse readouts authored in the scene so their transform and typography
+            // can be adjusted directly in Edit Mode.
             Transform disp = FindAnchor($"A_PARAM_{s.key}_DISP");
             if (disp != null)
             {
-                var go = new GameObject($"Readout_{s.key}");
-                go.transform.SetParent(disp, true);
-                go.transform.position = disp.position + Vector3.up * 0.004f;
-                // Lie flat on the display facing up (+Y). Euler(90,180,0) makes the
-                // text readable upright for the operator standing at the low-Z side.
-                go.transform.rotation = Quaternion.Euler(90f, 180f, 0f);
-                // The imported room/anchor carries a large lossyScale (~90x). Counter it so
-                // the readout renders at a real-world size on the small display panel.
-                float ls = disp.lossyScale.x;
-                if (ls < 0.0001f) ls = 1f;
-                go.transform.localScale = Vector3.one * (1f / ls);
-                var tmp = go.AddComponent<TextMeshPro>();
-                if (_font != null) tmp.font = _font;
-                tmp.alignment = TextAlignmentOptions.Center;
-                tmp.enableWordWrapping = true;
-                tmp.rectTransform.sizeDelta = new Vector2(0.42f, 0.15f);
-                tmp.enableAutoSizing = true;
-                tmp.fontSizeMin = 0.05f;
-                tmp.fontSizeMax = 1.0f;
+                Transform existing = disp.Find($"Readout_{s.key}");
+                TextMeshPro tmp = existing != null ? existing.GetComponent<TextMeshPro>() : null;
+
+                if (tmp == null)
+                {
+                    var go = new GameObject($"Readout_{s.key}");
+                    go.transform.SetParent(disp, true);
+                    go.transform.position = disp.position + Vector3.up * 0.004f;
+                    go.transform.rotation = Quaternion.Euler(90f, 180f, 0f);
+
+                    float ls = disp.lossyScale.x;
+                    if (ls < 0.0001f) ls = 1f;
+                    go.transform.localScale = Vector3.one * (1f / ls);
+                    tmp = go.AddComponent<TextMeshPro>();
+                    tmp.alignment = TextAlignmentOptions.Center;
+                    tmp.enableWordWrapping = true;
+                    tmp.rectTransform.sizeDelta = new Vector2(0.42f, 0.15f);
+                    tmp.enableAutoSizing = true;
+                    tmp.fontSizeMin = 0.05f;
+                    tmp.fontSizeMax = 1.0f;
+                }
+
+                if (_font != null && tmp.font == null) tmp.font = _font;
                 s.readout = tmp;
             }
 

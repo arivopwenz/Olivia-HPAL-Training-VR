@@ -91,6 +91,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     [SerializeField] private Transform _calibrationColumnLiquid;
     [SerializeField] private float _columnFillDuration = 14f;
     [SerializeField] private TMPro.TMP_Text _columnLevelLabel;
+    [SerializeField] private Transform _calibrationColumnTopTick;
 
     [Header("=== Flow Visuals ===")]
     [SerializeField] private Transform _preheaterOutlet;
@@ -102,6 +103,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     [SerializeField] private float _durasiSlurryFlow = 16f;
     [SerializeField] private float _durasiAutoclaveFill = 18f;
     [SerializeField] private float _durasiAcidFlow = 14f;
+    [SerializeField] private float _durasiAcidPipeFlow = 30f;
 
     [Header("=== Audio ===")]
     [SerializeField] private AudioSource _flowAudio;
@@ -117,7 +119,7 @@ public class Level6AcidInjectionController : MonoBehaviour
     [TextArea(2, 4)] [SerializeField] private string _msgSlurryArrived =
         "Slurry panas sudah masuk autoclave. Lapor HT: 'slurry masuk autoclave'.";
     [TextArea(2, 4)] [SerializeField] private string _msgDcsAcid =
-        "Aktifkan acid system di DCS: set rasio H2SO4 350 kg/ton, stroke pompa metering 70%, pilih tank A/B yang penuh, lalu tekan ARM.";
+        "Aktifkan acid system di DCS: set rasio H2SO4 350 kg/ton dan stroke pompa metering 70%. Status akan ARMED otomatis saat semua parameter benar.";
     [TextArea(2, 4)] [SerializeField] private string _msgOpenAcidValve =
         "Buka isolation valve H2SO4: tahan grip + putar, atau tekan R (buka) / F (tutup) terus sampai lampu jalur hijau.";
     [TextArea(2, 4)] [SerializeField] private string _msgLocalStart =
@@ -137,6 +139,10 @@ public class Level6AcidInjectionController : MonoBehaviour
     private Material _acidMat;
     private GameObject _slurryFlowObject;
     private GameObject _acidFlowObject;
+    private GameObject _acidFlowRunX;
+    private GameObject _acidFlowRunZ;
+    private Transform _acidPipeRunX;
+    private Transform _acidPipeRunZ;
     private GameObject _runtimeRoot;
     private Coroutine _sequenceCoroutine;
 
@@ -329,25 +335,68 @@ public class Level6AcidInjectionController : MonoBehaviour
 
     public void ToggleAcidTank()
     {
-        if (!IsLevel6() || _phase != Phase.DcsAcidSetup) return;
-        _tankSelected = (_tankSelected + 1) % 2;
-        UpdateAcidDisplay();
+        // Tank selection is fixed. The former SWAP control has been removed.
     }
 
     public void ArmAcidSystem()
     {
-        if (!IsLevel6() || _phase != Phase.DcsAcidSetup) return;
-        _acidArmed = !_acidArmed;
+        // Arming is automatic after all DCS acid parameters reach their targets.
+    }
+
+#if UNITY_EDITOR
+    public void DebugEnterDcsAcidSetup()
+    {
+        if (_sequenceCoroutine != null)
+        {
+            StopCoroutine(_sequenceCoroutine);
+            _sequenceCoroutine = null;
+        }
+
+        AutoFindReferences();
+        EnsureRuntimeObjects();
+        _acidRatioCurrent = 0f;
+        _strokePercentCurrent = 0f;
+        _phCurrent = _phStart;
+        _tankSelected = 0;
+        _acidArmed = false;
+        _acidDcsReady = false;
+        _slurryArrivedAtAutoclave = true;
+
+        GameLevelManager.Instance?.SetAcidRatio(_acidRatioCurrent);
+        GameLevelManager.Instance?.SetAcidStroke(_strokePercentCurrent);
+        GameLevelManager.Instance?.SetPH(_phCurrent);
+
+        if (_teleportTargetDcs == null)
+            _teleportTargetDcs = FindTransformByName("SpawnPoint_DCS");
+
+        TeleportPlayer(_teleportTargetDcs);
+        _phase = Phase.DcsAcidSetup;
+        ShowAcidControls(true);
+        UpdateAcidDisplay();
+        _hud?.ShowNotifPublic("DEBUG Level 6: atur Acid Dose 350, Pump Stroke 70%, lalu pH Leach 1.0.");
+    }
+
+    public void DebugSetDcsAcidTarget()
+    {
+        if (_phase != Phase.DcsAcidSetup)
+            DebugEnterDcsAcidSetup();
+
+        _acidRatioCurrent = _acidRatioTarget;
+        _strokePercentCurrent = _strokePercentTarget;
+        _phCurrent = _phTarget;
+
+        GameLevelManager.Instance?.SetAcidRatio(_acidRatioCurrent);
+        GameLevelManager.Instance?.SetAcidStroke(_strokePercentCurrent);
+        GameLevelManager.Instance?.SetPH(_phCurrent);
+
         UpdateAcidDisplay();
         TryAdvanceDcsAcid();
     }
+#endif
 
     private void OnAcidRatioChanged()
     {
-        float t = Mathf.Clamp01(_acidRatioCurrent / _acidRatioTarget);
-        _phCurrent = Mathf.Lerp(_phStart, _phTarget, t);
         GameLevelManager.Instance?.SetAcidRatio(_acidRatioCurrent);
-        GameLevelManager.Instance?.SetPH(_phCurrent);
         UpdateAcidDisplay();
         TryAdvanceDcsAcid();
     }
@@ -357,9 +406,9 @@ public class Level6AcidInjectionController : MonoBehaviour
         if (_acidDcsReady) return;
         bool ratioOk = Mathf.Abs(_acidRatioCurrent - _acidRatioTarget) <= _acidRatioTolerance && _phCurrent <= 1.1f;
         bool strokeOk = Mathf.Abs(_strokePercentCurrent - _strokePercentTarget) <= _strokePercentTolerance;
-        if (HasSceneDcsAcidButtons() && _btnAcidArm == null && ratioOk && strokeOk)
-            _acidArmed = true;
-        if (!ratioOk || !strokeOk || !_acidArmed) return;
+        _acidArmed = ratioOk && strokeOk;
+        UpdateAcidDisplay();
+        if (!_acidArmed) return;
 
         _acidDcsReady = true;
         GameLevelManager.Instance?.NotifyLevel6DcsAcidRatioReady();
@@ -370,14 +419,10 @@ public class Level6AcidInjectionController : MonoBehaviour
     private void CheckExternalAcidTarget()
     {
         if (_acidDcsReady || GameLevelManager.Instance == null) return;
-        float ratio = GameLevelManager.Instance.AcidRatio;
-        float ph = GameLevelManager.Instance.PH;
-        if (Mathf.Abs(ratio - _acidRatioTarget) > _acidRatioTolerance || ph > 1.1f) return;
-
-        _acidRatioCurrent = ratio;
-        _phCurrent = ph;
+        _acidRatioCurrent = GameLevelManager.Instance.AcidRatio;
+        _strokePercentCurrent = GameLevelManager.Instance.AcidStroke;
+        _phCurrent = GameLevelManager.Instance.PH;
         UpdateAcidDisplay();
-        // External signal only adjusts ratio/pH; stroke + ARM still required.
         TryAdvanceDcsAcid();
     }
 
@@ -492,11 +537,9 @@ public class Level6AcidInjectionController : MonoBehaviour
 
         if (_hud != null) _hud.ShowNotifPublic("Acid mengalir ke autoclave. Lihat cairan naik di calibration column.");
 
-        // Animate calibration column liquid naik dari bawah ke atas + line flow paralel.
-        Coroutine columnFill = StartCoroutine(AnimateColumnFill(_columnFillDuration));
-        yield return AnimateLineFlow(_acidFlowObject, _acidLineStart, _acidLineEnd, _durasiAcidFlow, 0.2f);
-        // Tunggu column fill kalau belum selesai
-        if (columnFill != null) yield return columnFill;
+        // Dua segmen cairan mengisi Pipe_RunZ lalu Pipe_RunX. Level calibration
+        // column mengikuti progres gabungan jalur secara realtime.
+        yield return AnimateAcidPipeRoute(Mathf.Max(12f, _durasiAcidPipeFlow));
 
         StopAudio(_acidPumpAudio);
         _acidQuestComplete = true;
@@ -821,7 +864,7 @@ public class Level6AcidInjectionController : MonoBehaviour
             string statusText;
             Color statusColor;
             if (full) { statusText = "GO TO FIELD"; statusColor = Color.green; }
-            else if (ratioOk && strokeOk) { statusText = "PRESS ARM"; statusColor = Color.yellow; }
+            else if (ratioOk && strokeOk) { statusText = "ARMED"; statusColor = Color.green; }
             else if (ratioOk) { statusText = "STROKE 70%"; statusColor = Color.yellow; }
             else { statusText = "RATIO 350"; statusColor = Color.yellow; }
             SetDisplayText(_displayStatus, statusText, statusColor);
@@ -834,6 +877,13 @@ public class Level6AcidInjectionController : MonoBehaviour
         {
             tmp.text = text;
             tmp.color = color;
+
+            L6PanelTextSyncer syncer = tmp.GetComponentInParent<L6PanelTextSyncer>();
+            if (syncer != null && syncer.legacy != null)
+            {
+                syncer.legacy.text = text;
+                syncer.legacy.color = color;
+            }
         }
         // Update TextMesh fallback child kalau ada
         if (tmp != null)
@@ -967,6 +1017,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         CaptureBaseRotations();
         _slurryFlowObject = EnsureFlowCylinder("L6_SlurryFlow_Preheater_To_Autoclave", _slurryMat);
         _acidFlowObject = EnsureFlowCylinder("L6_AcidFlow_To_Autoclave", _acidMat);
+        EnsureAcidPipeFlowObjects();
         EnsureAutoclaveLiquid();
         EnsureFieldAcidButtonsFallback();
         WireAcidButtons();
@@ -1062,6 +1113,9 @@ public class Level6AcidInjectionController : MonoBehaviour
             if (col != null) _calibrationColumn = col.transform;
         }
 
+        if (_calibrationColumnTopTick == null)
+            _calibrationColumnTopTick = FindTransformByName("CalibrationColumn_Tick_08");
+
         // Anchor base: calibration column kalau ada, kalau tidak fallback ke spawn point acid skid.
         Vector3 anchorPos;
         if (_calibrationColumn != null)
@@ -1118,7 +1172,6 @@ public class Level6AcidInjectionController : MonoBehaviour
     private void EnsureCalibrationColumnLiquid()
     {
         if (_calibrationColumn == null) return;
-        if (_calibrationColumnLiquid != null) return;
 
         // Hitung ukuran column dari renderer bounds (WORLD space — selalu axis-aligned).
         Renderer colRend = _calibrationColumn.GetComponent<Renderer>();
@@ -1130,12 +1183,20 @@ public class Level6AcidInjectionController : MonoBehaviour
         // Diameter (XZ rata-rata)
         float columnDiameter = (worldBoundsSize.x + worldBoundsSize.z) * 0.5f;
 
-        // Inner clearance: 0.85 dari column height supaya tidak nembus tutup. 0.85 dari diameter.
-        float innerHeight = columnHeight * 0.85f;
+        float columnBottom = worldCenter.y - columnHeight * 0.5f;
+        float tickTopY = _calibrationColumnTopTick != null
+            ? _calibrationColumnTopTick.position.y
+            : worldCenter.y + columnHeight * 0.35f;
+
+        // Batas liquid tepat di tick 08, dengan sedikit clearance dari dasar tabung.
+        float liquidBottom = columnBottom + columnHeight * 0.035f;
+        float innerHeight = Mathf.Clamp(tickTopY - liquidBottom, columnHeight * 0.1f, columnHeight * 0.94f);
         float innerDiameter = columnDiameter * 0.85f;
 
         Transform parent = _runtimeRoot != null ? _runtimeRoot.transform : null;
-        Transform existingLiquid = parent != null ? parent.Find("L6_CalibrationColumn_Liquid_Runtime") : null;
+        Transform existingLiquid = _calibrationColumnLiquid != null
+            ? _calibrationColumnLiquid
+            : (parent != null ? parent.Find("L6_CalibrationColumn_Liquid_Runtime") : null);
         GameObject liquid;
         if (existingLiquid != null)
         {
@@ -1153,7 +1214,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         }
 
         liquid.transform.rotation = Quaternion.identity; // cylinder Y axis = world up
-        liquid.transform.position = new Vector3(worldCenter.x, worldCenter.y - columnHeight * 0.5f, worldCenter.z);
+        liquid.transform.position = new Vector3(worldCenter.x, liquidBottom, worldCenter.z);
         liquid.transform.localScale = new Vector3(innerDiameter, 0.001f, innerDiameter);
 
         Renderer rend = liquid.GetComponent<Renderer>();
@@ -1165,7 +1226,7 @@ public class Level6AcidInjectionController : MonoBehaviour
         // Simpan params untuk AnimateColumnFill (semua dalam world space)
         _columnLiquidFullScaleY = innerHeight * 0.5f; // cylinder primitive total Y = scale.y * 2
         _columnLiquidLocalScaleXZ = innerDiameter;
-        _columnLiquidBottomWorldY = worldCenter.y - columnHeight * 0.5f;
+        _columnLiquidBottomWorldY = liquidBottom;
         _columnLiquidWorldXZ = new Vector3(worldCenter.x, 0f, worldCenter.z);
     }
 
@@ -1821,6 +1882,7 @@ private XRSimpleInteractable FindOrCreateSceneInteractable(params string[] names
         // Background plate (1.4m wide x 1.0m tall) — lebih kecil dari sebelumnya
         if (root.transform.Find("Bg") != null)
         {
+            ApplyAcidPanelLayout(root.transform);
             BindExistingAcidPanelRefs(root.transform);
             RestoreSceneAcidButtons(sceneAcidPlus, sceneAcidMinus, sceneStrokePlus, sceneStrokeMinus);
             WireAcidButtons();
@@ -1832,7 +1894,7 @@ private XRSimpleInteractable FindOrCreateSceneInteractable(params string[] names
         bg.name = "Bg";
         bg.transform.SetParent(root.transform, false);
         bg.transform.localPosition = new Vector3(0f, 0f, 0.06f);
-        bg.transform.localScale = new Vector3(1.4f, 1.0f, 0.05f);
+        bg.transform.localScale = new Vector3(1.4f, 1.28f, 0.05f);
         Collider bgCol = bg.GetComponent<Collider>();
         if (bgCol != null) DestroySafely(bgCol);
         Renderer bgRend = bg.GetComponent<Renderer>();
@@ -1842,49 +1904,47 @@ private XRSimpleInteractable FindOrCreateSceneInteractable(params string[] names
         GameObject titleBg = GameObject.CreatePrimitive(PrimitiveType.Cube);
         titleBg.name = "TitleBg";
         titleBg.transform.SetParent(root.transform, false);
-        titleBg.transform.localPosition = new Vector3(0f, 0.42f, 0.04f);
+        titleBg.transform.localPosition = new Vector3(0f, 0.54f, 0.04f);
         titleBg.transform.localScale = new Vector3(1.38f, 0.16f, 0.01f);
         Collider tbcol = titleBg.GetComponent<Collider>(); if (tbcol != null) DestroySafely(tbcol);
         Renderer tbRend = titleBg.GetComponent<Renderer>();
         if (tbRend != null) tbRend.sharedMaterial = CreateOpaqueMat("L6_DcsAcidPanelTitleBg", new Color(0.10f, 0.40f, 0.65f));
-        CreateLabelText(root.transform, "ACID INJECTION CONTROL", new Vector3(0f, 0.42f, 0.0f), 0.30f, Color.white);
+        CreateLabelText(root.transform, "ACID INJECTION CONTROL", new Vector3(0f, 0.54f, 0.09f), 0.30f, Color.white);
 
         // Row 1: ACID RATIO (kompak)
         CreateRow(root.transform, "ratio",
             label: "ACID RATIO", unit: "kg/ton", target: "Target: 350",
-            yPos: 0.20f,
+            yPos: 0.30f,
             display: out _displayAcidRatio,
             btnPlus: out _btnAcidPlus, btnMinus: out _btnAcidMinus);
 
         // Row 2: PUMP STROKE
         CreateRow(root.transform, "stroke",
             label: "PUMP STROKE", unit: "%", target: "Target: 70",
-            yPos: 0.02f,
+            yPos: 0.07f,
             display: out _displayStrokePercent,
             btnPlus: out _btnAcidStrokePlus, btnMinus: out _btnAcidStrokeMinus);
 
         // Row 3: TANK SELECT
-        CreateLabelText(root.transform, "TANK", new Vector3(-0.6f, -0.16f, -0.01f), 0.26f, Color.white, TextAnchor.MiddleLeft);
-        _displayTankSelected = CreatePanelDisplay(root.transform, "TankValue", new Vector3(-0.20f, -0.16f, -0.04f), 0.32f, Color.white);
-        _btnAcidTankSelect = CreateFlatButton(root.transform, "BtnAcidTankSelect", new Vector3(0.20f, -0.16f, -0.06f), new Color(0.5f, 0.5f, 0.7f), "SWAP");
+        CreateLabelText(root.transform, "TANK", new Vector3(0.57f, -0.17f, 0.09f), 0.26f, Color.white, TextAnchor.MiddleRight);
+        _displayTankSelected = CreatePanelDisplay(root.transform, "TankValue", new Vector3(0.10f, -0.17f, 0.09f), 0.32f, Color.white);
+        _btnAcidTankSelect = null;
 
         // Row 4: ARM + status
-        _displayArmStatus = CreatePanelDisplay(root.transform, "ArmStatus", new Vector3(-0.45f, -0.32f, -0.04f), 0.32f, Color.red);
-        _btnAcidArm = CreateFlatButton(root.transform, "BtnAcidArm", new Vector3(0.20f, -0.32f, -0.06f), new Color(0.95f, 0.55f, 0.05f), "ARM");
+        _displayArmStatus = CreatePanelDisplay(root.transform, "ArmStatus", new Vector3(0.35f, -0.39f, 0.09f), 0.32f, Color.red);
+        _btnAcidArm = null;
 
         // Status bar (bottom): pH + status
-        _displayPH = CreatePanelDisplay(root.transform, "PHValue", new Vector3(-0.45f, -0.45f, -0.04f), 0.26f, Color.yellow, TextAnchor.MiddleLeft);
-        _displayStatus = CreatePanelDisplay(root.transform, "StatusValue", new Vector3(0.30f, -0.45f, -0.04f), 0.26f, Color.yellow);
+        _displayPH = CreatePanelDisplay(root.transform, "PHValue", new Vector3(0.57f, -0.55f, 0.09f), 0.26f, Color.yellow, TextAnchor.MiddleRight);
+        _displayStatus = CreatePanelDisplay(root.transform, "StatusValue", new Vector3(-0.28f, -0.55f, 0.09f), 0.26f, Color.yellow);
 
         // Wire up listeners
         if (!_acidPlusWired && _btnAcidPlus != null) { _btnAcidPlus.selectEntered.AddListener(_ => IncreaseAcidRatio()); _acidPlusWired = true; }
         if (!_acidMinusWired && _btnAcidMinus != null) { _btnAcidMinus.selectEntered.AddListener(_ => DecreaseAcidRatio()); _acidMinusWired = true; }
         if (!_strokePlusWired && _btnAcidStrokePlus != null) { _btnAcidStrokePlus.selectEntered.AddListener(_ => IncreaseAcidStroke()); _strokePlusWired = true; }
         if (!_strokeMinusWired && _btnAcidStrokeMinus != null) { _btnAcidStrokeMinus.selectEntered.AddListener(_ => DecreaseAcidStroke()); _strokeMinusWired = true; }
-        if (!_tankSelectWired && _btnAcidTankSelect != null) { _btnAcidTankSelect.selectEntered.AddListener(_ => ToggleAcidTank()); _tankSelectWired = true; }
-        if (!_acidArmWired && _btnAcidArm != null) { _btnAcidArm.selectEntered.AddListener(_ => ArmAcidSystem()); _acidArmWired = true; }
-
         RestoreSceneAcidButtons(sceneAcidPlus, sceneAcidMinus, sceneStrokePlus, sceneStrokeMinus);
+        ApplyAcidPanelLayout(root.transform);
         WireAcidButtons();
         UpdateAcidDisplay();
 
@@ -1904,8 +1964,241 @@ private XRSimpleInteractable FindOrCreateSceneInteractable(params string[] names
         if (_displayPH == null) _displayPH = FindPanelText(root, "PHValue");
         if (_displayStatus == null) _displayStatus = FindPanelText(root, "StatusValue");
 
-        if (_btnAcidTankSelect == null) _btnAcidTankSelect = FindPanelInteractable(root, "BtnAcidTankSelect");
-        if (_btnAcidArm == null) _btnAcidArm = FindPanelInteractable(root, "BtnAcidArm");
+        // Bind tombol +/- ratio & stroke dari panel (penting untuk jalur reuse panel permanen).
+        if (_btnAcidPlus == null) _btnAcidPlus = FindPanelInteractable(root, "BtnratioPlus");
+        if (_btnAcidMinus == null) _btnAcidMinus = FindPanelInteractable(root, "BtnratioMinus");
+        if (_btnAcidStrokePlus == null) _btnAcidStrokePlus = FindPanelInteractable(root, "BtnstrokePlus");
+        if (_btnAcidStrokeMinus == null) _btnAcidStrokeMinus = FindPanelInteractable(root, "BtnstrokeMinus");
+        _btnAcidTankSelect = null;
+        _btnAcidArm = null;
+    }
+
+    private void EnsureAcidPipeFlowObjects()
+    {
+        if (_acidFlowObject == null) return;
+
+        if (_acidPipeRunX == null) _acidPipeRunX = FindTransformByName("Pipe_RunX");
+        if (_acidPipeRunZ == null) _acidPipeRunZ = FindTransformByName("Pipe_RunZ");
+
+        _acidFlowRunX = EnsureAcidPipeSegment("Flow_Pipe_RunX");
+        _acidFlowRunZ = EnsureAcidPipeSegment("Flow_Pipe_RunZ");
+
+        Renderer parentRenderer = _acidFlowObject.GetComponent<Renderer>();
+        if (parentRenderer != null) parentRenderer.enabled = false;
+    }
+
+    private GameObject EnsureAcidPipeSegment(string name)
+    {
+        Transform existing = _acidFlowObject.transform.Find(name);
+        GameObject segment;
+        if (existing != null)
+        {
+            segment = existing.gameObject;
+        }
+        else
+        {
+            segment = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            segment.name = name;
+            segment.transform.SetParent(_acidFlowObject.transform, true);
+            Collider col = segment.GetComponent<Collider>();
+            if (col != null) DestroySafely(col);
+        }
+
+        Renderer renderer = segment.GetComponent<Renderer>();
+        if (renderer != null)
+        {
+            renderer.sharedMaterial = _acidMat;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+        }
+        segment.SetActive(false);
+        return segment;
+    }
+
+    private void GetPipeEndpoints(Transform pipe, out Vector3 a, out Vector3 b)
+    {
+        Renderer renderer = pipe != null ? pipe.GetComponent<Renderer>() : null;
+        Bounds bounds = renderer != null
+            ? renderer.bounds
+            : new Bounds(pipe != null ? pipe.position : Vector3.zero, Vector3.one);
+
+        Vector3 size = bounds.size;
+        if (size.x >= size.y && size.x >= size.z)
+        {
+            a = bounds.center - Vector3.right * size.x * 0.5f;
+            b = bounds.center + Vector3.right * size.x * 0.5f;
+        }
+        else if (size.z >= size.x && size.z >= size.y)
+        {
+            a = bounds.center - Vector3.forward * size.z * 0.5f;
+            b = bounds.center + Vector3.forward * size.z * 0.5f;
+        }
+        else
+        {
+            a = bounds.center - Vector3.up * size.y * 0.5f;
+            b = bounds.center + Vector3.up * size.y * 0.5f;
+        }
+    }
+
+    private float GetPipeDiameter(Transform pipe)
+    {
+        Renderer renderer = pipe != null ? pipe.GetComponent<Renderer>() : null;
+        if (renderer == null) return 0.2f;
+
+        Vector3 size = renderer.bounds.size;
+        if (size.x >= size.y && size.x >= size.z) return Mathf.Min(size.y, size.z);
+        if (size.z >= size.x && size.z >= size.y) return Mathf.Min(size.x, size.y);
+        return Mathf.Min(size.x, size.z);
+    }
+
+    private IEnumerator AnimateAcidPipeRoute(float duration)
+    {
+        EnsureAcidPipeFlowObjects();
+        EnsureCalibrationColumnLiquid();
+
+        if (_acidPipeRunX == null || _acidPipeRunZ == null ||
+            _acidFlowRunX == null || _acidFlowRunZ == null)
+        {
+            yield return AnimateLineFlow(_acidFlowObject, _acidLineStart, _acidLineEnd, duration, 0.2f);
+            yield break;
+        }
+
+        GetPipeEndpoints(_acidPipeRunZ, out Vector3 zA, out Vector3 zB);
+        GetPipeEndpoints(_acidPipeRunX, out Vector3 xA, out Vector3 xB);
+
+        // Sambungan kedua pipe adalah pasangan endpoint dengan jarak terdekat.
+        Vector3 zJoint;
+        Vector3 xJoint;
+        Vector3 zStart;
+        Vector3 xEnd;
+        float aa = Vector3.Distance(zA, xA);
+        float ab = Vector3.Distance(zA, xB);
+        float ba = Vector3.Distance(zB, xA);
+        float bb = Vector3.Distance(zB, xB);
+        float nearest = Mathf.Min(aa, ab, ba, bb);
+        if (nearest == aa) { zJoint = zA; xJoint = xA; zStart = zB; xEnd = xB; }
+        else if (nearest == ab) { zJoint = zA; xJoint = xB; zStart = zB; xEnd = xA; }
+        else if (nearest == ba) { zJoint = zB; xJoint = xA; zStart = zA; xEnd = xB; }
+        else { zJoint = zB; xJoint = xB; zStart = zA; xEnd = xA; }
+
+        float zLength = Vector3.Distance(zStart, zJoint);
+        float xLength = Vector3.Distance(xJoint, xEnd);
+        float totalLength = Mathf.Max(0.001f, zLength + xLength);
+        float zEndProgress = zLength / totalLength;
+        float diameter = Mathf.Min(GetPipeDiameter(_acidPipeRunX), GetPipeDiameter(_acidPipeRunZ)) * 0.56f;
+
+        _acidFlowObject.SetActive(true);
+        Renderer parentRenderer = _acidFlowObject.GetComponent<Renderer>();
+        if (parentRenderer != null) parentRenderer.enabled = false;
+        _acidFlowRunZ.SetActive(true);
+        _acidFlowRunX.SetActive(false);
+        SetColumnFillProgress(0f);
+
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float routeProgress = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(elapsed / duration));
+
+            if (routeProgress <= zEndProgress)
+            {
+                float segmentProgress = zEndProgress > 0f ? routeProgress / zEndProgress : 1f;
+                ConfigureCylinderBetween(_acidFlowRunZ.transform, zStart, Vector3.Lerp(zStart, zJoint, segmentProgress), diameter);
+                _acidFlowRunX.SetActive(false);
+            }
+            else
+            {
+                ConfigureCylinderBetween(_acidFlowRunZ.transform, zStart, zJoint, diameter);
+                _acidFlowRunX.SetActive(true);
+                float segmentProgress = Mathf.InverseLerp(zEndProgress, 1f, routeProgress);
+                ConfigureCylinderBetween(_acidFlowRunX.transform, xJoint, Vector3.Lerp(xJoint, xEnd, segmentProgress), diameter);
+            }
+
+            PulseRenderer(_acidFlowRunZ, routeProgress);
+            if (_acidFlowRunX.activeSelf) PulseRenderer(_acidFlowRunX, routeProgress);
+            SetColumnFillProgress(routeProgress);
+            yield return null;
+        }
+
+        ConfigureCylinderBetween(_acidFlowRunZ.transform, zStart, zJoint, diameter);
+        _acidFlowRunX.SetActive(true);
+        ConfigureCylinderBetween(_acidFlowRunX.transform, xJoint, xEnd, diameter);
+        SetColumnFillProgress(1f);
+    }
+
+    private void SetColumnFillProgress(float progress)
+    {
+        EnsureCalibrationColumnLiquid();
+        if (_calibrationColumnLiquid == null) return;
+
+        float t = Mathf.Clamp01(progress);
+        _calibrationColumnLiquid.gameObject.SetActive(t > 0.001f);
+        float currentScaleY = Mathf.Lerp(0.001f, _columnLiquidFullScaleY, t);
+        _calibrationColumnLiquid.localScale =
+            new Vector3(_columnLiquidLocalScaleXZ, currentScaleY, _columnLiquidLocalScaleXZ);
+        _calibrationColumnLiquid.rotation = Quaternion.identity;
+        _calibrationColumnLiquid.position =
+            new Vector3(_columnLiquidWorldXZ.x, _columnLiquidBottomWorldY + currentScaleY, _columnLiquidWorldXZ.z);
+
+        if (_columnLevelLabel != null)
+            _columnLevelLabel.text = $"COLUMN: {(t * 100f):F0}%";
+    }
+
+    private void ApplyAcidPanelLayout(Transform root)
+    {
+        if (root == null) return;
+
+        SetAcidPanelTransform(root, "Bg", new Vector3(0f, 0f, 0.06f), new Vector3(1.4f, 1.28f, 0.05f));
+        SetAcidPanelTransform(root, "TitleBg", new Vector3(0f, 0.54f, 0.04f), new Vector3(1.38f, 0.16f, 0.01f));
+        SetAcidPanelTransform(root, "ratioValue", new Vector3(0.05f, 0.30f, 0.09f));
+        SetAcidPanelTransform(root, "BtnratioPlus", new Vector3(-0.30f, 0.30f, 0.055f));
+        SetAcidPanelTransform(root, "BtnratioMinus", new Vector3(-0.50f, 0.30f, 0.055f));
+        SetAcidPanelTransform(root, "strokeValue", new Vector3(0.05f, 0.07f, 0.09f));
+        SetAcidPanelTransform(root, "BtnstrokePlus", new Vector3(-0.30f, 0.07f, 0.055f));
+        SetAcidPanelTransform(root, "BtnstrokeMinus", new Vector3(-0.50f, 0.07f, 0.055f));
+        SetAcidPanelTransform(root, "TankValue", new Vector3(0.10f, -0.17f, 0.09f));
+        SetAcidPanelTransform(root, "ArmStatus", new Vector3(0.35f, -0.39f, 0.09f));
+        SetAcidPanelTransform(root, "PHValue", new Vector3(0.57f, -0.55f, 0.09f));
+        SetAcidPanelTransform(root, "StatusValue", new Vector3(-0.28f, -0.55f, 0.09f));
+
+        TextMesh[] texts = root.GetComponentsInChildren<TextMesh>(true);
+        for (int i = 0; i < texts.Length; i++)
+        {
+            Transform textTransform = texts[i].transform;
+            textTransform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+
+            if (textTransform.parent != root)
+            {
+                textTransform.localPosition = new Vector3(0f, 0f, 0.55f);
+                continue;
+            }
+
+            Vector3 position = textTransform.localPosition;
+            position.z = 0.09f;
+
+            switch (texts[i].text)
+            {
+                case "ACID INJECTION CONTROL": position = new Vector3(0f, 0.54f, 0.09f); break;
+                case "ACID RATIO": position = new Vector3(0.57f, 0.325f, 0.09f); break;
+                case "Target: 350": position = new Vector3(0.57f, 0.26f, 0.09f); break;
+                case "kg/ton": position = new Vector3(-0.16f, 0.265f, 0.09f); break;
+                case "PUMP STROKE": position = new Vector3(0.57f, 0.095f, 0.09f); break;
+                case "Target: 70": position = new Vector3(0.57f, 0.03f, 0.09f); break;
+                case "%": position = new Vector3(-0.16f, 0.035f, 0.09f); break;
+                case "TANK": position = new Vector3(0.57f, -0.17f, 0.09f); break;
+            }
+
+            textTransform.localPosition = position;
+        }
+    }
+
+    private void SetAcidPanelTransform(Transform root, string childName, Vector3 localPosition, Vector3? localScale = null)
+    {
+        Transform child = root.Find(childName);
+        if (child == null) return;
+        child.localPosition = localPosition;
+        child.localRotation = Quaternion.identity;
+        if (localScale.HasValue) child.localScale = localScale.Value;
     }
 
     private TMPro.TMP_Text FindPanelText(Transform root, string baseName)
@@ -1949,19 +2242,19 @@ private XRSimpleInteractable FindOrCreateSceneInteractable(params string[] names
         out XRSimpleInteractable btnPlus, out XRSimpleInteractable btnMinus)
     {
         // Label kiri (compact)
-        CreateLabelText(parent, label, new Vector3(-0.6f, yPos + 0.025f, -0.01f), 0.24f, Color.white, TextAnchor.MiddleLeft);
+        CreateLabelText(parent, label, new Vector3(0.57f, yPos + 0.025f, 0.09f), 0.24f, Color.white, TextAnchor.MiddleRight);
         // Sub-label target di bawahnya
-        CreateLabelText(parent, target, new Vector3(-0.6f, yPos - 0.04f, -0.01f), 0.18f, new Color(0.65f, 0.85f, 1f), TextAnchor.MiddleLeft);
+        CreateLabelText(parent, target, new Vector3(0.57f, yPos - 0.04f, 0.09f), 0.18f, new Color(0.65f, 0.85f, 1f), TextAnchor.MiddleRight);
 
         // Display value tengah
-        display = CreatePanelDisplay(parent, idPrefix + "Value", new Vector3(-0.05f, yPos, -0.04f), 0.36f, new Color(1f, 0.9f, 0.15f));
+        display = CreatePanelDisplay(parent, idPrefix + "Value", new Vector3(0.05f, yPos, 0.09f), 0.36f, new Color(1f, 0.9f, 0.15f));
 
         // Tombol +/- kanan
-        btnPlus = CreateFlatButton(parent, "Btn" + idPrefix + "Plus", new Vector3(0.30f, yPos, -0.06f), new Color(0.1f, 0.7f, 0.2f), "+");
-        btnMinus = CreateFlatButton(parent, "Btn" + idPrefix + "Minus", new Vector3(0.50f, yPos, -0.06f), new Color(0.7f, 0.15f, 0.15f), "-");
+        btnPlus = CreateFlatButton(parent, "Btn" + idPrefix + "Plus", new Vector3(-0.30f, yPos, 0.055f), new Color(0.1f, 0.7f, 0.2f), "+");
+        btnMinus = CreateFlatButton(parent, "Btn" + idPrefix + "Minus", new Vector3(-0.50f, yPos, 0.055f), new Color(0.7f, 0.15f, 0.15f), "-");
 
         // Unit kecil di samping value
-        CreateLabelText(parent, unit, new Vector3(0.18f, yPos - 0.035f, -0.01f), 0.18f, new Color(0.7f, 0.9f, 1f), TextAnchor.MiddleLeft);
+        CreateLabelText(parent, unit, new Vector3(-0.16f, yPos - 0.035f, 0.09f), 0.18f, new Color(0.7f, 0.9f, 1f), TextAnchor.MiddleRight);
     }
 
     private XRSimpleInteractable CreateFlatButton(Transform parent, string name, Vector3 localPos, Color color, string label)
@@ -1989,8 +2282,8 @@ private XRSimpleInteractable FindOrCreateSceneInteractable(params string[] names
         // Label text di permukaan button (depan, menghadap player).
         GameObject txtGo = new GameObject("Lbl");
         txtGo.transform.SetParent(btn.transform, false);
-        txtGo.transform.localPosition = new Vector3(0f, 0f, -0.55f);
-        txtGo.transform.localRotation = Quaternion.identity;
+        txtGo.transform.localPosition = new Vector3(0f, 0f, 0.55f);
+        txtGo.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
         TextMesh tm = txtGo.AddComponent<TextMesh>();
         tm.text = label;
         tm.characterSize = 0.06f;

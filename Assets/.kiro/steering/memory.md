@@ -731,3 +731,32 @@ Pump tie-in detail (3 rubber exp-joint y2.55/2.8/3.05, hazard y4.4, `DischargeKn
 **VERIFIED (reflection edit-mode)**: init rendEnabled=False (hidden); invoke SetLevel4PipeFlow(true)→rendEnabled=True+flowing; (false)→rendEnabled=False. Compile 0 error CS. Scene saved (renderer disabled + _flowOnStart=false).
 
 **Files**: Assets/Scripts/Simulation/ProcessPipeFlowAnimator.cs (mpb null guard), Level4SlurryPumpController.cs (field + toggle di SetLevel4PipeFlow), Assets/Scenes/Level1.unity (_flowOnStart=false + renderer off SlurryToPreheater_SlurryFlow, saved).
+
+
+---
+
+### 2026-06-07 (Part 51) — Frustum + Occlusion Culling di scene Level1_MainBroken (bake + static flags + verifikasi)
+
+**User**: tanya konsep frustum culling vs occlusion culling, lalu minta diterapkan di game VR ini ("GAS, Occlusion + Frustum").
+
+**Scene aktif**: `Assets/Scenes/Level1_MainBroken.unity` (BUKAN Level1.unity — ada 3 scene: Level1.unity 6/4, Level1_MainBroken.unity 6/7 dimodif hari ini = yang dikerjakan, Level1_MergeDesign.unity 6/4). **CATATAN: occlusion data per-scene; kalau pindah ke Level1.unity harus rebake di sana.**
+
+**Baseline (execute_code)**: 6302 renderer aktif, ~1,43 jt triangle, cuma 84 ber-flag static, `umbraDataSize=0` (occlusion BELUM pernah bake), 0 LODGroup, Main Camera far=1000 occ=True, scene bounds 420×22×380m. URP "Performance URP Config" Quality Very Low, shadowDistance 85.
+
+**Frustum culling**: otomatis (built-in), tak perlu setup. Terbukti efektif: dari viewpoint spawn DCS (-7.68,1.52,-5.41), 6332 mesh renderer → cuma **178 di dalam frustum** (~97% dipotong frustum dari sudut itu).
+
+**Occlusion culling — yang dikerjakan**:
+1. **Static flags** (execute_code, exclusion heuristik): excludeAll (runtime/_fx/flow/particle/ore_belt/conveyor/dust/player/xr/camera/canvas/spawn/teleport/billboard/audio/light) di-skip total; excludeOccluder (handwheel/flywheel/agitator/rake/impeller/spoke/stir/roller/pulley/valve/door/rotor/blade = rotator-in-place) → Occludee saja. Sisanya: Occludee Static; yang maxDim≥3m → + Occluder Static. Hasil: setOccludee=4723, setOccluder=1045, skipped=2840. (Edit-mode active-only akhir: Occludee=3708, Occluder=830.)
+2. **Parameter bake**: `smallestOccluder=2.5` (mesin/dinding besar), `smallestHole=0.25`, `backfaceThreshold=100`.
+3. **Bake**: `StaticOcclusionCulling.Compute()`. **Data**: umbra=298080, asset disk `Assets/Scenes/Level1_MainBroken/OcclusionCullingData.asset` = **814.724 byte**. Camera `useOcclusionCulling=True`. Scene saved, sceneDirty=False.
+
+**GOTCHA PENTING (occlusion bake via MCP/Unity 6)**:
+- `Compute()` jalan ASYNC: return cepat (3-23s) tapi `umbraDataSize` baca 0 SAAT ITU; data terdaftar ~10-20s wall-time KEMUDIAN (poll di call berikutnya → 298080). JANGAN panik lihat 0 langsung setelah Compute.
+- **JANGAN** `GenerateInBackground()` setelah `Compute()` — itu mulai re-bake yang MENGOSONGKAN data lama; lalu `Cancel()` meninggalkannya kosong (umbra=0). Cukup `Compute()` saja, tunggu, poll.
+- `umbraDataSize` baca **0 sesaat setelah SaveOpenScenes** (runtime PVS di-unload), TAPI data tetap aman di asset disk → lazy-reload balik ke 298080 di call berikutnya. Verifikasi sebenarnya = ukuran file `OcclusionCullingData.asset` di disk, bukan umbraDataSize transient.
+- `MarkAllScenesDirty()` sebelum save bikin umbra flicker 0 juga — tak perlu, cukup SaveOpenScenes.
+- `manage_graphics stats_get` return **draw_calls=0 di play mode lewat MCP** (UnityStats butuh Game view fokus/render) — tak andal. A/B occlusion via `Renderer.isVisible` JUGA noisy (isVisible agregat semua kamera termasuk Scene view di play mode) → toggle occ on/off kasih hasil sama (inconclusive). Verifikasi occlusion andal: pakai Occlusion Culling Visualization window / Stats panel / Frame Debugger di editor manual, ATAU posisikan kamera di ruang tertutup + tutup Scene view.
+
+**Rekomendasi disampaikan ke user** (belum dikerjakan): LOD groups (0 sekarang) untuk mesin jauh, `QualitySettings.layerCullDistances` untuk pisah area jauh (Dry Stack z~230 vs CCD z~110), pertimbangkan turunkan far plane 1000 (opsional, hati2 clip struktur besar lintas-plant). Rebake occlusion tiap layout mesin berubah (overhead maintenance nyata mengingat sering replace FBX instance).
+
+**Files**: Assets/Scenes/Level1_MainBroken.unity (static flags + camera occ + saved), Assets/Scenes/Level1_MainBroken/OcclusionCullingData.asset (BARU, 814KB bake). Tidak ada .cs diubah.

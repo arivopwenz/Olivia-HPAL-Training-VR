@@ -129,6 +129,7 @@ public class PlayerHUD : MonoBehaviour
         GameLevelManager.OnLevel3PhaseChanged += OnLevel3PhaseChanged;
         GameLevelManager.OnLevel3OreReachedSlurry += OnLevel3OreReachedSlurry;
         GameLevelManager.OnLevel4PhaseChanged += OnLevel4PhaseChanged;
+        GameLevelManager.OnLevel6ParameterChanged += OnLevel6ParameterChanged;
         PhaseManager.OnApdItemWorn += OnSatuApdDipakai;
         PhaseManager.OnApdItemRemoved += OnSatuApdDilepas;
         PhaseManager.OnAPD7Lengkap += OnSemuaApdLengkap;
@@ -153,6 +154,7 @@ public class PlayerHUD : MonoBehaviour
         GameLevelManager.OnLevel3PhaseChanged -= OnLevel3PhaseChanged;
         GameLevelManager.OnLevel3OreReachedSlurry -= OnLevel3OreReachedSlurry;
         GameLevelManager.OnLevel4PhaseChanged -= OnLevel4PhaseChanged;
+        GameLevelManager.OnLevel6ParameterChanged -= OnLevel6ParameterChanged;
         PhaseManager.OnApdItemWorn -= OnSatuApdDipakai;
         PhaseManager.OnApdItemRemoved -= OnSatuApdDilepas;
         PhaseManager.OnAPD7Lengkap -= OnSemuaApdLengkap;
@@ -336,11 +338,68 @@ public class PlayerHUD : MonoBehaviour
             if (acidComplete) _voiceReportSelesai = true;
             // Laporan intermediate: jangan set _voiceReportSelesai. GLM akan handle internal flag.
         }
+        else if (_levelAktif == GameLevelManager.GameLevel.Level10_CCD)
+        {
+            bool labAccepted = GameLevelManager.Instance != null && GameLevelManager.Instance.Level10SamplePLSAccepted;
+            if (labAccepted) _voiceReportSelesai = true;
+        }
         else
         {
             _voiceReportSelesai = true;
         }
         UpdateOperasionalChecklist(_levelAktif);
+        if (_levelAktif == GameLevelManager.GameLevel.Level6_AcidInjection)
+            RefreshLevel6Hud();
+    }
+
+    private void OnLevel6ParameterChanged()
+    {
+        if (_levelAktif != GameLevelManager.GameLevel.Level6_AcidInjection)
+            return;
+
+        RefreshLevel6Hud();
+        UpdateOperasionalChecklist(_levelAktif);
+    }
+
+    private void RefreshLevel6Hud()
+    {
+        GameLevelManager glm = GameLevelManager.Instance;
+        if (glm == null) return;
+
+        if (!glm.Level6SlurryReportDone)
+            return;
+
+        if (!glm.Level6AcidDoseReady)
+        {
+            SetQuestLabel("<b>MISI: Atur Acid Dose</b>\n<size=83%>Gunakan tombol +/- Acid Dose sampai mencapai <color=#FFCC00>350 kg/ton</color>.</size>");
+            return;
+        }
+
+        if (!glm.Level6PumpStrokeReady)
+        {
+            SetQuestLabel("<b>MISI: Atur Pump Stroke</b>\n<size=83%>Gunakan tombol +/- Pump Stroke sampai mencapai <color=#FFCC00>70%</color>.</size>");
+            return;
+        }
+
+        if (!glm.Level6PhLeachReady)
+        {
+            SetQuestLabel("<b>MISI: Atur pH Leach</b>\n<size=83%>Gunakan tombol +/- pH sampai mencapai <color=#FFCC00>pH 1.0</color>.</size>");
+            return;
+        }
+
+        if (!glm.Level6DcsAcidReady)
+        {
+            SetQuestLabel("<b>MISI: Parameter Sesuai</b>\n<size=83%>Semua parameter benar. Sistem sedang mengaktifkan acid injection.</size>");
+            return;
+        }
+
+        if (!glm.Level6AcidComplete)
+        {
+            SetQuestLabel("<b>MISI: Lapor HT Field</b>\n<size=83%>Tahan T dan laporkan: <color=#FFCC00>\"field acid skid aman\"</color>.</size>");
+            return;
+        }
+
+        SetQuestLabel("<b>MISI: Lapor HT Akhir</b>\n<size=83%>Tahan T dan laporkan acid injection aktif, rasio 350, dan pH 1.0.</size>");
     }
 
     private void OnLevelTransitionRequested(GameLevelManager.GameLevel fromLevel, GameLevelManager.GameLevel toLevel, float duration)
@@ -733,7 +792,7 @@ public class PlayerHUD : MonoBehaviour
         if (level == GameLevelManager.GameLevel.Level2_DCSPrep)
             lines.Add($"{Check(_dcsDilihat)} Lihat mesin DCS");
 
-        if (data.nomorTombolDCS > 0)
+        if (data.nomorTombolDCS > 0 && level != GameLevelManager.GameLevel.Level10_CCD)
             lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS {data.nomorTombolDCS}");
 
         // Level 4 punya step ekstra: atur flow rate ke 450 m³/h sebelum lapor HT.
@@ -796,13 +855,17 @@ public class PlayerHUD : MonoBehaviour
             bool outletDone = GameLevelManager.Instance.Level6OutletReportDone;
             bool slurryMasuk = GameLevelManager.Instance.Level6SlurryMasukAutoclave;
             bool slurryReport = GameLevelManager.Instance.Level6SlurryReportDone;
-            bool dcsAcidReady = GameLevelManager.Instance.Level6DcsAcidReady;
+            bool acidDoseReady = GameLevelManager.Instance.Level6AcidDoseReady;
+            bool pumpStrokeReady = GameLevelManager.Instance.Level6PumpStrokeReady;
+            bool phLeachReady = GameLevelManager.Instance.Level6PhLeachReady;
             bool acidComplete = GameLevelManager.Instance.Level6AcidComplete;
 
             lines.Add($"{Check(outletDone)} Lapor HT: 'outlet preheater dibuka'");
             lines.Add($"{Check(slurryMasuk)} Putar valve preheater (cairan masuk autoclave)");
             lines.Add($"{Check(slurryReport)} Lapor HT: 'slurry masuk autoclave'");
-            lines.Add($"{Check(dcsAcidReady)} DCS: set acid 350 + stroke 70% + ARM");
+            lines.Add($"{Check(acidDoseReady)} Atur Acid Dose 350 kg/ton");
+            lines.Add($"{Check(acidDoseReady && pumpStrokeReady)} Atur Pump Stroke 70%");
+            lines.Add($"{Check(acidDoseReady && pumpStrokeReady && phLeachReady)} Atur pH Leach 1.0");
             lines.Add($"{Check(acidComplete)} Lapor HT field: 'field acid skid aman'");
             // Lapor akhir hanya ter-check kalau acid complete + final voice accepted.
             bool laporAkhirAcidOk = acidComplete && _voiceReportSelesai;
@@ -863,10 +926,12 @@ public class PlayerHUD : MonoBehaviour
         if (level == GameLevelManager.GameLevel.Level10_CCD)
         {
             var glm = GameLevelManager.Instance;
+            bool ccdStart = glm != null && glm.Level10CCDStartAuthorized;
             bool ccdStable = glm != null && glm.Level10CCDComplete;
             bool plsLulus = glm != null && glm.Level10SamplePLSAccepted;
             lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS 9");
-            lines.Add($"{Check(ccdStable)} Aktifkan CCD separator + amati pemisahan");
+            lines.Add($"{Check(ccdStart)} Lapor HT awal: 'CCD siap, alirkan cairan dari flash vessel'");
+            lines.Add($"{Check(ccdStable)} Observasi pemisahan CCD sampai stabil");
             lines.Add($"{Check(plsLulus)} Ambil 3 sample PLS overflow + submit lab QC");
             lines.Add($"{Check(_voiceReportSelesai)} Lapor HT: 'CCD aktif, PLS lulus QC'");
             txtParameterInfo.text = string.Join("\n", lines);

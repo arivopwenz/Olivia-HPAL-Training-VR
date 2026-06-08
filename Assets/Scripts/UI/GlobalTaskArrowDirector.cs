@@ -174,10 +174,15 @@ public sealed class GlobalTaskArrowDirector : MonoBehaviour
             case GameLevelManager.GameLevel.Level7_Autoclave:
             case GameLevelManager.GameLevel.Level8_Monitoring:
             case GameLevelManager.GameLevel.Level9_FlashVessel:
-            case GameLevelManager.GameLevel.Level10_CCD:
             case GameLevelManager.GameLevel.Level12_TailingDischarge:
             case GameLevelManager.GameLevel.Level13_TailingWaste:
                 if (!_glm.SudahLaporanHt) return GetWalkieTalkieTarget();
+                return null;
+
+            case GameLevelManager.GameLevel.Level10_CCD:
+                // Level CCD uses UniversalTaskMarker for the yellow arrow + outline.
+                // Keep this orange DirectionArrowIndicator hidden so the guidance style
+                // matches earlier levels.
                 return null;
 
             case GameLevelManager.GameLevel.Level11_MHP:

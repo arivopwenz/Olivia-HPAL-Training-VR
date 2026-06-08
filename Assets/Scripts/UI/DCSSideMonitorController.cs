@@ -455,7 +455,7 @@ public class DCSSideMonitorController : MonoBehaviour
                 c.status = "MODE: LEVEL 9 (CCD)  •  DCS " + dcs;
                 c.route = "PROCESS ROUTE\nCCD1 -> CCD2 -> CCD3 (counter-current decantation)";
                 c.field = "FIELD STATE\nThickener train di sisi kanan plant.\nAmbil 3 sample PLS overflow.";
-                c.actions = "CHECKLIST\n[ ] Tekan DCS 9\n[ ] Aktifkan rake CCD\n[ ] Ambil 3 sample PLS\n[ ] Submit lab QC\n[ ] Lapor 'CCD aktif PLS lulus QC'";
+                c.actions = "CHECKLIST\n[ ] Tekan DCS 9\n[ ] Lapor HT awal: CCD siap, alirkan cairan dari flash vessel\n[ ] Observasi CCD sampai stabil\n[ ] Ambil 3 sample PLS\n[ ] Submit lab QC\n[ ] Lapor 'CCD aktif PLS lulus QC'";
                 c.setpoints = "CCD MONITOR\nUnderflow density: OK\nWash ratio: OK\nPLS clarity: CHECK";
                 c.alarm = "Pisahan padat-cair harus stabil sebelum sampling.";
                 c.flow01 = 0.5f;

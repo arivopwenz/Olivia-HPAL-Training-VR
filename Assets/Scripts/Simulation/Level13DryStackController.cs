@@ -240,14 +240,14 @@ public class Level13DryStackController : MonoBehaviour
 
         var txt = MakeText(_qcCanvas.transform, new Vector3(0f, 0f, -0.02f), 0.048f, TextAnchor.MiddleCenter, new Color(0.85f, 1f, 0.9f));
         txt.text =
-            "=== COMPLIANCE QC — DRY STACK TAILINGS FACILITY ===\n" +
+            "=== COMPLIANCE QC - DRY STACK TAILINGS FACILITY ===\n" +
             "Moisture cake : 22 %  -> UNSATURATED (stabil, anti-jebol)\n" +
             "pH tailing    : 8.5   (baku mutu 6-9)\n" +
             "Geomembrane liner : INTACT (cegah seepage ke tanah)\n" +
             "Piezometer (4 titik) : pore pressure RENDAH -> AMAN\n" +
             "Rembesan -> Polishing Pond -> WWTP : jernih\n" +
             "Closure cap + revegetasi : SELESAI\n" +
-            "VERDICT: DSTF AMAN LINGKUNGAN — TANPA bendungan/kolam";
+            "VERDICT: DSTF AMAN LINGKUNGAN - TANPA bendungan/kolam";
 
         var btn = GameObject.CreatePrimitive(PrimitiveType.Cube);
         btn.name = "L12_QC_Accept";
@@ -304,19 +304,21 @@ public class Level13DryStackController : MonoBehaviour
         if (_infoText == null || _infoPanel == null || !_infoPanel.activeSelf) return;
         string body;
         if (_stage == 0)
-            body = "PEMBUANGAN LIMBAH AKHIR — TAHAP 1/2 DRY STACKING\n" +
+            body = "PEMBUANGAN LIMBAH AKHIR - TAHAP 1/2 DRY STACKING\n" +
                    "Cake kering (moisture < 25%) di-spread + DIPADATKAN\n" +
                    "dalam terraced lift di atas GEOMEMBRANE LINER\n" +
                    "Hasil: timbunan UNSATURATED -> stabil, anti-jebol\n" +
                    "(beda dari wet tailings dam yang berisiko)";
         else if (_stage == 1)
-            body = "TAHAP 2/2 — CLOSURE & MONITORING\n" +
+            body = "TAHAP 2/2 - CLOSURE & MONITORING\n" +
                    "Penutupan sel: geomembrane cap + tanah + REVEGETASI\n" +
                    "Monitoring: PIEZOMETER (pore pressure rendah)\n" +
                    "Rembesan dikumpulkan -> Polishing Pond -> WWTP";
         else
             body = "DRY STACK SELESAI\nTimbunan stabil + sel tertutup + revegetasi\nLanjut: inspeksi + compliance QC";
-        _infoText.text = body + $"\n--------------------------------\nPROGRESS : {_dryStackProgress:0} %   |   pH : {PhValue:0.0}   |   MOISTURE : {MoistValue:0} %";
+
+        _infoText.text = body +
+            $"\n--------------------------------\nPROGRESS : {_dryStackProgress:0} %   |   pH : {PhValue:0.0}   |   MOISTURE : {MoistValue:0} %";
         BillboardTo(_infoPanel.transform, GetPlayerHead());
     }
 
@@ -431,7 +433,9 @@ public class Level13DryStackController : MonoBehaviour
             if (rig != null) _playerRigRoot = rig.transform;
         }
         if (_teleportTargetDcs == null) { var g = GameObject.Find("SpawnPoint_DCS"); if (g != null) _teleportTargetDcs = g.transform; }
-        if (_rig == null) _rig = GameObject.Find("Level13_DryStack_BlenderRig");
+        if (_rig == null) _rig = GameObject.Find("Level12_13_Tailing_IndustrialUV_BlenderRig_V3")
+            ?? GameObject.Find("Level13_DryStack_BlenderRig")
+            ?? GameObject.Find("Level13_DryStack_StorageArea_BlenderRig");
         if (_rig == null) return;
         if (_containPad == null) _containPad = Child("GDS_ContainPad");
         if (_geomembrane == null) _geomembrane = Child("GDS_Geomembrane");

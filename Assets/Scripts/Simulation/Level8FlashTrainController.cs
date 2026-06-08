@@ -8,17 +8,15 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 /// <summary>
 /// OLIVIA VR — Level 8 FlashTrainController.cs
 ///
-/// FLOW LEVEL 8 — Flash Train 3-Stage Pressure Letdown + Sampling (HPAL SOP):
+/// FLOW LEVEL 8 — Flash Train 3-Stage Pressure Letdown (HPAL SOP):
 ///   1. Player tekan DCS 8 → fade teleport ke depan FV1
 ///   2. Putar bypass handwheel FV1 (10-turn) → P 47→12 atm, lampu RED→GREEN
 ///   3. Interlock check: P_FV1 < 13 atm sebelum FV2 bisa dibuka
 ///   4. Putar bypass handwheel FV2 → P 12→3 atm
 ///   5. Putar steam valve FV3 → P 3→1.05 atm (atmospheric flash)
 ///   6. Slurry mengalir ke CCD via Feed_FromFlashVessel_To_CCD1
-///   7. Sampling 3 bottles dari sample port masing-masing FV (Q/W/E keys atau XR grab)
-///   8. Submit ke lab → pop-up canvas dengan analisis: free acid, Ni, Co, Fe, T
-///   9. Voice report HT (tahan T) → Mission Complete Canvas
-///  10. STAY (lihat proses) atau KEMBALI KE DCS → Level 9 (CCD)
+///   7. Voice report HT (tahan T) → Mission Complete Canvas
+///   8. STAY (lihat proses) atau KEMBALI KE DCS → Level 9 (CCD sampling & QC)
 ///
 /// PATTERN: Sequential gating dengan pressure interlock + 10-turn handwheel + cascade panel.
 /// </summary>
@@ -98,10 +96,6 @@ public class Level8FlashTrainController : MonoBehaviour
     [SerializeField] private KeyCode _key1Open = KeyCode.Alpha1;
     [SerializeField] private KeyCode _key2Open = KeyCode.Alpha2;
     [SerializeField] private KeyCode _key3Open = KeyCode.Alpha3;
-    [SerializeField] private KeyCode _keySample1 = KeyCode.Q;
-    [SerializeField] private KeyCode _keySample2 = KeyCode.W;
-    [SerializeField] private KeyCode _keySample3 = KeyCode.E;
-    [SerializeField] private KeyCode _keySubmitLab = KeyCode.L;
 
     [Header("=== HUD Messages ===")]
     [TextArea(2, 4)] [SerializeField] private string _msgStart =
@@ -111,7 +105,7 @@ public class Level8FlashTrainController : MonoBehaviour
     [TextArea(2, 4)] [SerializeField] private string _msgFv2Done =
         "FV2 tertutup, uap lebih kecil berhenti. Cairan mengalir ke FV3... berpindah ke FV3.";
     [TextArea(2, 4)] [SerializeField] private string _msgFv3Done =
-        "FV3 tertutup. Flash train STABIL. Lapor HT (tahan T) untuk menyelesaikan level.";
+        "FV3 tertutup. Tekanan turun ke ~1 atm dan suhu ~102°C. Flash train stabil; slurry aman dialirkan ke CCD untuk pemisahan dan sampling PLS.";
     [TextArea(2, 4)] [SerializeField] private string _msgFv2Intro =
         "FV2: uap masih keluar (lebih kecil dari FV1). Putar handwheel untuk menutup valve.";
     [TextArea(2, 4)] [SerializeField] private string _msgFv3Intro =
@@ -410,15 +404,14 @@ public class Level8FlashTrainController : MonoBehaviour
         // Check stage transitions
         CheckStageProgress();
 
-        // Sampling: mekanik FISIK (dekati 3 station, ambil botol). Keyboard Q/W/E tetap sbg fallback.
+        // Sampling Level 8 dipindahkan ke Level 9 CCD. Legacy phase ini ditutup
+        // supaya player tidak lagi diarahkan mengambil sample dari flash vessel.
         if (_phase == Phase.Sampling)
         {
-            UpdateSamplingProximity();
-            if (Input.GetKeyDown(_keySample1)) TakeSample(0);
-            if (Input.GetKeyDown(_keySample2)) TakeSample(1);
-            if (Input.GetKeyDown(_keySample3)) TakeSample(2);
-            if (Input.GetKeyDown(_keySubmitLab) && AllSamplesTaken()) SubmitLabQC();
-            UpdateSampleBottleAnimations();
+            GameLevelManager.Instance?.NotifyLevel8FlashLetdownDone();
+            GameLevelManager.Instance?.NotifyLevel8SampleTaken();
+            _phase = Phase.MenungguLapor;
+            if (_hud != null) _hud.ShowNotifPublic(_msgFv3Done, 6f);
         }
     }
 
@@ -1745,15 +1738,15 @@ public class Level8FlashTrainController : MonoBehaviour
         AddUIPanel(canvasGO.transform, "BG", new Color(0.05f, 0.1f, 0.15f, 0.95f), Vector2.zero, Vector2.one);
 
         // Title
-        AddUIText(canvasGO.transform, "Title", "▼ LABORATORY QC ANALYSIS",
+        AddUIText(canvasGO.transform, "Title", "▼ QC FLASH SLURRY — VERIFIKASI AUTOCLAVE",
             new Color(0.3f, 0.9f, 0.6f), 30, FontStyle.Bold, TextAnchor.MiddleCenter,
             new Vector2(0, 0.85f), new Vector2(1, 1f));
 
         // Sample rows
         string[] sampleData = {
-            "FV1 HP (195°C):  Free acid 18.0 g/L | Ni 5.2 g/L | Co 0.45 g/L | Fe 0.8 g/L  ✓",
-            "FV2 MP (145°C):  Free acid 18.5 g/L | Ni 5.3 g/L | Co 0.46 g/L | Fe 0.7 g/L  ✓",
-            "FV3 LP (102°C):  Free acid 19.0 g/L | Ni 5.4 g/L | Co 0.47 g/L | Fe 0.6 g/L  ✓"
+            "FV1 HP slurry: Ni larut 5.2 g/L | Co 0.45 | Fe 0.8 | Acid 18.0  ✓",
+            "FV2 MP slurry: Ni larut 5.3 g/L | Co 0.46 | pH 1.2 | Solid 31%  ✓",
+            "FV3 LP slurry: 102°C / 1.05 atm | Ni recovery 94% | siap CCD  ✓"
         };
         for (int i = 0; i < 3; i++)
         {
@@ -1765,7 +1758,7 @@ public class Level8FlashTrainController : MonoBehaviour
 
         // Verdict
         AddUIText(canvasGO.transform, "Verdict",
-            "VERDICT: Semua dalam SOP. Slurry siap ke CCD.\n(Free acid 15-25, Ni > 4.5, Fe < 1.5)",
+            "VERDICT: Autoclave berhasil melindi Ni/Co. Slurry aman di-sampling setelah flash dan siap masuk CCD.\n(Beda dengan Level 9: CCD mengecek overflow PLS jernih.)",
             new Color(0.6f, 1f, 0.7f), 18, FontStyle.Italic, TextAnchor.MiddleCenter,
             new Vector2(0.05f, 0.16f), new Vector2(0.95f, 0.32f));
 
@@ -2286,7 +2279,7 @@ public class Level8FlashTrainController : MonoBehaviour
     [ContextMenu("Debug: Force Activate Level 8")]
     public void DebugActivate() => ActivateLevel();
 
-    [ContextMenu("Debug: Skip to Sampling")]
+    [ContextMenu("Debug: Skip to Flash Complete")]
     public void DebugSkipToSampling()
     {
         _fv1.openPercent = 1f; _fv1.isStable = true; _fv1.pressureCurrent = _fv1.pressureTarget; _fv1.tempCurrent = _fv1.tempTarget;
@@ -2295,7 +2288,9 @@ public class Level8FlashTrainController : MonoBehaviour
         SetStatusStripColor(_fv1StatusStrip, Color.green);
         SetStatusStripColor(_fv2StatusStrip, Color.green);
         SetStatusStripColor(_fv3StatusStrip, Color.green);
-        _phase = Phase.Sampling;
+        GameLevelManager.Instance?.NotifyLevel8FlashLetdownDone();
+        GameLevelManager.Instance?.NotifyLevel8SampleTaken();
+        _phase = Phase.MenungguLapor;
         if (_hud != null) _hud.ShowNotifPublic(_msgFv3Done, 6f);
     }
 }

@@ -1,0 +1,17 @@
+L9 CCD Playtest
+GameLevelManager=True
+CCDController=True
+Rig=XR Origin (XR Rig)
+DCS9=True current=Level10_CCD
+AfterCCD stable=True quest=True progress=100.0
+StationsCount=3
+LabCount=1
+SampleTh1 station=True label=PLS Th-1|[ ambil sample ]
+SampleTh3 station=True label=PLS Th-3|[ ambil sample ]
+SampleTh5 station=True label=PLS Th-5|[ ambil sample ]
+AllSamplesByLabel=False
+ForcedSampleState=true (runner cannot synthesize XR grab/old Input)
+Canvas=True
+LabAccepted=True
+VoiceFinal=True current=Level10_CCD
+Errors=0

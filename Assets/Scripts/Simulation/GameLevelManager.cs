@@ -99,6 +99,8 @@ public class GameLevelManager : MonoBehaviour
     public static event Action OnLevel3OreReachedSlurry;
     public static event Action<Level4Phase> OnLevel4PhaseChanged;
     public static event Action OnLevel3LaporanAkhirDiterima;
+    public static event Action OnLevel6ParameterChanged;
+    public static event Action OnLevel10CCDStartAuthorized;
 
     [Header("=== Status Level ===")]
     [SerializeField] private GameLevel _currentLevel = GameLevel.Level0_Tutorial;
@@ -163,6 +165,7 @@ public class GameLevelManager : MonoBehaviour
     private bool _level8SampleTaken;
     private bool _tundaTransisiLevel8 = true;
     private bool _level8MenungguPilihan;
+    private bool _level10CcdStartAuthorized;
     private bool _level10CcdComplete;
     private bool _level10SamplePLSAccepted;
     private bool _level11MhpComplete;
@@ -230,6 +233,11 @@ public class GameLevelManager : MonoBehaviour
             case GameLevel.Level7_Autoclave: DebugSkipKeLevel7(); break;
             case GameLevel.Level8_Monitoring: DebugSkipKeLevel8(); break;
             case GameLevel.Level9_FlashVessel: DebugSkipKeLevel9(); break;
+            case GameLevel.Level10_CCD: DebugSkipKeLevel9(); break;
+            case GameLevel.Level11_MHP: DebugSkipKeLevel10MHP(); break;
+            case GameLevel.Level12_TailingDischarge: DebugSkipKeLevel11TailingFilterPress(); break;
+            case GameLevel.Level13_TailingWaste: DebugSkipKeLevel12DryStack(); break;
+            case GameLevel.Level14_Emergency: DebugSkipKeLevel13EmergencyK3(); break;
             default:
                 AutoEquipApdLengkap();
                 MulaiLevel(target);
@@ -399,13 +407,13 @@ public class GameLevelManager : MonoBehaviour
         {
             level = GameLevel.Level10_CCD,
             namaLevel = "Level 9 - CCD Activation & PLS Sampling",
-            deskripsiQuest = "Aktifkan rangkaian CCD, ambil 3 sample PLS dari overflow thickener, submit ke lab QC, lalu lapor.",
+            deskripsiQuest = "Tekan DCS 9, observasi pemisahan CCD, ambil 3 sample PLS overflow, submit ke lab QC, lalu lapor.",
             nomorTombolDCS = 9,
             butuhVoiceReport = true,
             kataKunciVoice = "ccd aktif pls lulus qc",
             kataKunciVoiceAwal = "",
             laporanVoiceAwal = "",
-            laporanVoiceLengkap = "DCS, sistem CCD aktif. Pemisahan padat dan cair berjalan stabil.",
+            laporanVoiceLengkap = "DCS, CCD aktif, PLS lulus QC. Pemisahan padat-cair stabil dan overflow PLS siap ke neutralisasi.",
             audioBalasanNPC = "audio_level10_balasan"
         });
 
@@ -557,9 +565,8 @@ public class GameLevelManager : MonoBehaviour
                 break;
             case GameLevel.Level10_CCD:
                 data.kataKunciVoice = "ccd aktif pls lulus qc";
-                data.laporanVoiceLengkap = "DCS, sistem CCD aktif dan PLS overflow lulus QC lab. Free acid delapan belas gram per liter, Ni lima koma dua, siap ke neutralisasi.";
-                data.aliasTambahanPerBaris = "ccd active pls clear\nseparation started qc done\nccd aktif pls lulus";
-                break;
+                data.laporanVoiceLengkap = "DCS, CCD aktif, PLS lulus QC. Pemisahan padat-cair stabil dan overflow PLS siap ke neutralisasi.";
+                data.aliasTambahanPerBaris = "ccd active pls clear\nseparation started qc done\nccd aktif pls lulus\nsistem ccd aktif\npemisahan padat dan cair berjalan stabil";
                 break;
             case GameLevel.Level11_MHP:
                 data.kataKunciVoice = "mhp terbentuk";
@@ -608,6 +615,12 @@ public class GameLevelManager : MonoBehaviour
 
             if (!string.IsNullOrWhiteSpace(laporan.laporanVoiceLengkap))
                 data.laporanVoiceLengkap = laporan.laporanVoiceLengkap;
+
+            if (laporan.level == GameLevel.Level10_CCD)
+            {
+                data.kataKunciVoice = "ccd aktif pls lulus qc";
+                data.laporanVoiceLengkap = "DCS, CCD aktif, PLS lulus QC. Pemisahan padat-cair stabil dan overflow PLS siap ke neutralisasi.";
+            }
         }
     }
 
@@ -686,6 +699,7 @@ public class GameLevelManager : MonoBehaviour
         _level8FlashLetdownDone = false;
         _level8SampleTaken = false;
         _level8MenungguPilihan = false;
+        _level10CcdStartAuthorized = false;
         _level10CcdComplete = false;
         _level10SamplePLSAccepted = false;
         _level11MhpComplete = false;
@@ -898,7 +912,12 @@ public class GameLevelManager : MonoBehaviour
 
         if (_currentLevel == GameLevel.Level10_CCD && !_level10CcdComplete)
         {
-            Log("VOICE", "CCD belum stabil. Tunggu pemisahan padat-cair selesai dulu sebelum laporan HT.", "orange");
+            if (IsCcdActivationReport(keyword))
+            {
+                return AcceptLevel10CCDStartupReport(keyword, "VOICE REPORT");
+            }
+
+            Log("VOICE", "Lapor HT awal dulu: 'CCD siap, alirkan cairan dari flash vessel.' Setelah itu proses CCD akan berjalan.", "orange");
             return false;
         }
 
@@ -1369,6 +1388,20 @@ public class GameLevelManager : MonoBehaviour
                 return data.laporanVoiceLengkap; // "Field, slurry pump aktif. Flow rate..."
         }
 
+        if (level == GameLevel.Level6_AcidInjection)
+        {
+            if (!_level6OutletReportDone)
+                return string.IsNullOrWhiteSpace(data.laporanVoiceAwal)
+                    ? "Outlet pre-heater dibuka, segera salurkan ke autoclave."
+                    : data.laporanVoiceAwal;
+            if (!_level6SlurryReportDone)
+                return "DCS, slurry panas sudah masuk autoclave. Jalur pre-heater aman.";
+            if (!_level6DcsAcidReady)
+                return string.Empty;
+            if (!_level6AcidComplete)
+                return "Field acid skid aman.";
+        }
+
         return string.IsNullOrWhiteSpace(data.laporanVoiceLengkap) ? data.kataKunciVoice : data.laporanVoiceLengkap;
     }
 
@@ -1390,6 +1423,10 @@ public class GameLevelManager : MonoBehaviour
                 return string.IsNullOrWhiteSpace(data.kataKunciVoiceAwal) ? "outlet preheater dibuka" : data.kataKunciVoiceAwal;
             if (!_level6SlurryReportDone)
                 return "slurry masuk autoclave";
+            if (!_level6DcsAcidReady)
+                return string.Empty;
+            if (!_level6AcidComplete)
+                return "field acid skid aman";
             return data.kataKunciVoice;
         }
 
@@ -1479,11 +1516,55 @@ public class GameLevelManager : MonoBehaviour
         }
 
         if (_currentLevel == GameLevel.Level5_SteamValve && !_level5PreheaterReady) return Reject("Pre-heater belum mencapai suhu operasi.");
-        if (_currentLevel == GameLevel.Level6_AcidInjection) return HandleVoiceLevel6(data, laporan);
+        if (_currentLevel == GameLevel.Level6_AcidInjection)
+        {
+            if (!_level6OutletReportDone)
+            {
+                _level6OutletReportDone = true;
+                OnVoiceReportAccepted?.Invoke(laporan);
+                Log("VOICE FORCE", $"Laporan awal Level 6 diterima (force): '<i>{laporan}</i>'", "cyan");
+                return true;
+            }
+
+            if (!_level6SlurryReportDone)
+            {
+                if (!_level6SlurryMasukAutoclave)
+                    return Reject("Slurry belum masuk autoclave.");
+
+                _level6SlurryReportDone = true;
+                OnVoiceReportAccepted?.Invoke(laporan);
+                Log("VOICE FORCE", $"Laporan slurry Level 6 diterima (force): '<i>{laporan}</i>'", "cyan");
+                return true;
+            }
+
+            if (!_level6DcsAcidReady)
+                return Reject("Acid Dose, Pump Stroke, dan pH Leach belum sesuai target.");
+
+            if (!_level6AcidComplete)
+            {
+                OnVoiceReportAccepted?.Invoke(laporan);
+                Log("VOICE FORCE", $"Laporan field acid skid diterima (force): '<i>{laporan}</i>'", "cyan");
+                return true;
+            }
+
+            _voiceReportSudahDilakukan = true;
+            OnVoiceReportAccepted?.Invoke(laporan);
+            Log("VOICE FORCE", $"Laporan akhir Level 6 diterima (force): '<i>{laporan}</i>'", "cyan");
+            CekKondisiLevelSelesai();
+            return true;
+        }
         if (_currentLevel == GameLevel.Level7_Autoclave && !_level7AutoclaveInspected) return Reject("Autoclave belum selesai diinspeksi.");
         if (_currentLevel == GameLevel.Level8_Monitoring && !_level8FlashLetdownDone) return Reject("Flash letdown belum selesai.");
         if (_currentLevel == GameLevel.Level9_FlashVessel && Mathf.Abs(_tekananSaatIni - data.targetTekanan) > 1.5f) return Reject("Flash vessel belum stabil.");
-        if (_currentLevel == GameLevel.Level10_CCD && !_level10CcdComplete) return Reject("CCD belum stabil.");
+        if (_currentLevel == GameLevel.Level10_CCD && !_level10CcdComplete)
+        {
+            if (IsCcdActivationReport(laporan))
+            {
+                return AcceptLevel10CCDStartupReport(laporan, "VOICE FORCE");
+            }
+
+            return Reject("CCD belum stabil.");
+        }
         if (_currentLevel == GameLevel.Level10_CCD && _level10CcdComplete && !_level10SamplePLSAccepted) return Reject("Sample PLS QC belum lulus.");
         if (_currentLevel == GameLevel.Level11_MHP && !_level11MhpComplete) return Reject("MHP belum siap.");
         if (_currentLevel == GameLevel.Level12_TailingDischarge && !_level12TailingFilterComplete) return Reject("Tailing treatment belum selesai.");
@@ -1509,16 +1590,23 @@ public class GameLevelManager : MonoBehaviour
     {
         _acidRatioSaatIni = Mathf.Clamp(nilai, 0f, 500f);
         CekParameterLevel6();
+        OnLevel6ParameterChanged?.Invoke();
     }
 
     public void SetSuhu(float nilai) => _suhuSaatIni = nilai;
     public void SetTekanan(float nilai) => _tekananSaatIni = nilai;
     public void SetRPM(float nilai) => _rpmSaatIni = nilai;
-    public void SetAcidStroke(float nilai) => _acidStrokeSaatIni = Mathf.Clamp(nilai, 0f, 100f);
+    public void SetAcidStroke(float nilai)
+    {
+        _acidStrokeSaatIni = Mathf.Clamp(nilai, 0f, 100f);
+        CekParameterLevel6();
+        OnLevel6ParameterChanged?.Invoke();
+    }
     public void SetPH(float nilai)
     {
         _phSaatIni = nilai;
         CekParameterLevel6();
+        OnLevel6ParameterChanged?.Invoke();
     }
 
     public float FlowRate => _flowRateSaatIni;
@@ -1566,6 +1654,9 @@ public class GameLevelManager : MonoBehaviour
     public bool Level6SlurryReportDone => _level6SlurryReportDone;
     public bool Level6DcsAcidReady => _level6DcsAcidReady;
     public bool Level6AcidComplete => _level6AcidComplete;
+    public bool Level6AcidDoseReady => Mathf.Abs(_acidRatioSaatIni - 350f) <= 10f;
+    public bool Level6PumpStrokeReady => Mathf.Abs(_acidStrokeSaatIni - 70f) <= 5f;
+    public bool Level6PhLeachReady => Mathf.Abs(_phSaatIni - 1f) <= 0.15f || _phSaatIni <= 1.1f;
 
     public void NotifyLevel5PreheaterReady()
     {
@@ -1583,6 +1674,7 @@ public class GameLevelManager : MonoBehaviour
 
         _level6DcsAcidReady = true;
         _level6AcidComplete = true;
+        OnLevel6ParameterChanged?.Invoke();
         Log("LEVEL 6", "Acid skid verified and H2SO4 flow reached autoclave. Final HT report is now allowed.", "green");
     }
 
@@ -1601,6 +1693,7 @@ public class GameLevelManager : MonoBehaviour
             return;
 
         _level6DcsAcidReady = true;
+        OnLevel6ParameterChanged?.Invoke();
         Log("LEVEL 6", "DCS acid ratio 350 kg/ton dan pH 1.0 tercapai. Lanjut verifikasi field skid asam.", "green");
     }
 
@@ -1700,7 +1793,7 @@ public class GameLevelManager : MonoBehaviour
             return;
 
         _level10CcdComplete = true;
-        Log("LEVEL 10", "CCD separation stable. Final HT report is now allowed.", "green");
+        Log("LEVEL 10", "CCD separation stable. Lanjut ambil 3 sample PLS dan validasi QC lab sebelum laporan final.", "green");
     }
 
     public void NotifyLevel10SamplePLSAccepted()
@@ -1714,6 +1807,23 @@ public class GameLevelManager : MonoBehaviour
 
     public bool Level10CCDComplete => _level10CcdComplete;
     public bool Level10SamplePLSAccepted => _level10SamplePLSAccepted;
+    public bool Level10CCDStartAuthorized => _level10CcdStartAuthorized;
+
+    private bool AcceptLevel10CCDStartupReport(string laporan, string logLabel)
+    {
+        if (_currentLevel != GameLevel.Level10_CCD)
+            return false;
+
+        if (!_level10CcdStartAuthorized)
+        {
+            _level10CcdStartAuthorized = true;
+            OnLevel10CCDStartAuthorized?.Invoke();
+        }
+
+        OnVoiceReportAccepted?.Invoke(laporan);
+        Log(logLabel, $"Laporan awal CCD diterima: '<i>{laporan}</i>'. Cairan dari flash vessel dialirkan ke CCD.", "cyan");
+        return true;
+    }
 
     public void NotifyLevel11MHPComplete()
     {
@@ -1786,12 +1896,12 @@ public class GameLevelManager : MonoBehaviour
 
         var data = _dataLevel[GameLevel.Level6_AcidInjection];
         bool acidOK = Mathf.Abs(_acidRatioSaatIni - data.targetAcidRatio) <= 10f;
+        bool strokeOK = Mathf.Abs(_acidStrokeSaatIni - 70f) <= 5f;
         bool phOK = Mathf.Abs(_phSaatIni - data.targetPH) <= 0.15f || _phSaatIni <= 1.1f;
-        if (acidOK && phOK)
+        if (acidOK && strokeOK && phOK)
         {
-            Log("ACID OK", $"Rasio asam {_acidRatioSaatIni} kg/ton dan pH {_phSaatIni:F1}. Target DCS tercapai, lanjut verifikasi skid asam.", "green");
+            Log("ACID OK", $"Rasio asam {_acidRatioSaatIni} kg/ton, stroke {_acidStrokeSaatIni:F0}%, dan pH {_phSaatIni:F1}. Target DCS tercapai.", "green");
             _dcsTombolSudahDitekan = true;
-            _level6DcsAcidReady = true;
         }
     }
 
@@ -1894,6 +2004,24 @@ public class GameLevelManager : MonoBehaviour
         }
 
         return false;
+    }
+
+    private bool IsCcdActivationReport(string ucapan)
+    {
+        string spoken = NormalizeVoiceText(ucapan);
+        if (string.IsNullOrWhiteSpace(spoken))
+            return false;
+
+        return TextVoiceCocok(spoken, "DCS, sistem CCD aktif. Pemisahan padat dan cair berjalan stabil.")
+            || TextVoiceCocok(spoken, "CCD siap, alirkan cairan dari flash vessel")
+            || TextVoiceCocok(spoken, "ccd siap")
+            || TextVoiceCocok(spoken, "alirkan cairan dari flash vessel")
+            || TextVoiceCocok(spoken, "flash vessel ke ccd")
+            || TextVoiceCocok(spoken, "sistem ccd aktif")
+            || TextVoiceCocok(spoken, "ccd aktif")
+            || TextVoiceCocok(spoken, "pemisahan padat dan cair berjalan stabil")
+            || TextVoiceCocok(spoken, "separation started")
+            || TextVoiceCocok(spoken, "ccd active");
     }
 
     private IEnumerable<string> GetVoiceAliasesDinamis(GameLevel level)
@@ -2199,7 +2327,50 @@ public class GameLevelManager : MonoBehaviour
         // Trigger laporan outlet preheater supaya phase masuk ke teleport ke field slurry valve.
         OnVoiceReportAccepted?.Invoke("outlet preheater dibuka");
         TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl6", fallbackName: "SpawnPoint_DCS");
-        Log("DEBUG", "Skip ke Level 6. Putar handwheel preheater -> cairan masuk autoclave -> lapor 'slurry masuk autoclave' -> set acid 350/stroke 70%/ARM -> lapor HT 'field acid skid aman' -> lapor akhir.", "yellow");
+        Log("DEBUG", "Skip ke Level 6. Putar handwheel preheater -> cairan masuk autoclave -> lapor 'slurry masuk autoclave' -> set acid 350/stroke 70% -> lapor HT 'field acid skid aman' -> lapor akhir.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Level 6 - Atur Parameter Acid (DCS)")]
+    private void DebugLevel6AturParameterAcid()
+    {
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level6_AcidInjection);
+        TryOnDCSTombolDitekan(6);
+
+        _level6OutletReportDone = true;
+        _level6SlurryMasukAutoclave = true;
+        _level6SlurryReportDone = true;
+        _level6DcsAcidReady = false;
+
+        Level6AcidInjectionController controller =
+            FindFirstObjectByType<Level6AcidInjectionController>(FindObjectsInactive.Include);
+        if (controller == null)
+        {
+            Log("DEBUG", "Level6AcidInjectionController tidak ditemukan.", "red");
+            return;
+        }
+
+        controller.DebugEnterDcsAcidSetup();
+        TeleportPlayerKeSpawnPoint("SpawnPoint_DCS", fallbackName: "SpawnPoint_Lvl6");
+        Log("DEBUG", "Masuk langsung ke DCS Acid. Atur Acid Dose 350, Pump Stroke 70%, lalu pH Leach 1.0.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Level 6 - Isi Parameter Acid Target")]
+    private void DebugLevel6IsiParameterAcidTarget()
+    {
+        if (_currentLevel != GameLevel.Level6_AcidInjection)
+            DebugLevel6AturParameterAcid();
+
+        Level6AcidInjectionController controller =
+            FindFirstObjectByType<Level6AcidInjectionController>(FindObjectsInactive.Include);
+        if (controller == null)
+        {
+            Log("DEBUG", "Level6AcidInjectionController tidak ditemukan.", "red");
+            return;
+        }
+
+        controller.DebugSetDcsAcidTarget();
+        Log("DEBUG", "Parameter Level 6 diisi: Acid Ratio 350, Pump Stroke 70%, pH 1.0. Status otomatis ARMED.", "green");
     }
 
     [ContextMenu("DEBUG: Skip ke Level 6 - Acid Skid (Field)")]
@@ -2256,7 +2427,7 @@ public class GameLevelManager : MonoBehaviour
         MulaiLevel(GameLevel.Level8_Monitoring);
         // Tekan tombol DCS 8 secara otomatis supaya controller langsung mulai sequence (teleport + buka valve).
         TryOnDCSTombolDitekan(8);
-        Log("DEBUG", "Skip ke Level 8 (Flash Vessel & Letdown). Player ter-teleport ke depan FV1. Putar 3 handwheel (FV1->FV2->FV3) atau tekan 1/2/3, ambil sample Q/W/E, tekan L submit lab, lapor HT.", "yellow");
+        Log("DEBUG", "Skip ke Level 8 (Flash Vessel & Letdown). Player ter-teleport ke depan FV1. Putar 3 handwheel (FV1->FV2->FV3) atau tekan 1/2/3, lalu lapor HT.", "yellow");
     }
 
     [ContextMenu("DEBUG: Auto-Complete Level 8 (semua flag)")]
@@ -2269,7 +2440,7 @@ public class GameLevelManager : MonoBehaviour
         }
         NotifyLevel8FlashLetdownDone();
         NotifyLevel8SampleTaken();
-        Log("DEBUG", "Flash letdown + sample Level 8 ter-flag. Tinggal lapor HT.", "green");
+        Log("DEBUG", "Flash letdown Level 8 ter-flag. Tinggal lapor HT.", "green");
     }
 
     [ContextMenu("DEBUG: Skip ke Level 9 (CCD)")]
@@ -2279,7 +2450,154 @@ public class GameLevelManager : MonoBehaviour
         AutoEquipApdLengkap();
         MulaiLevel(GameLevel.Level10_CCD);
         TryOnDCSTombolDitekan(9);
-        Log("DEBUG", "Skip ke Level 9 (CCD). Tombol DCS 9 sudah ditekan otomatis. Aktifkan CCD lalu lapor HT 'CCD aktif'.", "yellow");
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl9", fallbackName: "SpawnPoint_DCS");
+        Log("DEBUG", "Skip ke Level 9 (CCD). DCS 9 sudah ditekan. Amati settling CCD, ambil 3 sample PLS, lalu masuk Lab QC.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Level 9 - Masuk Lab QC PLS")]
+    private void DebugLevel9MasukLabQcPls()
+    {
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level10_CCD);
+        TryOnDCSTombolDitekan(9);
+
+        Level10CCDController controller = FindFirstObjectByType<Level10CCDController>(FindObjectsInactive.Include);
+        if (controller == null)
+        {
+            NotifyLevel10CCDComplete();
+            TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl9", fallbackName: "SpawnPoint_DCS");
+            Log("DEBUG", "Level10CCDController tidak ditemukan. CCD di-flag stabil, tapi Lab QC tidak bisa dibuka otomatis.", "red");
+            return;
+        }
+
+        controller.DebugEnterLabQCFromGameLevelManager(startLabSequence: false);
+        Log("DEBUG", "Level 9 Lab QC siap: 3 sample PLS sudah di inventory/lab. Tekan L/G/Y untuk chain-of-custody, filtrasi, pH/free acid, ICP-OES, dan validasi CCD.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Level 9 - Mulai Sequence Lab QC PLS")]
+    private void DebugLevel9MulaiSequenceLabQcPls()
+    {
+        AutoEquipApdLengkap();
+        MulaiLevel(GameLevel.Level10_CCD);
+        TryOnDCSTombolDitekan(9);
+
+        Level10CCDController controller = FindFirstObjectByType<Level10CCDController>(FindObjectsInactive.Include);
+        if (controller == null)
+        {
+            NotifyLevel10CCDComplete();
+            Log("DEBUG", "Level10CCDController tidak ditemukan. Tidak bisa start sequence Lab QC.", "red");
+            return;
+        }
+
+        controller.DebugEnterLabQCFromGameLevelManager(startLabSequence: true);
+        Log("DEBUG", "Sequence Lab QC PLS dimulai. Ikuti tombol lab: login sample, TSS/filter, pH/free acid, ICP-OES metals, validasi window CCD.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Auto-Complete Level 9 (CCD + Lab QC PLS)")]
+    private void DebugAutoCompleteLevel9CcdLab()
+    {
+        if (_currentLevel != GameLevel.Level10_CCD)
+            DebugLevel9MasukLabQcPls();
+
+        NotifyLevel10CCDComplete();
+        Level10CCDController controller = FindFirstObjectByType<Level10CCDController>(FindObjectsInactive.Include);
+        if (controller != null)
+            controller.DebugAcceptLabQCFromGameLevelManager();
+        else
+            NotifyLevel10SamplePLSAccepted();
+
+        Log("DEBUG", "Level 9 CCD + Lab QC ter-flag PASS. Tinggal lapor HT: 'CCD aktif, PLS lulus QC'.", "green");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 10 (MHP / Neutralization)")]
+    private void DebugSkipKeLevel10MHP()
+    {
+        AutoEquipApdLengkap();
+        _level10CcdComplete = true;
+        _level10SamplePLSAccepted = true;
+        MulaiLevel(GameLevel.Level11_MHP);
+        TryOnDCSTombolDitekan(10);
+        SetPH(1.35f);
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl11", fallbackName: "SpawnPoint_DCS");
+        Log("DEBUG", "Skip ke Level 10 (MHP). DCS 10 sudah ditekan. Jalankan: sample PLS awal -> Fe removal pH 2.5 -> Al/Cr pH 4 -> validasi -> MgO pH 7 -> filter MHP -> warehouse.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Auto-Complete Level 10 (MHP PASS)")]
+    private void DebugAutoCompleteLevel10MHP()
+    {
+        if (_currentLevel != GameLevel.Level11_MHP)
+            DebugSkipKeLevel10MHP();
+
+        SetPH(7.0f);
+        NotifyLevel11MHPComplete();
+        Log("DEBUG", "Level 10 MHP ter-flag PASS. Tinggal lapor HT: 'MHP terbentuk'.", "green");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 11 (Tailing Neutralization + Filter Press)")]
+    private void DebugSkipKeLevel11TailingFilterPress()
+    {
+        AutoEquipApdLengkap();
+        _level11MhpComplete = true;
+        MulaiLevel(GameLevel.Level12_TailingDischarge);
+        TryOnDCSTombolDitekan(11);
+        SetPH(2.3f);
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl12", fallbackName: "SpawnPoint_DCS");
+        Log("DEBUG", "Skip ke Level 11 (Tailing Filter Press). DCS 11 sudah ditekan. Jalankan limestone dosing sampai pH aman, lalu run filter press sampai cake moisture <25%.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Auto-Complete Level 11 (Filter Press PASS)")]
+    private void DebugAutoCompleteLevel11TailingFilterPress()
+    {
+        if (_currentLevel != GameLevel.Level12_TailingDischarge)
+            DebugSkipKeLevel11TailingFilterPress();
+
+        SetPH(8.0f);
+        NotifyLevel12TailingFilterComplete();
+        Log("DEBUG", "Level 11 tailing neutralization + filter press ter-flag PASS. Tinggal lapor HT: 'limbah dialirkan'.", "green");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 12 (Dry Stack Tailing)")]
+    private void DebugSkipKeLevel12DryStack()
+    {
+        AutoEquipApdLengkap();
+        _level12TailingFilterComplete = true;
+        MulaiLevel(GameLevel.Level13_TailingWaste);
+        TryOnDCSTombolDitekan(12);
+        SetPH(8.5f);
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl13", fallbackName: "SpawnPoint_Lvl12");
+        Log("DEBUG", "Skip ke Level 12 (Dry Stack). DCS 12 sudah ditekan. Jalankan stacking/compaction, closure cap, piezometer, seepage pond, lalu compliance QC.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Auto-Complete Level 12 (Dry Stack PASS)")]
+    private void DebugAutoCompleteLevel12DryStack()
+    {
+        if (_currentLevel != GameLevel.Level13_TailingWaste)
+            DebugSkipKeLevel12DryStack();
+
+        SetPH(8.5f);
+        NotifyLevel13DryStackComplete();
+        Log("DEBUG", "Level 12 dry stack ter-flag PASS. Tinggal lapor HT: 'tailing aman'.", "green");
+    }
+
+    [ContextMenu("DEBUG: Skip ke Level 13 (Emergency K3)")]
+    private void DebugSkipKeLevel13EmergencyK3()
+    {
+        AutoEquipApdLengkap();
+        _level13DryStackComplete = true;
+        MulaiLevel(GameLevel.Level14_Emergency);
+        TryOnDCSTombolDitekan(14);
+        TeleportPlayerKeSpawnPoint("SpawnPoint_Lvl13", fallbackName: "SpawnPoint_DCS");
+        Log("DEBUG", "Skip ke Level 13 (Emergency K3). Tekan/aktifkan ESD merah, lalu lapor HT emergency sesuai SOP evakuasi.", "yellow");
+    }
+
+    [ContextMenu("DEBUG: Auto-Complete Level 13 (Emergency ESD)")]
+    private void DebugAutoCompleteLevel13EmergencyK3()
+    {
+        if (_currentLevel != GameLevel.Level14_Emergency)
+            DebugSkipKeLevel13EmergencyK3();
+
+        NotifyLevel14EsdPressed();
+        Log("DEBUG", "Level 13 emergency: ESD ter-flag aktif. Tinggal lapor HT emergency.", "green");
     }
 
     /// <summary>

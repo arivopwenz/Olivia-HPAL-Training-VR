@@ -9,9 +9,9 @@ using UnityEngine;
 /// Gameplay INTERAKTIF & INFORMATIF (HPAL nikel):
 /// PLS jernih dari CCD dimurnikan 3 tahap dosing reagen oleh operator, lalu MHP
 /// (Mixed Hydroxide Precipitate, Ni-Co) di-sampling + lulus Lab QC, lalu lapor HT.
-///   Tahap 1 PRA-NETRALISASI  : LIMESTONE (CaCO3)  pH 1.5->3.5  buang Fe/Al (endapan coklat)
-///   Tahap 2 POLISHING        : KAPUR Ca(OH)2      pH 3.5->5.0  buang Al/Cr/sisa Fe
-///   Tahap 3 PRESIPITASI MHP  : MAGNESIA MgO        pH 5.0->7.5  endap Ni(OH)2+Co(OH)2 (hijau)
+///   Tahap 1 PRA-NETRALISASI  : LIMESTONE/LIME      pH 1.35->2.5  buang Fe (endapan coklat)
+///   Tahap 2 POLISHING        : KAPUR Ca(OH)2       pH 2.5->4.0   buang Al/Cr/sisa Fe
+///   Tahap 3 PRESIPITASI MHP  : MAGNESIA MgO        pH 4.0->7.0   endap Ni(OH)2+Co(OH)2 (hijau)
 /// Operator menekan tombol dosing tiap tahap (XR ray/poke ATAU keyboard SPACE/1),
 /// pH naik live di panel info, larutan berubah warna + skid dosing beranimasi.
 /// Lalu jalan ke stasiun sampling (proximity) -> Lab QC pop-up assay Ni/Co -> ACCEPT -> lapor HT.
@@ -56,14 +56,14 @@ public class Level11MHPController : MonoBehaviour
     }
     private readonly Stage[] _stages = new[]
     {
-        new Stage{ reagent="LIMESTONE (CaCO3)", formula="CaCO3", removes="Fe3+ / Al3+ (endapan coklat + gypsum CaSO4)",
-            reaction="Fe2(SO4)3 + 3CaCO3 + 3H2O -> 2Fe(OH)3 + 3CaSO4 + 3CO2", pHFrom=1.5f, pHTo=3.5f,
+        new Stage{ reagent="LIMESTONE / LIME SLURRY", formula="CaCO3 / Ca(OH)2", removes="Fe3+ turun sebagai Fe(OH)3 coklat; Ni-Co tetap larut",
+            reaction="Fe3+ + 3OH- -> Fe(OH)3(s)", pHFrom=1.35f, pHTo=2.5f,
             liquidColor=new Color(0.45f,0.27f,0.12f), skidPrefix="Neutralization_Reagent_Dosing_Skid" },
-        new Stage{ reagent="KAPUR / SLAKED LIME (Ca(OH)2)", formula="Ca(OH)2", removes="Al, Cr, sisa Fe (polishing)",
-            reaction="2Al3+ + 3Ca(OH)2 -> 2Al(OH)3 + 3Ca2+   (impurity removal)", pHFrom=3.5f, pHTo=5.0f,
+        new Stage{ reagent="KAPUR / SLAKED LIME", formula="Ca(OH)2", removes="Al/Cr dan sisa Fe turun; Ni-Co masih dijaga larut",
+            reaction="Al3+ + 3OH- -> Al(OH)3(s)", pHFrom=2.5f, pHTo=4.0f,
             liquidColor=new Color(0.34f,0.45f,0.42f), skidPrefix="Lime_Dosing_Skid" },
-        new Stage{ reagent="MAGNESIA (MgO) slurry", formula="MgO", removes="Ni & Co diendapkan jadi MHP (hijau)",
-            reaction="NiSO4 + MgO + H2O -> Ni(OH)2(s) + MgSO4   (Co serupa)", pHFrom=5.0f, pHTo=7.5f,
+        new Stage{ reagent="MAGNESIA / MgO slurry", formula="MgO", removes="Ni & Co diendapkan jadi MHP (hijau)",
+            reaction="NiSO4 + MgO + H2O -> Ni(OH)2(s) + MgSO4   (Co serupa)", pHFrom=4.0f, pHTo=7.0f,
             liquidColor=new Color(0.18f,0.62f,0.40f), skidPrefix="MGO_Dosing_Skid" },
     };
 
@@ -71,10 +71,23 @@ public class Level11MHPController : MonoBehaviour
     private GameLevelManager _glm;
     private Coroutine _seq;
     private bool _levelActive, _processStarted;
-    private int _stageIndex;          // 0..2 = dosing, 3 = sampling, 4 = lab, 5 = report
+    private const int PhaseInitialSample = -10;
+    private const int PhaseFeDosing = 0;
+    private const int PhaseFeSeparation = 10;
+    private const int PhaseAlCrDosing = 1;
+    private const int PhaseValidationSample = 11;
+    private const int PhaseTransferValve = 12;
+    private const int PhaseMhpDosing = 2;
+    private const int PhaseFilterProduct = 13;
+    private const int PhaseEvaluation = 4;
+    private const int PhaseWarehouse = 5;
+    private int _stageIndex;
     private bool _dosing;
     private float _pHCurrent = 1.5f, _mhpQuality;
     private bool _stage1, _stage2, _stage3, _sampleTaken, _labAccepted, _questComplete;
+    private bool _initialSampleAnalyzed, _feSeparated, _validationSampleTaken, _transferValveOpen, _filterProductDone;
+    private float _feConcentration, _alConcentration, _niConcentration, _coConcentration;
+    private float _reagentFlow, _tankLevel, _turbidity;
 
     private readonly List<Transform> _skidMotors = new List<Transform>();
     private GameObject _doseButton; private TextMesh _doseLabel;
@@ -136,9 +149,12 @@ public class Level11MHPController : MonoBehaviour
         if (!_levelActive) { SetProcessVisuals(false); ShowDoseButton(false); ShowInfoPanel(false); HideLab(); Stop(_agitatorAudio); HideDispatchStation(); SetFillStream(false); RestoreWarehouseHeaps(); return; }
 
         _glm = GameLevelManager.Instance;
-        _processStarted = false; _stageIndex = 0; _dosing = false;
+        _processStarted = false; _stageIndex = PhaseInitialSample; _dosing = false;
         _pHCurrent = _stages[0].pHFrom; _mhpQuality = 0f;
         _stage1 = _stage2 = _stage3 = _sampleTaken = _labAccepted = _questComplete = false;
+        _initialSampleAnalyzed = _feSeparated = _validationSampleTaken = _transferValveOpen = _filterProductDone = false;
+        _feConcentration = 3.8f; _alConcentration = 1.7f; _niConcentration = 5.1f; _coConcentration = 0.52f;
+        _reagentFlow = 0f; _tankLevel = 62f; _turbidity = 95f;
         _warehouseStarted = _dispatching = _baggingDone = false; _dispatchProgress = 0f; HideDispatchStation(); SetFillStream(false); EnsureWarehouseRefs(); RestoreWarehouseHeaps();
         PushPH(); SetProcessVisuals(false); ShowDoseButton(false); ShowInfoPanel(false); HideLab();
         if (_hud != null) _hud.ShowNotifPublic("Level 10: Larutan PLS dari CCD masuk pemurnian. Tekan DCS 10 untuk mulai.");
@@ -163,8 +179,8 @@ public class Level11MHPController : MonoBehaviour
         if (_feedLiquid != null) _feedLiquid.SetActive(true);
         PlayAudio(_agitatorAudio, 0.34f);
         BuildOperatorStation();
-        _stageIndex = 0;
-        BeginDoseStage();
+        _stageIndex = PhaseInitialSample;
+        BeginOperatorStep();
         _seq = null;
     }
 
@@ -174,21 +190,21 @@ public class Level11MHPController : MonoBehaviour
         AnimateAgitators();
         if (_dosing) AnimateSkid();
 
-        // Dosing input (keyboard fallback): SPACE atau 1
-        if (!_dosing && _stageIndex <= 2 && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Alpha1)))
-            TryDose();
+        // Operator input (keyboard fallback): SPACE atau 1
+        if (!_dosing && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Alpha1)))
+            TryOperatorAction();
 
-        // Sampling: proximity ke stasiun sampling
-        if (_stageIndex == 3 && !_sampleTaken) UpdateSamplingProximity();
+        // Legacy proximity fallback untuk sample MHP kalau player mendekati stasiun sample.
+        if (_stageIndex == PhaseFilterProduct && !_filterProductDone) UpdateSamplingProximity();
 
         // Lab submit (L) + Accept (Enter) fallback
-        if (_stageIndex == 4 && !_labAccepted)
+        if (_stageIndex == PhaseEvaluation && !_labAccepted)
         {
             if (_labCanvas == null && Input.GetKeyDown(KeyCode.L)) ShowLabCanvas();
             if (_labCanvas != null && _labCanvas.activeSelf && _pendingClick != null && Input.GetKeyDown(KeyCode.Return))
             { var a = _pendingClick; _pendingClick = null; a(); }
         }
-        if (_stageIndex == 5 && !_baggingDone && !_dispatching && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Alpha1)))
+        if (_stageIndex == PhaseWarehouse && !_baggingDone && !_dispatching && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Alpha1)))
             TryDispatch();
         if (_dispatching) UpdateFillStream();
         if (_warehouseStarted) UpdateWarehousePanel();
@@ -196,6 +212,116 @@ public class Level11MHPController : MonoBehaviour
     }
 
     // ============================================================ DOSING
+    private void BeginOperatorStep()
+    {
+        ShowInfoPanel(true);
+        ShowDoseButton(true);
+        if (_hud != null)
+            _hud.ShowNotifPublic(GetCurrentOperatorInstruction(), 7f);
+    }
+
+    private string GetCurrentOperatorInstruction()
+    {
+        switch (_stageIndex)
+        {
+            case PhaseInitialSample: return "Ambil sampel PLS outlet CCD, masukkan ke analyzer, lalu baca Fe/Al.";
+            case PhaseFeDosing: return "Aktifkan dosing pump Fe removal. Target pH 2.5.";
+            case PhaseFeSeparation: return "Pisahkan endapan Fe coklat. Pastikan overflow lebih jernih.";
+            case PhaseAlCrDosing: return "Lanjut dosing Al/Cr removal. Target pH 4.0.";
+            case PhaseValidationSample: return "Ambil sampel validasi. Fe/Al harus rendah, Ni-Co masih larut.";
+            case PhaseTransferValve: return "Buka valve transfer ke MHP tank. Line tailing harus tertutup.";
+            case PhaseMhpDosing: return "Naikkan pH sekitar 7.0 untuk mengendapkan Ni-Co menjadi MHP.";
+            case PhaseFilterProduct: return "Filter slurry MHP menjadi wet cake produk.";
+            case PhaseEvaluation: return "Baca evaluasi kualitas proses MHP.";
+            default: return "Lanjutkan prosedur MHP.";
+        }
+    }
+
+private string GetPhaseName()
+    {
+        switch (_stageIndex)
+        {
+            case PhaseInitialSample: return "Sample PLS outlet CCD + analyzer";
+            case PhaseFeDosing: return "Fe removal - naikkan pH ke 2.5";
+            case PhaseFeSeparation: return "Pemisahan endapan Fe";
+            case PhaseAlCrDosing: return "Al/Cr removal - naikkan pH ke 4.0";
+            case PhaseValidationSample: return "Sample validasi impurity";
+            case PhaseTransferValve: return "Transfer valve ke MHP tank";
+            case PhaseMhpDosing: return "Presipitasi MHP - pH sekitar 7";
+            case PhaseFilterProduct: return "Filter produk MHP";
+            case PhaseEvaluation: return "Evaluasi kualitas proses";
+            case PhaseWarehouse: return "Bagging & dispatch MHP";
+            default: return "Purification / MHP";
+        }
+    }
+
+private string GetActionButtonLabel()
+    {
+        switch (_stageIndex)
+        {
+            case PhaseInitialSample: return "AMBIL SAMPLE\n+ ANALYZER";
+            case PhaseFeDosing: return "DOSING Fe\npH 2.5";
+            case PhaseFeSeparation: return "PISAHKAN\nENDAPAN Fe";
+            case PhaseAlCrDosing: return "DOSING Al/Cr\npH 4.0";
+            case PhaseValidationSample: return "SAMPLE\nVALIDASI";
+            case PhaseTransferValve: return "BUKA VALVE\nKE MHP";
+            case PhaseMhpDosing: return "DOSING MHP\npH 7";
+            case PhaseFilterProduct: return "FILTER\nMHP CAKE";
+            case PhaseEvaluation: return "BACA\nEVALUASI";
+            default: return "AKSI\nOPERATOR";
+        }
+    }
+
+
+
+    private void TryOperatorAction()
+    {
+        if (_dosing) return;
+
+        switch (_stageIndex)
+        {
+            case PhaseInitialSample:
+                _initialSampleAnalyzed = true;
+                _stageIndex = PhaseFeDosing;
+                if (_hud != null) _hud.ShowNotifPublic("Analyzer: Fe dan Al masih tinggi. Lakukan Fe removal pH 2.5.", 6f);
+                BeginDoseStage();
+                break;
+            case PhaseFeDosing:
+            case PhaseAlCrDosing:
+            case PhaseMhpDosing:
+                TryDose();
+                break;
+            case PhaseFeSeparation:
+                _feSeparated = true;
+                _turbidity = 45f;
+                _stageIndex = PhaseAlCrDosing;
+                if (_hud != null) _hud.ShowNotifPublic("Endapan Fe dipisahkan. Overflow Ni-Co lanjut ke Al/Cr removal.", 6f);
+                BeginDoseStage();
+                break;
+            case PhaseValidationSample:
+                _validationSampleTaken = true;
+                _sampleTaken = true;
+                _stageIndex = PhaseTransferValve;
+                if (_hud != null) _hud.ShowNotifPublic("Validasi OK: Fe/Al rendah, Ni-Co masih tinggi. Buka valve ke MHP tank.", 6f);
+                BeginOperatorStep();
+                break;
+            case PhaseTransferValve:
+                _transferValveOpen = true;
+                _stageIndex = PhaseMhpDosing;
+                if (_polishToMhpLiquid != null) _polishToMhpLiquid.SetActive(true);
+                if (_hud != null) _hud.ShowNotifPublic("Valve ke MHP tank terbuka. Mulai presipitasi Ni-Co.", 6f);
+                BeginDoseStage();
+                break;
+            case PhaseFilterProduct:
+                _filterProductDone = true;
+                _stageIndex = PhaseEvaluation;
+                ShowDoseButton(false);
+                if (_mhpSampleProduct != null) { _mhpSampleProduct.SetActive(true); Tint(_mhpSampleProduct, new Color(0.15f, 0.6f, 0.38f)); }
+                if (_hud != null) _hud.ShowNotifPublic("Filter press selesai. Wet cake MHP terbentuk. Tekan L untuk evaluasi kualitas.", 6f);
+                break;
+        }
+    }
+
     private void BeginDoseStage()
     {
         var s = _stages[_stageIndex];
@@ -208,7 +334,7 @@ public class Level11MHPController : MonoBehaviour
 
     private void TryDose()
     {
-        if (_dosing || _stageIndex > 2) return;
+        if (_dosing || _stageIndex < 0 || _stageIndex > 2) return;
         _dosing = true;
         ShowDoseButton(false);
         _seq = StartCoroutine(DoseRoutine(_stageIndex));
@@ -225,6 +351,11 @@ public class Level11MHPController : MonoBehaviour
             t += Time.deltaTime; _doseProgress = Mathf.Clamp01(t / _doseDuration);
             float e = Smooth(_doseProgress);
             _pHCurrent = Mathf.Lerp(s.pHFrom, s.pHTo, e);
+            _reagentFlow = Mathf.Lerp(0f, idx == 2 ? 18f : 12f, e);
+            _tankLevel = Mathf.Lerp(_tankLevel, idx == 2 ? 78f : 68f, Time.deltaTime * 0.35f);
+            if (idx == 0) _feConcentration = Mathf.Lerp(3.8f, 0.22f, e);
+            if (idx == 1) { _feConcentration = Mathf.Lerp(0.22f, 0.06f, e); _alConcentration = Mathf.Lerp(1.7f, 0.08f, e); _turbidity = Mathf.Lerp(45f, 18f, e); }
+            if (idx == 2) { _niConcentration = Mathf.Lerp(5.1f, 0.20f, e); _coConcentration = Mathf.Lerp(0.52f, 0.03f, e); _turbidity = Mathf.Lerp(18f, 88f, e); }
             PushPH();
             TintStageLiquid(idx, e);
             if (idx == 2) _mhpQuality = Mathf.Lerp(0f, 92f, e);
@@ -233,6 +364,7 @@ public class Level11MHPController : MonoBehaviour
         }
         _pHCurrent = s.pHTo; PushPH(); Stop(_doseAudio); _dosing = false;
 
+        _reagentFlow = 0f;
         if (idx == 0) { _stage1 = true; if (_neutralToPolishLiquid != null) _neutralToPolishLiquid.SetActive(true); }
         else if (idx == 1) { _stage2 = true; if (_polishToMhpLiquid != null) _polishToMhpLiquid.SetActive(true); }
         else if (idx == 2)
@@ -242,11 +374,23 @@ public class Level11MHPController : MonoBehaviour
             PlayAudio(_readyAudio, 0.32f);
         }
 
-        if (idx < 2) { _stageIndex = idx + 1; BeginDoseStage(); }
+        if (idx == 0)
+        {
+            _stageIndex = PhaseFeSeparation;
+            if (_hud != null) _hud.ShowNotifPublic("Fe removal selesai. Pisahkan endapan Fe coklat sebelum lanjut.", 7f);
+            BeginOperatorStep();
+        }
+        else if (idx == 1)
+        {
+            _stageIndex = PhaseValidationSample;
+            if (_hud != null) _hud.ShowNotifPublic("Al/Cr removal selesai. Ambil sampel validasi.", 7f);
+            BeginOperatorStep();
+        }
         else
         {
-            _stageIndex = 3; ShowDoseButton(false);
-            if (_hud != null) _hud.ShowNotifPublic("MHP terbentuk (hijau). Jalan ke STASIUN SAMPLING (depan kanan) untuk ambil sampel.", 7f);
+            _stageIndex = PhaseFilterProduct;
+            if (_hud != null) _hud.ShowNotifPublic("Ni-Co mengendap jadi MHP. Jalankan filter press produk.", 7f);
+            BeginOperatorStep();
         }
         _seq = null;
     }
@@ -300,16 +444,12 @@ public class Level11MHPController : MonoBehaviour
         Vector2 a = new Vector2(head.x, head.z), b = new Vector2(target.x, target.z);
         if (Vector2.Distance(a, b) <= _sampleRadius)
         {
-            _sampleTaken = true;
-            if (_mhpSampleProduct != null) { _mhpSampleProduct.SetActive(true); Tint(_mhpSampleProduct, new Color(0.15f, 0.6f, 0.38f)); }
-            PlayAudio(_readyAudio, 0.3f);
-            _stageIndex = 4;
-            if (_hud != null) _hud.ShowNotifPublic("Sampel MHP diambil. Tekan [L] untuk submit ke LAB QC (assay Ni/Co).", 7f);
+            TryOperatorAction();
         }
     }
 
     // ============================================================ LAB QC
-    private void ShowLabCanvas()
+private void ShowLabCanvas()
     {
         Vector3 head = GetPlayerHead();
         Transform cam = GetCam();
@@ -317,28 +457,30 @@ public class Level11MHPController : MonoBehaviour
         Vector3 pos = head + fwd * 1.9f; pos.y = head.y - 0.05f;
 
         _labCanvas = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        _labCanvas.name = "L10_MHP_LabQC";
+        _labCanvas.name = "L10_MHP_ProcessEvaluation";
         Object.Destroy(_labCanvas.GetComponent<Collider>());
         _labCanvas.transform.position = pos;
-        _labCanvas.transform.localScale = new Vector3(1.7f, 1.05f, 1f);
+        _labCanvas.transform.localScale = new Vector3(1.85f, 1.18f, 1f);
         var qr = _labCanvas.GetComponent<Renderer>();
         qr.sharedMaterial = OpaqueMat(new Color(0.05f, 0.09f, 0.13f));
 
-        _labText = MakeText(_labCanvas.transform, new Vector3(0f, 0f, -0.02f), 0.052f, TextAnchor.MiddleCenter, new Color(0.85f, 1f, 0.9f));
+        _labText = MakeText(_labCanvas.transform, new Vector3(0f, 0f, -0.02f), 0.044f, TextAnchor.MiddleCenter, new Color(0.85f, 1f, 0.9f));
         _labText.text =
-            "=== LAB QC — MIXED HYDROXIDE PRECIPITATE ===\n" +
-            "pH akhir presipitasi : 7.5  (window 6.0-8.4)\n" +
-            "Ni grade (kering)    : 41 %    Co grade : 3.6 %\n" +
-            "Ni recovery 94 %     Co recovery 92 %\n" +
-            "Fe / Al / Cr         : < 0.1 % (sudah dibuang)\n" +
-            "Mn ditekan (N2 sparge) | Moisture cake ~48 %\n" +
-            "VERDICT: DALAM SOP — MHP siap ke refinery (baterai EV)";
+            "=== EVALUASI PROSES PURIFICATION - MHP ===\n" +
+            "Sample awal PLS : Fe/Al tinggi, pH sangat asam\n" +
+            "Fe removal      : pH 2.5, Fe turun ke " + _feConcentration.ToString("0.00") + " g/L\n" +
+            "Al/Cr removal   : pH 4.0, Al turun ke " + _alConcentration.ToString("0.00") + " g/L\n" +
+            "Transfer MHP    : valve OPEN, Ni-Co solution masuk tank\n" +
+            "Presipitasi     : pH " + _pHCurrent.ToString("0.0") + ", Ni-Co mengendap sebagai MHP\n" +
+            "Filter product  : wet cake MHP terbentuk\n" +
+            "Ni recovery 94% | Co recovery 92% | Fe/Al impurity LOW\n" +
+            "VERDICT: PASS - proses siap bagging dan dispatch.";
 
         var btn = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        btn.name = "L10_Lab_Accept";
+        btn.name = "L10_Evaluation_Accept";
         btn.transform.SetParent(_labCanvas.transform, false);
-        btn.transform.localPosition = new Vector3(0f, -0.42f, -0.05f);
-        btn.transform.localScale = new Vector3(0.42f, 0.16f, 0.06f);
+        btn.transform.localPosition = new Vector3(0f, -0.44f, -0.05f);
+        btn.transform.localScale = new Vector3(0.44f, 0.16f, 0.06f);
         btn.GetComponent<Renderer>().sharedMaterial = OpaqueMat(new Color(0.15f, 0.55f, 0.25f));
         var bt = MakeText(btn.transform, new Vector3(0f, 0f, -0.6f), 0.16f, TextAnchor.MiddleCenter, Color.white);
         bt.text = "ACCEPT [Enter]";
@@ -564,61 +706,73 @@ public class Level11MHPController : MonoBehaviour
 
 
     // ============================================================ INFO PANEL / DOSE BUTTON
-    private void BuildOperatorStation()
+private void BuildOperatorStation()
     {
         if (_doseButton != null) return;
         Vector3 basePos = _teleportTargetField != null ? _teleportTargetField.position : new Vector3(74.11f, 0f, 93.51f);
         Vector3 consolePos = basePos + new Vector3(0f, 1.35f, 2.6f);
 
-        // Dose button (cube)
         _doseButton = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        _doseButton.name = "L10_DoseButton";
+        _doseButton.name = "L10_OperatorActionButton";
         _doseButton.transform.SetParent(transform, false);
         _doseButton.transform.position = consolePos;
-        _doseButton.transform.localScale = new Vector3(0.6f, 0.28f, 0.16f);
+        _doseButton.transform.localScale = new Vector3(0.74f, 0.30f, 0.18f);
         _doseButton.GetComponent<Renderer>().sharedMaterial = OpaqueMat(new Color(0.9f, 0.55f, 0.1f));
-        _doseLabel = MakeText(_doseButton.transform, new Vector3(0f, 0f, -0.6f), 0.12f, TextAnchor.MiddleCenter, Color.black);
-        _doseLabel.text = "DOSING";
-        StartCoroutine(AttachXrButton(_doseButton, TryDose));
+        _doseLabel = MakeText(_doseButton.transform, new Vector3(0f, 0f, -0.6f), 0.105f, TextAnchor.MiddleCenter, Color.black);
+        _doseLabel.text = "AKSI OPERATOR";
+        StartCoroutine(AttachXrButton(_doseButton, TryOperatorAction));
 
-        // Info panel
         _infoPanel = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        _infoPanel.name = "L10_InfoPanel";
+        _infoPanel.name = "L10_Purification_DCS_Panel";
         Object.Destroy(_infoPanel.GetComponent<Collider>());
         _infoPanel.transform.SetParent(transform, false);
         _infoPanel.transform.position = consolePos + new Vector3(0f, 1.05f, 0.1f);
-        _infoPanel.transform.localScale = new Vector3(1.9f, 1.15f, 1f);
+        _infoPanel.transform.localScale = new Vector3(2.2f, 1.45f, 1f);
         _infoPanel.GetComponent<Renderer>().sharedMaterial = OpaqueMat(new Color(0.05f, 0.08f, 0.12f));
-        _infoText = MakeText(_infoPanel.transform, new Vector3(0f, 0f, -0.02f), 0.05f, TextAnchor.MiddleCenter, new Color(0.8f, 0.95f, 1f));
+        _infoText = MakeText(_infoPanel.transform, new Vector3(0f, 0f, -0.02f), 0.041f, TextAnchor.MiddleCenter, new Color(0.8f, 0.95f, 1f));
         ShowDoseButton(false); ShowInfoPanel(false);
     }
 
-    private void UpdateInfoPanel()
+private void UpdateInfoPanel()
     {
         if (_infoText == null || _infoPanel == null || !_infoPanel.activeSelf) return;
+
         string body;
-        if (_stageIndex <= 2)
+        if (_stageIndex >= 0 && _stageIndex <= 2)
         {
             var s = _stages[_stageIndex];
-            body = $"PEMURNIAN HPAL — TAHAP {_stageIndex + 1}/3\n" +
-                   $"Reagen : {s.reagent}\n" +
-                   $"Reaksi : {s.reaction}\n" +
-                   $"Fungsi : {s.removes}\n" +
-                   $"Target pH : {s.pHFrom:0.0} -> {s.pHTo:0.0}";
+            body = "PURIFICATION / MHP - DCS PANEL\n" +
+                   "Tahap : " + GetPhaseName() + "\n" +
+                   "Reagen : " + s.reagent + "\n" +
+                   "Target pH : " + s.pHFrom.ToString("0.0") + " -> " + s.pHTo.ToString("0.0") + "\n" +
+                   "Fungsi : " + s.removes;
         }
         else
         {
-            body = "PRESIPITASI MHP SELESAI\nNi(OH)2 + Co(OH)2 (hijau) = bahan baku baterai EV\nLanjut: sampling + Lab QC";
+            body = "PURIFICATION / MHP - DCS PANEL\nTahap : " + GetPhaseName() + "\nInstruksi : " + GetCurrentOperatorInstruction();
         }
-        _infoText.text = body + $"\n--------------------------------\npH SEKARANG : {_pHCurrent:0.0}   |   MHP : {_mhpQuality:0} %";
+
+        _infoText.text = body +
+            "\n--------------------------------" +
+            "\npH              : " + _pHCurrent.ToString("0.00") +
+            "\nFe concentration: " + _feConcentration.ToString("0.00") + " g/L" +
+            "\nAl concentration: " + _alConcentration.ToString("0.00") + " g/L" +
+            "\nNi concentration: " + _niConcentration.ToString("0.00") + " g/L" +
+            "\nCo concentration: " + _coConcentration.ToString("0.00") + " g/L" +
+            "\nReagent flow    : " + _reagentFlow.ToString("0.0") + " m3/h" +
+            "\nAgitator status : " + ((_agitatorAudio != null && _agitatorAudio.isPlaying) ? "RUNNING" : "STOP") +
+            "\nTank level      : " + _tankLevel.ToString("0") + " %" +
+            "\nTurbidity       : " + _turbidity.ToString("0") + " NTU" +
+            "\nValve to MHP    : " + (_transferValveOpen ? "OPEN" : "CLOSED") +
+            "\nMHP quality     : " + _mhpQuality.ToString("0") + " %";
         BillboardTo(_infoPanel.transform, GetPlayerHead());
     }
 
-    private void ShowDoseButton(bool on)
+private void ShowDoseButton(bool on)
     {
         if (_doseButton != null) _doseButton.SetActive(on);
-        if (on && _stageIndex <= 2) ResolveSkidMotors(_stageIndex);
-        if (on && _doseLabel != null) _doseLabel.text = $"DOSING {_stages[Mathf.Clamp(_stageIndex, 0, 2)].formula}\n[ tekan / SPACE ]";
+        if (on && _stageIndex >= 0 && _stageIndex <= 2) ResolveSkidMotors(_stageIndex);
+        if (on && _doseLabel != null) _doseLabel.text = GetActionButtonLabel();
     }
     private void ShowInfoPanel(bool on) { if (_infoPanel != null) _infoPanel.SetActive(on); }
 

@@ -93,6 +93,7 @@ Pemain berpindah antara kedua zona melalui sistem teleport setiap pergantian fas
 GameLevelManager (Singleton — pusat state machine seluruh level)
     Menyimpan : enum CurrentLevel, data level, target SOP, parameter (suhu/tekanan/pH/RPM/flow)
     Event     : OnLevelStarted, OnDCSButtonPressed, OnVoiceReportAccepted, OnLevelComplete
+                OnLevel10CCDStartAuthorized untuk gate laporan HT awal CCD sebelum animasi field
     Notify*   : memajukan flag penyelesaian per level
 
     PhaseManager                    Sub-state APD (8 item), pin respirator ke socket dada
@@ -194,11 +195,17 @@ Zona: Lapangan (flash vessel). Target: 47 ke 12 ke 3 ke 1.05 atm.
 
 ### Level 9 — CCD (Counter-Current Decantation)
 Zona: Lapangan (CCD) dan Lab QC. Target: wash efficiency di atas 95 persen.
-- DCS 9, teleport ke area CCD.
-- Observasi separation sekitar 14 detik: rake arm berputar, slurry mengendap, PLS overflow menjadi jernih.
-- Grab 3 botol PLS dengan tangan VR (`L9_PLS_SampleStation_Th1` / `Th3` / `Th5` dengan XRGrabInteractable). Grab botol, liquid terisi, sampel terambil.
-- Lab QC Building (`L9_LabBuilding`, permanen di scene): submit (L), spectrometer beranimasi, pop-up hasil (Ni, Co, Fe), lalu ACCEPT.
-- Lapor HT "CCD aktif, PLS lulus QC".
+- DCS 9 ditekan di ruang kontrol, lalu player teleport ke `SpawnPoint_Lvl9`.
+- Player wajib lapor HT awal terlebih dahulu: "CCD siap, alirkan cairan dari flash vessel". Laporan ini menjadi gate sebelum proses visual CCD dimulai.
+- Setelah laporan awal diterima, slurry/PLS dari flash vessel masuk CCD: settling zone naik dari dasar thickener, kemudian `Rake_Arm_Root`, `Rake_Arm_Root.001`, dan `Rake_Arm_Root.002` berputar perlahan.
+- Visual pemisahan dibuat bertahap: partikel coklat turun ke dasar sebagai underflow/residu, sementara lapisan overflow PLS menjadi lebih jernih.
+- Setelah CCD stabil, player mengambil 3 sample PLS overflow pada station Th-1, Th-3, dan Th-5. Spawn/teleport sample diarahkan ke depan station supaya player tidak membelakangi sample.
+- Animasi fill bottle lapangan dihapus; sample langsung masuk inventory saat diambil agar gameplay tidak terasa palsu atau terlalu cepat.
+- Lab QC Building (`L9_LabBuilding`, permanen di scene) memakai `L9_LabInteractiveStations_Runtime` di atas meja lab. Runtime script mempertahankan posisi manual root ini dan hanya memastikan station/interaksi lab tersedia.
+- Lab QC interaktif: sample login/chain-of-custody, filtrasi 0.45 um/TSS, pH dan free acid, ICP-OES metals, lalu validasi CCD. Bottle lab memiliki liquid visual, analyzer rotor beranimasi, dan screen lab menampilkan progress serta hasil.
+- Hasil QC muncul sebagai world-space panel di sisi player dan mengikuti arah player, bukan menutup pandangan depan. Tombol ACCEPT memakai `XRSimpleInteractable` + collider agar bisa diklik ray/poke VR, dengan fallback Enter.
+- Setelah ACCEPT, player masih wajib lapor HT final: "CCD aktif, PLS lulus QC". Baru setelah laporan final diterima level lanjut ke precipitation/MHP.
+- GameObject field control lama `L9_CCD_FieldControl_FeedValve` dan `L9_CCD_FieldControl_RakeUnderflowValve` sudah dihapus permanen; mekanik handwheel/gauge Level 9 tidak lagi dipakai.
 
 ### Level 10 — MHP Precipitation (interaktif penuh)
 Zona: Lapangan (MHP) dan Warehouse. Target: pH 7.0 sampai 7.5, kualitas 92 persen.
@@ -366,6 +373,11 @@ Untuk membuat atau mengubah model mesin: model dibuat di Blender, kemudian dieks
 | T (tahan) | Voice report HT (Push To Talk) | semua |
 | X | Toggle X-Ray | 7 |
 
+Debug penting pada `GameLevelManager`:
+- `DEBUG: Skip ke Level 9 (CCD)` masuk ke DCS 9/area CCD dan memakai spawn `SpawnPoint_Lvl9`.
+- `DEBUG: Level 9 - Masuk Lab QC PLS` melompat langsung ke fase Lab QC PLS untuk testing station lab dan panel hasil.
+- `DEBUG: Skip ke Level 10 (MHP)`, `DEBUG: Skip ke Level 11 (Tailing Filter Press)`, `DEBUG: Skip ke Level 12 (Dry Stack)`, dan `DEBUG: Skip ke Level 13 (Emergency K3)` tersedia untuk validasi level lanjutan.
+
 ---
 
 ## Konvensi Pengembangan
@@ -377,6 +389,7 @@ Bahasa dan Gaya
 VR dan Interaksi
 - Teleport wajib menggunakan `XROrigin.MoveCameraToWorldLocation` dan `MatchOriginUpCameraForward`. Jangan men-set `transform.position` langsung karena menyebabkan player snap-back.
 - Tombol VR menggunakan `XRSimpleInteractable` dan `BoxCollider` dengan registrasi collider eksplisit, ditambah keyboard fallback. `UnityEngine.UI.Button` saja tidak dapat diklik oleh ray XR pada world-space canvas.
+- World-space canvas hasil lab atau compliance sebaiknya diposisikan di samping player dan mengikuti arah kepala/player supaya tidak menutup view utama dan tetap bisa diklik dengan ray VR.
 - Handwheel pada Level 5 dan Level 7 menggunakan komponen `GesturalHandwheel` agar berputar mengikuti tangan tanpa objek ikut tertarik. Level 8 memakai pola yang sama secara inline di controller-nya.
 
 Audio

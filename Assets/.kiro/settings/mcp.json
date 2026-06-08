@@ -25,7 +25,8 @@
         "manage_components",
         "unity_reflect",
         "execute_menu_item",
-        "execute_custom_tool"
+        "execute_custom_tool",
+        "manage_graphics"
       ],
       "disabledTools": []
     }

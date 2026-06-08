@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
 
@@ -61,6 +62,11 @@ public class Level10CCDController : MonoBehaviour
     [SerializeField] private float _solidsSettlingCurrent;
     [SerializeField] private float _clarityCurrent;
 
+    [Header("=== Field Observation ===")]
+    private readonly Dictionary<string, Material> _runtimeMats = new Dictionary<string, Material>();
+    private bool _awaitingCcdStartupReport;
+    private bool _separationRunning;
+
     [Header("=== Audio ===")]
     [SerializeField] private AudioSource _driveAudio;
     [SerializeField] private AudioSource _separationCompleteAudio;
@@ -93,12 +99,14 @@ public class Level10CCDController : MonoBehaviour
     {
         GameLevelManager.OnLevelStarted += OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed += OnDcsButtonPressed;
+        GameLevelManager.OnLevel10CCDStartAuthorized += OnLevel10CCDStartAuthorized;
     }
 
     private void OnDisable()
     {
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed -= OnDcsButtonPressed;
+        GameLevelManager.OnLevel10CCDStartAuthorized -= OnLevel10CCDStartAuthorized;
         StopSequence();
         StopAudio(_driveAudio);
         StopAudio(_separationCompleteAudio);
@@ -118,10 +126,14 @@ public class Level10CCDController : MonoBehaviour
 
         _ccdStarted = false;
         _questComplete = false;
+        _awaitingCcdStartupReport = false;
+        _separationRunning = false;
+        ResetCcdSamplingAndLabState();
         _progressCurrent = 0f;
         _solidsSettlingCurrent = 0f;
         _clarityCurrent = 0f;
         AutoFindReferences();   // re-resolve real model refs (recover NULL dari scene lama)
+        HideLegacyCcdValveArtifacts();
         StopProcessPipeFlows(); // flow tube tersembunyi sampai pemisahan CCD selesai
         FixBakedLabels();       // ganti teks baked yang ter-cermin dengan overlay readable
         SetProcessVisuals(false);
@@ -130,6 +142,79 @@ public class Level10CCDController : MonoBehaviour
             _hud.ShowNotifPublic(_msgStart);
 
         TeleportPlayer(_teleportTargetDcs);
+    }
+
+    private void ResetCcdSamplingAndLabState()
+    {
+        if (_sampleTeleportCoroutine != null)
+        {
+            StopCoroutine(_sampleTeleportCoroutine);
+            _sampleTeleportCoroutine = null;
+        }
+
+        for (int i = 0; i < 3; i++)
+        {
+            _ccdBottleFillProgress[i] = 0f;
+            _ccdBottleFilling[i] = false;
+            _ccdSampleTaken[i] = false;
+            _ccdSampleReadyForInventory[i] = false;
+            _ccdSampleStoredInInventory[i] = false;
+            _sampleInventoryBottles[i] = null;
+
+            if (_ccdSampleBottles[i] != null)
+                _ccdSampleBottles[i].SetActive(true);
+
+            if (_ccdStationFillLiquid[i] != null)
+            {
+                _ccdStationFillLiquid[i].localScale = new Vector3(0.82f, 1.15f, 0.82f);
+                _ccdStationFillLiquid[i].localPosition = new Vector3(0f, -0.35f, 0f);
+            }
+
+            if (_ccdStationLabels[i] != null)
+            {
+                var tm = _ccdStationLabels[i].GetComponent<TextMesh>();
+                if (tm != null)
+                {
+                    int thNo = i == 0 ? 1 : i == 1 ? 3 : 5;
+                    tm.text = $"PLS Th-{thNo}\n[ ambil sample ]";
+                    tm.color = Color.white;
+                }
+            }
+
+            if (_ccdLabSlotLiquids[i] != null)
+            {
+                Vector3 s = _ccdLabSlotLiquids[i].localScale;
+                float fullY = Mathf.Abs(_ccdLabSlotBaseY[i]) > 0.0001f ? _ccdLabSlotBaseY[i] : s.y;
+                _ccdLabSlotLiquids[i].localScale = new Vector3(s.x, fullY * 0.02f, s.z);
+            }
+        }
+
+        for (int i = 0; i < _ccdLabStepDone.Length; i++)
+        {
+            _ccdLabStepDone[i] = false;
+            if (_ccdLabStepStations[i] != null)
+                SetLabStepVisual(i, false, false);
+        }
+        _ccdLabActiveStep = -1;
+        _ccdLabStepConfirmed = false;
+
+        if (_sampleInventoryRoot != null)
+        {
+            Destroy(_sampleInventoryRoot.gameObject);
+            _sampleInventoryRoot = null;
+        }
+
+        if (_ccdLabQcCanvas != null)
+        {
+            Destroy(_ccdLabQcCanvas);
+            _ccdLabQcCanvas = null;
+        }
+
+        _pendingAcceptAction = null;
+        _ccdLabSubmitted = false;
+        _ccdLabSequenceStarted = false;
+        if (_ccdLabScreenText != null)
+            _ccdLabScreenText.text = "QC LAB\nStandby...";
     }
 
     private void Update()
@@ -143,8 +228,14 @@ public class Level10CCDController : MonoBehaviour
         if (!_ccdStarted)
             return;
 
-        AnimateRakeArms();
-        AnimateRotatingMachinery();
+        if (_separationRunning)
+        {
+            AnimateRakeArms();
+            AnimateCcdLiquidMotion();
+            AnimateRotatingMachinery();
+        }
+
+        AnimateProcessPipeFlow(Time.deltaTime);
 
         // Setelah CCD stabil: aktifkan flow sampling PLS + lab QC.
         Update_PLSSampling();
@@ -156,22 +247,57 @@ public class Level10CCDController : MonoBehaviour
             return;
 
         _ccdStarted = true;
-        _sequenceCoroutine = StartCoroutine(RunCCDSequence());
+        _sequenceCoroutine = StartCoroutine(RunCcdFieldReportPrompt());
     }
 
-    private IEnumerator RunCCDSequence()
+    private IEnumerator RunCcdFieldReportPrompt()
     {
+        _awaitingCcdStartupReport = true;
         if (_hud != null)
             _hud.PlayManualFade(_fadeDuration);
 
         yield return new WaitForSeconds(_fadeDuration * 0.5f);
         TeleportPlayer(ResolveFieldStandSpot());
-        yield return new WaitForSeconds(_fadeDuration * 0.5f + _fieldObservationDelay);
+        yield return new WaitForSeconds(_fadeDuration * 0.5f + 0.15f);
 
         if (_hud != null)
-            _hud.ShowNotifPublic(_msgObserve);
+            _hud.ShowNotifPublic("Di area CCD. Lapor HT awal: 'CCD siap, alirkan cairan dari flash vessel'.", 8f);
+
+        _sequenceCoroutine = null;
+    }
+
+    private void OnLevel10CCDStartAuthorized()
+    {
+        if (!_levelActive || !_ccdStarted || _questComplete || _separationRunning)
+            return;
+        if (!_awaitingCcdStartupReport)
+            return;
+
+        if (_sequenceCoroutine != null)
+            StopCoroutine(_sequenceCoroutine);
+        _sequenceCoroutine = StartCoroutine(RunCCDSequence());
+    }
+
+    private IEnumerator RunCCDSequence()
+    {
+        _awaitingCcdStartupReport = false;
+
+        if (_hud != null)
+            _hud.ShowNotifPublic("Flash vessel discharge dibuka. Slurry mulai masuk CCD dari dasar thickener.", 6f);
+        TeleportPlayer(ResolveFieldStandSpot());
+        yield return new WaitForSeconds(_fieldObservationDelay);
+
+        if (_hud != null)
+            _hud.ShowNotifPublic("Cairan CCD naik dari dasar. Tunggu feed column penuh sebelum rake arm mulai mengaduk.", 6f);
 
         SetProcessVisuals(true);
+        PrepareCcdLiquidAtBottom();
+        StartSettlingParticleFx();
+        yield return AnimateCcdLiquidRise(4.2f);
+
+        _separationRunning = true;
+        if (_hud != null)
+            _hud.ShowNotifPublic(_msgObserve);
         StartAudio(_driveAudio, _driveVolume);
 
         float elapsed = 0f;
@@ -215,6 +341,60 @@ public class Level10CCDController : MonoBehaviour
     {
         t = Mathf.Clamp01(t);
         return t * t * (3f - 2f * t);
+    }
+
+    private void HideLegacyCcdValveArtifacts()
+    {
+        Transform[] all = FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+        for (int i = 0; i < all.Length; i++)
+        {
+            Transform t = all[i];
+            if (t == null) continue;
+
+            string n = t.name;
+            bool isSourceL5 =
+                n.Equals("L5_Condensate_Drain_Handwheel_StirRedesign", System.StringComparison.OrdinalIgnoreCase) ||
+                IsChildOfNamed(t, "L5_Condensate_Drain_Handwheel_StirRedesign");
+            if (isSourceL5)
+                continue;
+
+            bool legacy =
+                n.IndexOf("L9_CCD_FieldControl_", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                n.IndexOf("Underflow_KnifeValve", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                n.IndexOf("Handwheel_L5_StirRedesign_CCD", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                n.IndexOf("L9_CCD_L5_Condensate_Drain_Handwheel", System.StringComparison.OrdinalIgnoreCase) >= 0;
+            if (!legacy)
+                continue;
+
+            if (t.parent != null && legacy)
+                t.gameObject.SetActive(false);
+        }
+    }
+
+    private bool IsChildOfNamed(Transform t, string namePrefix)
+    {
+        while (t != null)
+        {
+            if (t.name.StartsWith(namePrefix, System.StringComparison.OrdinalIgnoreCase))
+                return true;
+            t = t.parent;
+        }
+        return false;
+    }
+
+    private Material RuntimeMat(string name, Color color, float metallic)
+    {
+        if (!_runtimeMats.TryGetValue(name, out Material mat) || mat == null)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            mat = new Material(shader);
+            mat.name = name;
+            _runtimeMats[name] = mat;
+        }
+        if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", color);
+        if (mat.HasProperty("_Color")) mat.SetColor("_Color", color);
+        if (mat.HasProperty("_Metallic")) mat.SetFloat("_Metallic", metallic);
+        return mat;
     }
 
     private bool _bakedLabelsFixed;
@@ -285,6 +465,14 @@ public class Level10CCDController : MonoBehaviour
         return null;
     }
 
+    private Transform FindAnywhereContains(string token)
+    {
+        foreach (var t in GameObject.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (t != null && t.gameObject.scene.IsValid() && t.name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return t;
+        return null;
+    }
+
     private void AnimateRakeArms()
     {
         if (_rakeArmRoots == null)
@@ -304,6 +492,50 @@ public class Level10CCDController : MonoBehaviour
         }
     }
 
+    private void AnimateCcdLiquidMotion()
+    {
+        float dt = Time.deltaTime;
+        float rakeStep = _rakeRpm * 6f * dt;
+        float phase = Time.time * Mathf.Max(0.2f, _rakeRpm);
+
+        for (int i = 0; i < 3; i++)
+        {
+            Vector3 axisPoint = i < _rakeTankAxis.Length && _rakeTankAxis[i] != Vector3.zero
+                ? _rakeTankAxis[i]
+                : Vector3.zero;
+            if (axisPoint == Vector3.zero && _clearPlsSurfaces[i] != null)
+                axisPoint = _clearPlsSurfaces[i].bounds.center;
+
+            RotateLiquidLayer(_clearPlsSurfaces[i], axisPoint, rakeStep * 0.22f);
+            RotateLiquidLayer(_feedwellCores[i], axisPoint, rakeStep * 0.85f);
+            RotateLiquidLayer(_settlingZones[i], axisPoint, rakeStep * 0.55f);
+            RotateLiquidLayer(_underflowPools[i], axisPoint, rakeStep * 0.70f);
+
+            if (_feedwellCores[i] != null)
+                PulseLiquidTint(_feedwellCores[i], Color.Lerp(_turbidSlurry, new Color(0.50f, 0.38f, 0.70f, 0.86f), 0.45f + 0.25f * Mathf.Sin(phase + i)));
+            if (_underflowPools[i] != null)
+                PulseLiquidTint(_underflowPools[i], new Color(0.28f + 0.04f * Mathf.Sin(phase + i), 0.14f, 0.32f, 0.88f));
+        }
+    }
+
+    private void RotateLiquidLayer(Renderer renderer, Vector3 axisPoint, float degrees)
+    {
+        if (renderer == null || axisPoint == Vector3.zero)
+            return;
+        renderer.transform.RotateAround(axisPoint, Vector3.up, degrees);
+    }
+
+    private void PulseLiquidTint(Renderer renderer, Color color)
+    {
+        if (renderer == null)
+            return;
+        if (_mpb == null) _mpb = new MaterialPropertyBlock();
+        renderer.GetPropertyBlock(_mpb);
+        _mpb.SetColor("_BaseColor", color);
+        _mpb.SetColor("_Color", color);
+        renderer.SetPropertyBlock(_mpb);
+    }
+
     // Motor drive head, agitator flokulan, dan motor pompa underflow ikut berputar -> pabrik "hidup".
     private void AnimateRotatingMachinery()
     {
@@ -317,8 +549,6 @@ public class Level10CCDController : MonoBehaviour
         if (_underflowPumpMotors != null)
             foreach (var p in _underflowPumpMotors)
                 if (p != null) p.Rotate(Vector3.forward, 480f * dt, Space.Self);
-
-        AnimateProcessPipeFlow(dt);
     }
 
     // Aktifkan 2 aliran pipa keluar CCD: PLS jernih -> Pemurnian/MHP, padatan underflow -> Filter Press.
@@ -412,8 +642,134 @@ public class Level10CCDController : MonoBehaviour
         }
     }
 
+    private void PrepareCcdLiquidAtBottom()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (_settlingZones[i] == null)
+                continue;
+
+            Transform tr = _settlingZones[i].transform;
+            Vector3 baseS = _settlingBaseScale[i] == Vector3.zero ? tr.localScale : _settlingBaseScale[i];
+            Vector3 baseP = _settlingBaseLocalPosition[i];
+            tr.localScale = new Vector3(baseS.x, Mathf.Max(0.01f, baseS.y * 0.03f), baseS.z);
+            tr.localPosition = baseP + Vector3.down * Mathf.Max(0.2f, Mathf.Abs(baseS.y) * 0.48f);
+            _settlingZones[i].enabled = true;
+            ApplyTint(_settlingZones[i], new Color(0.43f, 0.29f, 0.52f, 0.56f));
+        }
+
+        UpdateMudLayers(0f);
+    }
+
+    private IEnumerator AnimateCcdLiquidRise(float duration)
+    {
+        duration = Mathf.Max(0.1f, duration);
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = SmoothStep(Mathf.Clamp01(elapsed / duration));
+            for (int i = 0; i < 3; i++)
+            {
+                if (_settlingZones[i] == null)
+                    continue;
+
+                Transform tr = _settlingZones[i].transform;
+                Vector3 baseS = _settlingBaseScale[i] == Vector3.zero ? tr.localScale : _settlingBaseScale[i];
+                Vector3 baseP = _settlingBaseLocalPosition[i];
+                float yScale = Mathf.Lerp(Mathf.Max(0.01f, baseS.y * 0.03f), baseS.y, t);
+                tr.localScale = new Vector3(baseS.x, yScale, baseS.z);
+                tr.localPosition = Vector3.Lerp(baseP + Vector3.down * Mathf.Max(0.2f, Mathf.Abs(baseS.y) * 0.48f), baseP, t);
+                ApplyTint(_settlingZones[i], Color.Lerp(new Color(0.32f, 0.20f, 0.38f, 0.45f), new Color(0.50f, 0.36f, 0.72f, 0.60f), t));
+            }
+            yield return null;
+        }
+    }
+
+    private void StartSettlingParticleFx()
+    {
+        if (_brownSettlingFx == null)
+            BuildSettlingParticleFx();
+
+        if (_brownSettlingFx == null)
+            return;
+
+        for (int i = 0; i < _brownSettlingFx.Length; i++)
+        {
+            if (_brownSettlingFx[i] == null)
+                continue;
+            if (!_brownSettlingFx[i].isPlaying)
+                _brownSettlingFx[i].Play();
+        }
+    }
+
+    private void StopSettlingParticleFx()
+    {
+        if (_brownSettlingFx == null)
+            return;
+        for (int i = 0; i < _brownSettlingFx.Length; i++)
+        {
+            if (_brownSettlingFx[i] != null)
+                _brownSettlingFx[i].Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        }
+    }
+
+    private void BuildSettlingParticleFx()
+    {
+        _brownSettlingFx = new ParticleSystem[3];
+        Shader shader = Shader.Find("Universal Render Pipeline/Particles/Unlit")
+                     ?? Shader.Find("Legacy Shaders/Particles/Alpha Blended Premultiply")
+                     ?? Shader.Find("Sprites/Default");
+        Material mat = shader != null ? new Material(shader) : null;
+        if (mat != null)
+            mat.color = new Color(0.34f, 0.20f, 0.11f, 0.78f);
+
+        for (int i = 0; i < 3; i++)
+        {
+            Renderer zone = _settlingZones[i];
+            if (zone == null)
+                continue;
+
+            GameObject go = new GameObject("CCD_BrownSolids_FallingFX_" + (i + 1));
+            go.transform.SetParent(zone.transform, false);
+            go.transform.localPosition = Vector3.up * 0.15f;
+            ParticleSystem ps = go.AddComponent<ParticleSystem>();
+            var main = ps.main;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.8f, 3.2f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.18f, 0.45f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.035f, 0.085f);
+            main.startColor = new Color(0.38f, 0.22f, 0.12f, 0.85f);
+            main.gravityModifier = 0.35f;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            main.maxParticles = 260;
+
+            var emission = ps.emission;
+            emission.rateOverTime = 55f;
+
+            var shape = ps.shape;
+            shape.shapeType = ParticleSystemShapeType.Box;
+            Bounds b = zone.bounds;
+            shape.scale = new Vector3(Mathf.Max(0.5f, b.size.x * 0.55f), Mathf.Max(0.4f, b.size.y * 0.35f), Mathf.Max(0.5f, b.size.z * 0.55f));
+
+            var velocity = ps.velocityOverLifetime;
+            velocity.enabled = true;
+            velocity.y = new ParticleSystem.MinMaxCurve(-0.55f, -0.25f);
+
+            var renderer = ps.GetComponent<ParticleSystemRenderer>();
+            if (renderer != null && mat != null)
+                renderer.sharedMaterial = mat;
+
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            _brownSettlingFx[i] = ps;
+        }
+    }
+
     private readonly Vector3[] _feedwellBaseScale = new Vector3[3];
     private readonly Vector3[] _underflowBaseScale = new Vector3[3];
+    private readonly Vector3[] _settlingBaseScale = new Vector3[3];
+    private readonly Vector3[] _settlingBaseLocalPosition = new Vector3[3];
+    private ParticleSystem[] _brownSettlingFx;
 
     private void ApplyTint(Renderer r, Color c)
     {
@@ -462,6 +818,7 @@ public class Level10CCDController : MonoBehaviour
         else
         {
             _separationFx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            StopSettlingParticleFx();
         }
     }
 
@@ -530,22 +887,29 @@ public class Level10CCDController : MonoBehaviour
 
     private void StopSequence()
     {
-        if (_sequenceCoroutine == null)
-            return;
+        if (_sequenceCoroutine != null)
+        {
+            StopCoroutine(_sequenceCoroutine);
+            _sequenceCoroutine = null;
+        }
 
-        StopCoroutine(_sequenceCoroutine);
-        _sequenceCoroutine = null;
+        if (_sampleTeleportCoroutine != null)
+        {
+            StopCoroutine(_sampleTeleportCoroutine);
+            _sampleTeleportCoroutine = null;
+        }
     }
 
     /// <summary>
-    /// Hitung titik berdiri yang nyaman untuk MENGAMATI train CCD: di depan deretan tank,
-    /// jaraknya proporsional dengan tinggi tank supaya seluruh train kelihatan (bukan
-    /// nempel ke dinding tank seperti bug sebelumnya). Kalau bounds gagal dihitung, pakai
-    /// _teleportTargetField yang di-assign manual.
+    /// Titik observasi CCD harus memakai SpawnPoint_Lvl9. Bounds fallback hanya dipakai
+    /// kalau scene lama belum punya spawn point tersebut.
     /// </summary>
     private Transform ResolveFieldStandSpot()
     {
-        // Prioritaskan SpawnPoint_Lvl10 yang sudah di-set manual di scene
+        GameObject lvl9 = GameObject.Find("SpawnPoint_Lvl9");
+        if (lvl9 != null)
+            return lvl9.transform;
+
         if (_teleportTargetField != null)
             return _teleportTargetField;
 
@@ -567,8 +931,8 @@ public class Level10CCDController : MonoBehaviour
         float standBack = b.extents.z + Mathf.Max(8f, b.size.y * 0.9f);
         Vector3 pos = new Vector3(b.center.x, 0.1f, b.min.z - standBack);
 
-        var existing = GameObject.Find("SpawnPoint_Lvl10_Observe_Runtime");
-        var sp = existing != null ? existing : new GameObject("SpawnPoint_Lvl10_Observe_Runtime");
+        var existing = GameObject.Find("SpawnPoint_Lvl9_Observe_Runtime");
+        var sp = existing != null ? existing : new GameObject("SpawnPoint_Lvl9_Observe_Runtime");
         sp.transform.position = pos;
         Vector3 look = new Vector3(b.center.x - pos.x, 0f, b.center.z - pos.z);
         sp.transform.rotation = look.sqrMagnitude > 0.001f
@@ -711,7 +1075,7 @@ public class Level10CCDController : MonoBehaviour
 
         if (_teleportTargetField == null)
         {
-            GameObject field = GameObject.Find("SpawnPoint_Lvl10");
+            GameObject field = GameObject.Find("SpawnPoint_Lvl9") ?? GameObject.Find("SpawnPoint_Lvl10");
             if (field != null)
                 _teleportTargetField = field.transform;
         }
@@ -775,6 +1139,11 @@ public class Level10CCDController : MonoBehaviour
             _settlingZones[i] = GetRenderer(rigRoot, p + "_SettlingZone_XRayColumn");
             _underflowPools[i] = GetRenderer(rigRoot, p + "_ThickUnderflow_BottomPool");
             if (_feedwellCores[i] != null) _feedwellBaseScale[i] = _feedwellCores[i].transform.localScale;
+            if (_settlingZones[i] != null)
+            {
+                _settlingBaseScale[i] = _settlingZones[i].transform.localScale;
+                _settlingBaseLocalPosition[i] = _settlingZones[i].transform.localPosition;
+            }
             if (_underflowPools[i] != null) _underflowBaseScale[i] = _underflowPools[i].transform.localScale;
         }
 
@@ -847,6 +1216,88 @@ public class Level10CCDController : MonoBehaviour
     public float SolidsSettlingCurrent => _solidsSettlingCurrent;
     public float ClarityCurrent => _clarityCurrent;
 
+    public bool AllPLSSamplesTakenForMarker => CountPLSSamples() >= 3;
+    public bool LabSubmittedForMarker => _ccdLabSubmitted;
+
+    public Transform GetCurrentTaskMarkerTarget()
+    {
+        if (!_questComplete)
+            return ResolveCcdFieldMarkerTarget();
+
+        if (CountPLSSamples() < 3)
+            return ResolveNextSampleMarkerTarget();
+
+        if (!_ccdLabSubmitted)
+            return ResolveLabStepMarkerTarget();
+
+        if (_ccdLabQcCanvas != null && _ccdLabQcCanvas.activeInHierarchy)
+            return _ccdLabQcCanvas.transform;
+
+        return ResolveLabMarkerTarget();
+    }
+
+    private Transform ResolveLabStepMarkerTarget()
+    {
+        if (_ccdLabActiveStep >= 0
+            && _ccdLabActiveStep < _ccdLabStepButtons.Length
+            && _ccdLabStepButtons[_ccdLabActiveStep] != null
+            && _ccdLabStepButtons[_ccdLabActiveStep].gameObject.activeInHierarchy)
+            return _ccdLabStepButtons[_ccdLabActiveStep];
+
+        if (_ccdLabStepButtons[0] != null && _ccdLabStepButtons[0].gameObject.activeInHierarchy)
+            return _ccdLabStepButtons[0];
+
+        return ResolveLabMarkerTarget();
+    }
+
+    private Transform ResolveCcdFieldMarkerTarget()
+    {
+        if (_ccdField != null && _ccdField.activeInHierarchy)
+        {
+            Transform rigRoot = FindDeepChild(_ccdField.transform, "CCD_BlenderRig");
+            return rigRoot != null && rigRoot.gameObject.activeInHierarchy ? rigRoot : _ccdField.transform;
+        }
+
+        GameObject found = GameObject.Find("CCD_BlenderRig") ?? GameObject.Find("CCD_Field");
+        return found != null ? found.transform : transform;
+    }
+
+    private Transform ResolveNextSampleMarkerTarget()
+    {
+        for (int i = 0; i < _ccdSampleTaken.Length; i++)
+        {
+            if (_ccdSampleTaken[i]) continue;
+
+            if (_ccdSampleStations[i] != null && _ccdSampleStations[i].activeInHierarchy)
+                return _ccdSampleStations[i].transform;
+
+            if (_ccdSampleBottles[i] != null && _ccdSampleBottles[i].activeInHierarchy)
+                return _ccdSampleBottles[i].transform;
+        }
+
+        int[] thNos = { 1, 3, 5 };
+        for (int i = 0; i < thNos.Length; i++)
+        {
+            GameObject station = GameObject.Find($"L9_PLS_SampleStation_Th{thNos[i]}");
+            if (station != null && station.activeInHierarchy)
+                return station.transform;
+        }
+
+        return ResolveCcdFieldMarkerTarget();
+    }
+
+    private Transform ResolveLabMarkerTarget()
+    {
+        if (_ccdLabResultScreen != null && _ccdLabResultScreen.gameObject.activeInHierarchy)
+            return _ccdLabResultScreen;
+
+        if (_ccdLabBuilding != null && _ccdLabBuilding.activeInHierarchy)
+            return _ccdLabBuilding.transform;
+
+        GameObject lab = GameObject.Find("L9_LabBuilding");
+        return lab != null ? lab.transform : ResolveCcdFieldMarkerTarget();
+    }
+
     // ============================================================
     //  PLS SAMPLING + LAB QC (Opsi A: dipindah dari Level 8 ke sini)
     //  Real-world HPAL: sample PLS untuk lab QC diambil dari OVERFLOW CCD
@@ -862,8 +1313,17 @@ public class Level10CCDController : MonoBehaviour
     private float[] _ccdBottleFillProgress = new float[3];
     private bool[] _ccdBottleFilling = new bool[3];
     private bool[] _ccdSampleTaken = new bool[3];
+    private bool[] _ccdSampleReadyForInventory = new bool[3];
+    private bool[] _ccdSampleStoredInInventory = new bool[3];
     private bool _ccdStationsBuilt;
-    private float _ccdSampleProximityRadius = 2.8f;
+    private float _ccdSampleInteractRadius = 4f;
+    [SerializeField] private float _sampleInventoryTouchRadius = 0.75f;
+    [SerializeField] private float _sampleTeleportFadeDuration = 2.0f;
+    [SerializeField] private float _sampleSuccessPause = 1.0f;
+    [SerializeField] private float _sampleStandDistance = 1.65f;
+    private Coroutine _sampleTeleportCoroutine;
+    private Transform _sampleInventoryRoot;
+    private GameObject[] _sampleInventoryBottles = new GameObject[3];
 
     private GameObject _ccdLabBuilding;
     private Transform[] _ccdLabSlotLiquids = new Transform[3];
@@ -874,6 +1334,13 @@ public class Level10CCDController : MonoBehaviour
     private GameObject _ccdLabQcCanvas;
     private bool _ccdLabBuilt;
     private bool _ccdLabSubmitted;
+    private bool _ccdLabSequenceStarted;
+    private readonly GameObject[] _ccdLabStepStations = new GameObject[5];
+    private readonly Transform[] _ccdLabStepButtons = new Transform[5];
+    private readonly Transform[] _ccdLabStepLabels = new Transform[5];
+    private readonly bool[] _ccdLabStepDone = new bool[5];
+    private int _ccdLabActiveStep = -1;
+    private bool _ccdLabStepConfirmed;
 
     // Warna PLS per sample point. PLS HPAL real = larutan sulfat hijau-kekuningan (Ni/Co),
     // makin ke wash overflow makin encer/bening.
@@ -883,39 +1350,115 @@ public class Level10CCDController : MonoBehaviour
         new Color(0.60f, 0.72f, 0.68f)    // Th-5: wash overflow (Ni rendah, hampir bening)
     };
 
+    public void DebugEnterLabQCFromGameLevelManager(bool startLabSequence)
+    {
+        _levelActive = true;
+        _ccdStarted = true;
+        _questComplete = false;
+        _separationRunning = false;
+        _progressCurrent = 100f;
+        _solidsSettlingCurrent = _solidsSettlingTarget;
+        _clarityCurrent = _clarityTarget;
+
+        AutoFindReferences();
+        SetProcessVisuals(true);
+        StartProcessPipeFlows();
+        BuildCCDSampleStations();
+        BuildCCDLabBuilding();
+        EnsureSampleInventoryVisual();
+
+        for (int i = 0; i < 3; i++)
+        {
+            _ccdBottleFillProgress[i] = 1f;
+            _ccdBottleFilling[i] = false;
+            _ccdSampleReadyForInventory[i] = false;
+            _ccdSampleStoredInInventory[i] = true;
+            _ccdSampleTaken[i] = true;
+
+            if (_ccdSampleBottles[i] != null)
+                _ccdSampleBottles[i].SetActive(false);
+
+            CreateInventoryBottle(i);
+
+            if (_ccdStationFillLiquid[i] != null)
+            {
+                _ccdStationFillLiquid[i].localScale = new Vector3(0.82f, 1.7f, 0.82f);
+                _ccdStationFillLiquid[i].localPosition = new Vector3(0f, -0.10f, 0f);
+            }
+
+            if (_ccdStationLabels[i] != null)
+            {
+                TextMesh tm = _ccdStationLabels[i].GetComponent<TextMesh>();
+                if (tm != null)
+                {
+                    int thNo = i == 0 ? 1 : i == 1 ? 3 : 5;
+                    tm.text = $"PLS Th-{thNo}\nOK INVENTORY";
+                    tm.color = new Color(0.5f, 1f, 0.5f);
+                }
+            }
+        }
+
+        GameLevelManager.Instance?.NotifyLevel10CCDComplete();
+        TeleportPlayer(CreateLabStandSpot());
+
+        if (_hud != null)
+            _hud.ShowNotifPublic(startLabSequence
+                ? "DEBUG: 3 sample PLS sudah masuk lab. Lab QC dimulai dari chain-of-custody."
+                : "DEBUG: 3 sample PLS sudah siap di Lab QC. Tekan L/G/Y untuk mulai analisa.", 8f);
+
+        if (startLabSequence)
+            SubmitPLSToLab();
+    }
+
+    public void DebugAcceptLabQCFromGameLevelManager()
+    {
+        _ccdLabSequenceStarted = false;
+        _ccdLabSubmitted = true;
+        _ccdLabActiveStep = -1;
+        for (int i = 0; i < _ccdLabStepDone.Length; i++)
+        {
+            _ccdLabStepDone[i] = true;
+            SetLabStepVisual(i, false, true);
+        }
+
+        if (_ccdLabScreenText != null)
+            _ccdLabScreenText.text = "QC SELESAI\nCCD OVERFLOW PASS\nNi 5.1 g/L | Co 0.52 g/L\nTSS 180 mg/L | Free acid 22 g/L";
+
+        if (_ccdLabQcCanvas != null)
+            _ccdLabQcCanvas.SetActive(false);
+
+        GameLevelManager.Instance?.NotifyLevel10SamplePLSAccepted();
+        if (_hud != null)
+            _hud.ShowNotifPublic("DEBUG: Lab QC PLS diterima. Lapor HT: 'CCD aktif, PLS lulus QC'.", 7f);
+    }
+
     private void BeginPLSSamplingFlow()
     {
         if (_hud != null)
-            _hud.ShowNotifPublic("CCD stabil. Ambil 3 sample PLS dari overflow tiap thickener (dekati pedestal botol). Lalu masuk LAB QC.", 10f);
+            _hud.ShowNotifPublic("CCD stabil. Ambil 3 sample PLS overflow. Grab botol, isi dari sample port, lalu sentuhkan ke dada/inventory.", 10f);
         BuildCCDSampleStations();
         BuildCCDLabBuilding();
+        TeleportToSampleOrLabAfterDelay(0, 0.15f);
     }
 
     private void Update_PLSSampling()
     {
         if (!_ccdStartedFlag()) return;
+        FollowLabResultCanvas();
         UpdateCCDProximity();
         UpdateCCDBottleFill();
+        UpdateSampleInventoryTouch();
         BillboardStationLabels();
-        // Keyboard fallback G: grab sample terdekat (untuk desktop simulator tanpa VR controller)
-        if (Input.GetKeyDown(KeyCode.G) && _ccdStationsBuilt)
+        BillboardLabStepLabels();
+        // Keyboard fallback G/Y: ambil sample aktif (untuk desktop simulator tanpa VR controller).
+        if ((Input.GetKeyDown(KeyCode.G) || Input.GetKeyDown(KeyCode.Y)) && _ccdStationsBuilt)
         {
-            Vector3 head = GetPlayerHead(); head.y = 0f;
-            for (int i = 0; i < 3; i++)
-            {
-                if (_ccdSampleTaken[i] || _ccdBottleFilling[i]) continue;
-                if (_ccdSampleStations[i] == null) continue;
-                Vector3 sPos = _ccdSampleStations[i].transform.position; sPos.y = 0f;
-                if (Vector3.Distance(head, sPos) <= 4f) // 4m radius untuk keyboard
-                {
-                    _ccdBottleFilling[i] = true;
-                    if (_hud != null) _hud.ShowNotifPublic($"Mengambil sample PLS Thickener {(i == 0 ? 1 : i == 1 ? 3 : 5)}...", 3f);
-                    break;
-                }
-            }
+            if (!TryStoreReadySampleByInput())
+                TryStartNearestSampleByInput();
         }
-        // Manual submit: tekan L kalau semua sample terambil.
-        if (Input.GetKeyDown(KeyCode.L) && AllPLSSamplesTaken() && !_ccdLabSubmitted)
+        // Manual submit: tekan L/G/Y kalau semua sample sudah tersimpan dan player ada di lab.
+        if ((Input.GetKeyDown(KeyCode.L) || Input.GetKeyDown(KeyCode.G) || Input.GetKeyDown(KeyCode.Y))
+            && CountPLSSamples() >= 3 && !_ccdLabSubmitted)
             SubmitPLSToLab();
         // Fallback keyboard untuk tombol ACCEPT canvas hasil lab (Enter), selain klik ray XR.
         if (_pendingAcceptAction != null && _ccdLabQcCanvas != null && _ccdLabQcCanvas.activeInHierarchy
@@ -938,6 +1481,20 @@ public class Level10CCDController : MonoBehaviour
             dir.y = 0f;
             if (dir.sqrMagnitude < 0.001f) continue;
             _ccdStationLabels[i].rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+        }
+    }
+
+    private void BillboardLabStepLabels()
+    {
+        Vector3 head = GetPlayerHead();
+        for (int i = 0; i < _ccdLabStepLabels.Length; i++)
+        {
+            Transform label = _ccdLabStepLabels[i];
+            if (label == null || !label.gameObject.activeInHierarchy) continue;
+            Vector3 dir = label.position - head;
+            dir.y = 0f;
+            if (dir.sqrMagnitude < 0.001f) continue;
+            label.rotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
         }
     }
 
@@ -968,15 +1525,15 @@ public class Level10CCDController : MonoBehaviour
             {
                 existing.SetActive(true);
                 _ccdSampleStations[i] = existing;
-                // Cari liquid fill child
-                var liq = existing.transform.Find("BottleLiquid");
-                if (liq != null) _ccdStationFillLiquid[i] = liq;
                 // Cari bottle dan pasang XRGrabInteractable
                 var bottleTf = existing.transform.Find("Bottle");
                 if (bottleTf != null)
                 {
                     _ccdSampleBottles[i] = bottleTf.gameObject;
+                    var liq = EnsureBottleLiquid(existing.transform, bottleTf, i);
+                    if (liq != null) _ccdStationFillLiquid[i] = liq;
                     EnsureBottleGrabbable(bottleTf.gameObject);
+                    AttachBottleSlosh(bottleTf.gameObject, i);
                 }
                 // Cari label child
                 var lbl = existing.transform.Find("StationLabel");
@@ -1008,6 +1565,37 @@ public class Level10CCDController : MonoBehaviour
                 _ccdSampleStations[i] = BuildCCDStationVisual(i, pos);
             }
         }
+    }
+
+    private Transform EnsureBottleLiquid(Transform stationRoot, Transform bottle, int sampleIndex)
+    {
+        if (bottle == null) return null;
+
+        Transform liquid = bottle.Find("Liquid") ?? bottle.Find("BottleLiquid");
+        if (liquid == null && stationRoot != null)
+        {
+            liquid = stationRoot.Find("BottleLiquid");
+            if (liquid != null)
+            {
+                liquid.SetParent(bottle, true);
+                liquid.name = "Liquid";
+            }
+        }
+
+        if (liquid == null)
+        {
+            GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            go.name = "Liquid";
+            go.transform.SetParent(bottle, false);
+            go.transform.localScale = new Vector3(0.82f, 1.15f, 0.82f);
+            go.transform.localPosition = new Vector3(0f, -0.35f, 0f);
+            var col = go.GetComponent<Collider>();
+            if (col != null) Destroy(col);
+            ApplySimpleMat(go.GetComponent<Renderer>(), _ccdSampleColors[Mathf.Clamp(sampleIndex, 0, _ccdSampleColors.Length - 1)]);
+            liquid = go.transform;
+        }
+
+        return liquid;
     }
 
     private GameObject BuildCCDStationVisual(int idx, Vector3 worldPos)
@@ -1071,8 +1659,8 @@ public class Level10CCDController : MonoBehaviour
         var liquid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
         liquid.name = "Liquid";
         liquid.transform.SetParent(bottle.transform, false);
-        liquid.transform.localScale = new Vector3(0.82f, 0.001f, 0.82f);
-        liquid.transform.localPosition = new Vector3(0, -0.95f, 0);
+        liquid.transform.localScale = new Vector3(0.82f, 1.15f, 0.82f);
+        liquid.transform.localPosition = new Vector3(0, -0.35f, 0);
         var lc = liquid.GetComponent<Collider>(); if (lc != null) Destroy(lc);
         var lm = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
         lm.color = _ccdSampleColors[idx];
@@ -1080,6 +1668,7 @@ public class Level10CCDController : MonoBehaviour
         if (lm.HasProperty("_EmissionColor")) lm.SetColor("_EmissionColor", _ccdSampleColors[idx] * 1.2f);
         liquid.GetComponent<Renderer>().sharedMaterial = lm;
         _ccdStationFillLiquid[idx] = liquid.transform;
+        AttachBottleSlosh(bottle, idx);
 
         // --- Floating label (billboarded each frame toward player) ---
         var labelGO = new GameObject("Label");
@@ -1132,24 +1721,108 @@ public class Level10CCDController : MonoBehaviour
         grab.movementType = UnityEngine.XR.Interaction.Toolkit.Interactables.XRBaseInteractable.MovementType.Instantaneous;
     }
 
+    private void AttachBottleSlosh(GameObject bottle, int sampleIndex)
+    {
+        if (bottle == null) return;
+        Transform liquid = sampleIndex >= 0 && sampleIndex < _ccdStationFillLiquid.Length
+            ? _ccdStationFillLiquid[sampleIndex]
+            : null;
+        if (liquid == null)
+            liquid = bottle.transform.Find("Liquid") ?? bottle.transform.Find("BottleLiquid");
+        if (liquid == null) return;
+
+        var slosh = bottle.GetComponent<SampleBottleLiquidSlosh>();
+        if (slosh == null) slosh = bottle.AddComponent<SampleBottleLiquidSlosh>();
+        slosh.Setup(liquid);
+    }
+
     private void UpdateCCDProximity()
     {
         // Sekarang pakai GRAB mechanic — cek apakah botol sudah di-grab pemain.
         if (!_ccdStationsBuilt) return;
         for (int i = 0; i < 3; i++)
         {
-            if (_ccdSampleTaken[i] || _ccdBottleFilling[i]) continue;
+            if (_ccdSampleTaken[i] || _ccdBottleFilling[i] || _ccdSampleReadyForInventory[i]) continue;
             if (_ccdSampleBottles[i] == null) continue;
 
             // Cek apakah botol sudah di-grab (isSelected = sedang dipegang)
             var grab = _ccdSampleBottles[i].GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
-            if (grab == null) continue;
-            if (grab.isSelected)
+            bool grabbed = grab != null && grab.isSelected;
+
+            if (grabbed)
+                StartSampleFill(i);
+        }
+    }
+
+    private void TryStartNearestSampleByInput()
+    {
+        Vector3 head = GetPlayerHead(); head.y = 0f;
+        int best = -1;
+        float bestDistance = float.MaxValue;
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (_ccdSampleTaken[i] || _ccdBottleFilling[i]) continue;
+            if (_ccdSampleStations[i] == null) continue;
+
+            Vector3 sPos = _ccdSampleStations[i].transform.position;
+            sPos.y = 0f;
+            float distance = Vector3.Distance(head, sPos);
+            if (distance < bestDistance)
             {
-                _ccdBottleFilling[i] = true;
-                if (_hud != null) _hud.ShowNotifPublic($"Mengambil sample PLS Thickener {(i == 0 ? 1 : i == 1 ? 3 : 5)}...", 3f);
+                best = i;
+                bestDistance = distance;
             }
         }
+
+        if (best < 0) return;
+
+        if (bestDistance > _ccdSampleInteractRadius)
+        {
+            if (_hud != null)
+                _hud.ShowNotifPublic("Dekati pedestal sample dulu, lalu tekan G/Y atau grab botol.", 3f);
+            return;
+        }
+
+        StartSampleFill(best);
+    }
+
+    private bool TryStoreReadySampleByInput()
+    {
+        Vector3 head = GetPlayerHead(); head.y = 0f;
+        int best = -1;
+        float bestDistance = float.MaxValue;
+        for (int i = 0; i < 3; i++)
+        {
+            if (!_ccdSampleReadyForInventory[i] || _ccdSampleStoredInInventory[i]) continue;
+            if (_ccdSampleStations[i] == null) continue;
+            Vector3 sPos = _ccdSampleStations[i].transform.position;
+            sPos.y = 0f;
+            float distance = Vector3.Distance(head, sPos);
+            if (distance < bestDistance)
+            {
+                best = i;
+                bestDistance = distance;
+            }
+        }
+
+        if (best < 0 || bestDistance > _ccdSampleInteractRadius)
+            return false;
+
+        StoreSampleInInventory(best);
+        return true;
+    }
+
+    private void StartSampleFill(int sampleIndex)
+    {
+        if (sampleIndex < 0 || sampleIndex >= _ccdSampleTaken.Length) return;
+        if (_ccdSampleTaken[sampleIndex] || _ccdBottleFilling[sampleIndex]) return;
+        if (_ccdSampleReadyForInventory[sampleIndex]) return;
+
+        _ccdSampleReadyForInventory[sampleIndex] = true;
+        if (_hud != null)
+            _hud.ShowNotifPublic($"Sample PLS Th-{(sampleIndex == 0 ? 1 : sampleIndex == 1 ? 3 : 5)} diambil.", 2f);
+        StoreSampleInInventory(sampleIndex);
     }
 
     private void UpdateCCDBottleFill()
@@ -1167,25 +1840,244 @@ public class Level10CCDController : MonoBehaviour
             }
             if (t >= 1f)
             {
-                _ccdSampleTaken[i] = true;
                 _ccdBottleFilling[i] = false;
-                // Botol sudah terambil — sembunyikan (sample masuk inventory/rack)
-                if (_ccdSampleBottles[i] != null)
-                    _ccdSampleBottles[i].SetActive(false);
+                _ccdSampleReadyForInventory[i] = true;
                 if (_ccdStationLabels[i] != null)
                 {
                     var tm = _ccdStationLabels[i].GetComponent<TextMesh>();
-                    if (tm != null) { tm.text = $"PLS Th-{(i == 0 ? 1 : i == 1 ? 3 : 5)}\n✓ TERAMBIL"; tm.color = new Color(0.5f, 1f, 0.5f); }
+                    if (tm != null)
+                    {
+                        tm.text = $"PLS Th-{(i == 0 ? 1 : i == 1 ? 3 : 5)}\nTEMPEL KE INVENTORY";
+                        tm.color = new Color(1f, 0.88f, 0.25f);
+                    }
                 }
                 if (_hud != null)
-                    _hud.ShowNotifPublic($"Sample PLS Th-{(i == 0 ? 1 : i == 1 ? 3 : 5)} terkumpul ({CountPLSSamples()}/3).", 3f);
-                if (AllPLSSamplesTaken() && _hud != null)
-                    _hud.ShowNotifPublic("3 sample PLS terkumpul. Masuk LAB QC, tekan [L] untuk submit analisa.", 8f);
+                    _hud.ShowNotifPublic($"Botol PLS Th-{(i == 0 ? 1 : i == 1 ? 3 : 5)} penuh. Sentuhkan botol ke dada/inventory.", 5f);
+                continue;
             }
         }
     }
 
-    private bool AllPLSSamplesTaken() { foreach (var s in _ccdSampleTaken) if (!s) return false; return true; }
+    private void UpdateSampleInventoryTouch()
+    {
+        if (!_ccdStationsBuilt) return;
+        Vector3 chest = GetInventoryChestPosition();
+        for (int i = 0; i < 3; i++)
+        {
+            if (!_ccdSampleReadyForInventory[i] || _ccdSampleStoredInInventory[i]) continue;
+            if (_ccdSampleBottles[i] == null) continue;
+
+            GameObject bottle = _ccdSampleBottles[i];
+            var grab = bottle.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRGrabInteractable>();
+            bool selected = grab != null && grab.isSelected;
+            if (selected && Vector3.Distance(bottle.transform.position, chest) <= _sampleInventoryTouchRadius)
+                StoreSampleInInventory(i);
+        }
+    }
+
+    private Vector3 GetInventoryChestPosition()
+    {
+        return GetPlayerHead() + Vector3.down * 0.45f;
+    }
+
+    private void StoreSampleInInventory(int sampleIndex)
+    {
+        if (sampleIndex < 0 || sampleIndex >= 3) return;
+        if (_ccdSampleStoredInInventory[sampleIndex]) return;
+
+        _ccdSampleStoredInInventory[sampleIndex] = true;
+        _ccdSampleTaken[sampleIndex] = true;
+
+        if (_ccdSampleBottles[sampleIndex] != null)
+            _ccdSampleBottles[sampleIndex].SetActive(false);
+
+        EnsureSampleInventoryVisual();
+        CreateInventoryBottle(sampleIndex);
+
+        if (_ccdStationLabels[sampleIndex] != null)
+        {
+            var tm = _ccdStationLabels[sampleIndex].GetComponent<TextMesh>();
+            if (tm != null)
+            {
+                tm.text = $"PLS Th-{(sampleIndex == 0 ? 1 : sampleIndex == 1 ? 3 : 5)}\nOK INVENTORY";
+                tm.color = new Color(0.5f, 1f, 0.5f);
+            }
+        }
+
+        if (_hud != null)
+            _hud.ShowNotifPublic($"Sample PLS Th-{(sampleIndex == 0 ? 1 : sampleIndex == 1 ? 3 : 5)} masuk inventory ({CountPLSSamples()}/3).", 4f);
+
+        if (CountPLSSamples() >= 3)
+        {
+            if (_hud != null)
+                _hud.ShowNotifPublic("3 sample PLS tersimpan. Pindah ke Lab QC untuk analisa Ni-Co.", 6f);
+            TeleportToSampleOrLabAfterDelay(3, _sampleSuccessPause);
+        }
+        else
+        {
+            TeleportToSampleOrLabAfterDelay(sampleIndex + 1, _sampleSuccessPause);
+        }
+    }
+
+    private void EnsureSampleInventoryVisual()
+    {
+        if (_sampleInventoryRoot != null) return;
+        GameObject go = new GameObject("L9_CCD_SampleInventory_Runtime");
+        if (_playerRigRoot != null)
+            go.transform.SetParent(_playerRigRoot, false);
+        go.transform.localPosition = new Vector3(0.32f, 1.08f, 0.28f);
+        _sampleInventoryRoot = go.transform;
+    }
+
+    private void CreateInventoryBottle(int sampleIndex)
+    {
+        if (_sampleInventoryRoot == null || _sampleInventoryBottles[sampleIndex] != null)
+            return;
+
+        GameObject bottle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        bottle.name = $"Inventory_PLS_Bottle_{sampleIndex + 1}";
+        bottle.transform.SetParent(_sampleInventoryRoot, false);
+        bottle.transform.localPosition = new Vector3((sampleIndex - 1) * 0.13f, 0f, 0f);
+        bottle.transform.localScale = new Vector3(0.035f, 0.105f, 0.035f);
+        var col = bottle.GetComponent<Collider>(); if (col != null) Destroy(col);
+        Material glass = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        ApplyTransparent(glass, new Color(0.78f, 0.9f, 1f, 0.32f));
+        bottle.GetComponent<Renderer>().sharedMaterial = glass;
+
+        GameObject liquid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        liquid.name = "Liquid";
+        liquid.transform.SetParent(bottle.transform, false);
+        liquid.transform.localPosition = new Vector3(0f, -0.15f, 0f);
+        liquid.transform.localScale = new Vector3(0.78f, 0.68f, 0.78f);
+        var lcol = liquid.GetComponent<Collider>(); if (lcol != null) Destroy(lcol);
+        ApplySimpleMat(liquid.GetComponent<Renderer>(), _ccdSampleColors[sampleIndex]);
+        _sampleInventoryBottles[sampleIndex] = bottle;
+    }
+
+    private void TeleportToSampleOrLabAfterDelay(int nextSampleIndex, float delay)
+    {
+        if (_sampleTeleportCoroutine != null)
+            StopCoroutine(_sampleTeleportCoroutine);
+
+        _sampleTeleportCoroutine = StartCoroutine(TeleportToSampleOrLabCoroutine(nextSampleIndex, delay));
+    }
+
+    private IEnumerator TeleportToSampleOrLabCoroutine(int nextSampleIndex, float delay)
+    {
+        if (delay > 0f)
+            yield return new WaitForSeconds(delay);
+
+        float fadeDuration = Mathf.Max(2.0f, _sampleTeleportFadeDuration);
+        if (_hud != null)
+            _hud.PlayManualFade(fadeDuration);
+
+        yield return new WaitForSeconds(fadeDuration * 0.5f);
+
+        if (nextSampleIndex < 3)
+        {
+            TeleportPlayer(CreateSampleStandSpot(nextSampleIndex));
+            int thNo = nextSampleIndex == 0 ? 1 : nextSampleIndex == 1 ? 3 : 5;
+            if (_hud != null)
+                _hud.ShowNotifPublic($"Ambil sample PLS Th-{thNo}. Grab botol sample atau tekan G/Y.", 5f);
+        }
+        else
+        {
+            TeleportPlayer(CreateLabStandSpot());
+            if (_hud != null)
+                _hud.ShowNotifPublic("Semua sample PLS masuk lab. Dekati meja QC, tekan G/Y/L untuk mulai chain-of-custody dan analisa.", 7f);
+        }
+
+        yield return new WaitForSeconds(fadeDuration * 0.5f);
+        _sampleTeleportCoroutine = null;
+    }
+
+    private Transform CreateSampleStandSpot(int sampleIndex)
+    {
+        Transform station = null;
+        if (sampleIndex >= 0 && sampleIndex < _ccdSampleStations.Length && _ccdSampleStations[sampleIndex] != null)
+            station = _ccdSampleStations[sampleIndex].transform;
+        if (station == null)
+            return ResolveFieldStandSpot();
+
+        string name = $"SpawnPoint_L9_PLS_Sample_{sampleIndex + 1}_Runtime";
+        GameObject existing = GameObject.Find(name);
+        GameObject sp = existing != null ? existing : new GameObject(name);
+
+        Vector3 forward = ResolveSampleFrontDirection(station);
+        Vector3 pos = station.position + forward * _sampleStandDistance;
+        pos.y = 0.1f;
+        Vector3 look = station.position - pos;
+        look.y = 0f;
+
+        sp.transform.position = pos;
+        sp.transform.rotation = look.sqrMagnitude > 0.001f
+            ? Quaternion.LookRotation(look.normalized, Vector3.up)
+            : Quaternion.identity;
+        return sp.transform;
+    }
+
+    private Vector3 ResolveSampleFrontDirection(Transform station)
+    {
+        Vector3 a = station != null ? station.forward : Vector3.back;
+        a.y = 0f;
+        if (a.sqrMagnitude < 0.001f)
+            a = Vector3.back;
+        a.Normalize();
+
+        Vector3 b = -a;
+        Vector3 fieldCenter = _ccdField != null ? GetRendererBoundsCenter(_ccdField) : Vector3.zero;
+        if (fieldCenter != Vector3.zero && station != null)
+        {
+            Vector3 pa = station.position + a * _sampleStandDistance;
+            Vector3 pb = station.position + b * _sampleStandDistance;
+            pa.y = pb.y = fieldCenter.y = 0f;
+            return Vector3.Distance(pa, fieldCenter) >= Vector3.Distance(pb, fieldCenter) ? a : b;
+        }
+
+        return a;
+    }
+
+    private Vector3 GetRendererBoundsCenter(GameObject go)
+    {
+        if (go == null) return Vector3.zero;
+        Renderer[] renderers = go.GetComponentsInChildren<Renderer>();
+        if (renderers == null || renderers.Length == 0)
+            return go.transform.position;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+        return bounds.center;
+    }
+
+    private Transform CreateLabStandSpot()
+    {
+        Transform lab = ResolveLabMarkerTarget();
+        if (lab == null)
+            return ResolveFieldStandSpot();
+
+        string name = "SpawnPoint_L9_LabQC_Runtime";
+        GameObject existing = GameObject.Find(name);
+        GameObject sp = existing != null ? existing : new GameObject(name);
+
+        Vector3 forward = lab.forward;
+        forward.y = 0f;
+        if (forward.sqrMagnitude < 0.001f)
+            forward = Vector3.back;
+        forward.Normalize();
+
+        Vector3 pos = lab.position - forward * 4.2f;
+        pos.y = 0.1f;
+        Vector3 look = lab.position - pos;
+        look.y = 0f;
+
+        sp.transform.position = pos;
+        sp.transform.rotation = look.sqrMagnitude > 0.001f
+            ? Quaternion.LookRotation(look.normalized, Vector3.up)
+            : Quaternion.identity;
+        return sp.transform;
+    }
+
     private int CountPLSSamples() { int c = 0; foreach (var s in _ccdSampleTaken) if (s) c++; return c; }
 
     private void BuildCCDLabBuilding()
@@ -1276,14 +2168,370 @@ public class Level10CCDController : MonoBehaviour
         stm.text = "LAB QC PLS";
         stm.fontSize = 60; stm.characterSize = 0.04f; stm.anchor = TextAnchor.MiddleCenter;
         stm.alignment = TextAlignment.Center; stm.color = new Color(0.2f, 0.9f, 1f);
+        BuildInteractiveLabStations();
         Debug.Log("[Level9 CCD] Lab QC resolved (scene atau fallback FBX).");
+    }
+
+    private void BuildInteractiveLabStations()
+    {
+        if (_ccdLabBuilding == null)
+            return;
+
+        Transform existing = _ccdLabBuilding.transform.Find("L9_LabInteractiveStations_Runtime");
+        if (existing != null && existing.childCount > 0)
+        {
+            CacheExistingLabStations(existing);
+            EnsureLabSampleBottleVisuals(existing);
+            return;
+        }
+
+        GameObject root = existing != null ? existing.gameObject : new GameObject("L9_LabInteractiveStations_Runtime");
+        if (existing == null)
+        {
+            root.transform.SetParent(_ccdLabBuilding.transform, false);
+            root.transform.localPosition = new Vector3(0f, 1.15f, -0.65f);
+            root.transform.localRotation = Quaternion.identity;
+        }
+
+        string[] titles =
+        {
+            "1 SAMPLE LOGIN",
+            "2 FILTER / TSS",
+            "3 pH + FREE ACID",
+            "4 ICP-OES METALS",
+            "5 VALIDASI CCD"
+        };
+        string[] subtitles =
+        {
+            "scan seal + ID",
+            "0.45 um filter",
+            "probe + titrasi",
+            "vial ke analyzer",
+            "pass/fail window"
+        };
+
+        for (int i = 0; i < 5; i++)
+        {
+            GameObject station = new GameObject("LabStep_" + (i + 1));
+            station.transform.SetParent(root.transform, false);
+            station.transform.localPosition = new Vector3((i - 2) * 0.72f, 0f, 0f);
+            _ccdLabStepStations[i] = station;
+
+            CreateLabCube(station.transform, "BenchPad", new Vector3(0f, -0.04f, 0f), new Vector3(0.56f, 0.08f, 0.46f), new Color(0.12f, 0.16f, 0.18f));
+
+            if (i == 0)
+            {
+                CreateLabCube(station.transform, "BarcodeScanner", new Vector3(-0.12f, 0.11f, 0.02f), new Vector3(0.18f, 0.08f, 0.25f), new Color(0.04f, 0.05f, 0.06f));
+                CreateLabCube(station.transform, "SampleLogbook", new Vector3(0.13f, 0.09f, 0.02f), new Vector3(0.22f, 0.035f, 0.30f), new Color(0.10f, 0.18f, 0.30f));
+            }
+            else if (i == 1)
+            {
+                CreateLabCylinder(station.transform, "FilterFunnel", new Vector3(0f, 0.18f, 0f), new Vector3(0.13f, 0.18f, 0.13f), new Color(0.85f, 0.95f, 1f, 0.45f), true);
+                CreateLabCylinder(station.transform, "FilterFlask", new Vector3(0f, 0.02f, 0f), new Vector3(0.18f, 0.11f, 0.18f), new Color(0.50f, 0.72f, 0.74f, 0.55f), true);
+            }
+            else if (i == 2)
+            {
+                CreateLabCube(station.transform, "PHMeter", new Vector3(-0.12f, 0.12f, 0.03f), new Vector3(0.20f, 0.15f, 0.12f), new Color(0.04f, 0.08f, 0.10f));
+                CreateLabCylinder(station.transform, "Burette", new Vector3(0.14f, 0.22f, 0.02f), new Vector3(0.035f, 0.30f, 0.035f), new Color(0.85f, 0.95f, 1f, 0.35f), true);
+            }
+            else if (i == 3)
+            {
+                CreateLabCube(station.transform, "ICPTray", new Vector3(-0.02f, 0.07f, 0f), new Vector3(0.36f, 0.08f, 0.24f), new Color(0.10f, 0.12f, 0.16f));
+                for (int v = 0; v < 3; v++)
+                    CreateLabSampleBottle(station.transform, "Vial_" + v, new Vector3(-0.12f + v * 0.12f, 0.18f, 0.02f), 0.10f, _ccdSampleColors[Mathf.Clamp(v, 0, 2)]);
+            }
+            else
+            {
+                CreateLabCube(station.transform, "ValidationConsole", new Vector3(0f, 0.12f, 0f), new Vector3(0.38f, 0.16f, 0.20f), new Color(0.02f, 0.14f, 0.10f));
+                CreateLabCube(station.transform, "PassLamp", new Vector3(0f, 0.25f, -0.02f), new Vector3(0.16f, 0.05f, 0.05f), new Color(0.05f, 0.85f, 0.25f));
+            }
+
+            GameObject button = CreateLabCylinder(station.transform, "ACTION_BUTTON", new Vector3(0f, 0.13f, -0.28f), new Vector3(0.13f, 0.045f, 0.13f), new Color(0.05f, 0.85f, 0.25f), false);
+            _ccdLabStepButtons[i] = button.transform;
+            int captured = i;
+            WireLabStepButton(button, captured);
+
+            GameObject labelGo = new GameObject("StepLabel");
+            labelGo.transform.SetParent(station.transform, false);
+            labelGo.transform.localPosition = new Vector3(0f, 0.42f, -0.30f);
+            TextMesh tm = labelGo.AddComponent<TextMesh>();
+            tm.text = titles[i] + "\n" + subtitles[i];
+            tm.fontSize = 34;
+            tm.characterSize = 0.010f;
+            tm.anchor = TextAnchor.MiddleCenter;
+            tm.alignment = TextAlignment.Center;
+            tm.color = Color.white;
+            _ccdLabStepLabels[i] = labelGo.transform;
+
+            SetLabStepVisual(i, false, false);
+        }
+
+        EnsureLabSampleBottleVisuals(root.transform);
+    }
+
+    private void CacheExistingLabStations(Transform root)
+    {
+        for (int i = 0; i < 5; i++)
+        {
+            Transform station = root.Find("LabStep_" + (i + 1));
+            if (station == null && i < root.childCount)
+                station = root.GetChild(i);
+            if (station == null)
+                continue;
+
+            _ccdLabStepStations[i] = station.gameObject;
+
+            Transform button = FindDeepChild(station, "ACTION_BUTTON");
+            if (button == null)
+                button = FindDeepChild(station, "ActionButton");
+            if (button != null)
+            {
+                _ccdLabStepButtons[i] = button;
+                WireLabStepButton(button.gameObject, i);
+            }
+
+            Transform label = FindDeepChild(station, "StepLabel");
+            if (label == null)
+            {
+                TextMesh tm = station.GetComponentInChildren<TextMesh>();
+                if (tm != null) label = tm.transform;
+            }
+            _ccdLabStepLabels[i] = label;
+            SetLabStepVisual(i, false, false);
+        }
+    }
+
+    private void EnsureLabSampleBottleVisuals(Transform root)
+    {
+        if (root == null)
+            return;
+
+        Transform rack = root.Find("Runtime_PLS_SampleBottles");
+        if (rack != null)
+            return;
+
+        GameObject rackGo = new GameObject("Runtime_PLS_SampleBottles");
+        rackGo.transform.SetParent(root, false);
+        rackGo.transform.localPosition = new Vector3(1.58f, 0.19f, 0.16f);
+        rackGo.transform.localRotation = Quaternion.identity;
+        for (int i = 0; i < 3; i++)
+            CreateLabSampleBottle(rackGo.transform, "PLS_LabBottle_Th" + (i == 0 ? 1 : i == 1 ? 3 : 5), new Vector3(i * 0.16f, 0f, 0f), 0.18f, _ccdSampleColors[i]);
+    }
+
+    private GameObject CreateLabSampleBottle(Transform parent, string name, Vector3 localPosition, float height, Color liquidColor)
+    {
+        GameObject bottle = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        bottle.name = name;
+        bottle.transform.SetParent(parent, false);
+        bottle.transform.localPosition = localPosition;
+        bottle.transform.localScale = new Vector3(height * 0.28f, height, height * 0.28f);
+        Renderer br = bottle.GetComponent<Renderer>();
+        Material glass = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        ApplyTransparent(glass, new Color(0.78f, 0.90f, 1f, 0.26f));
+        br.sharedMaterial = glass;
+        var bc = bottle.GetComponent<Collider>(); if (bc != null) Destroy(bc);
+
+        GameObject liquid = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        liquid.name = "Liquid";
+        liquid.transform.SetParent(bottle.transform, false);
+        liquid.transform.localPosition = new Vector3(0f, -0.18f, 0f);
+        liquid.transform.localScale = new Vector3(0.76f, 0.58f, 0.76f);
+        Renderer lr = liquid.GetComponent<Renderer>();
+        Material lm = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+        ApplyTransparent(lm, new Color(liquidColor.r, liquidColor.g, liquidColor.b, 0.72f));
+        lr.sharedMaterial = lm;
+        var lc = liquid.GetComponent<Collider>(); if (lc != null) Destroy(lc);
+        return bottle;
+    }
+
+    private GameObject CreateLabCube(Transform parent, string name, Vector3 localPosition, Vector3 localScale, Color color)
+    {
+        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        go.name = name;
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localPosition;
+        go.transform.localScale = localScale;
+        ApplySimpleMat(go.GetComponent<Renderer>(), color);
+        var col = go.GetComponent<Collider>();
+        if (col != null) Destroy(col);
+        return go;
+    }
+
+    private GameObject CreateLabCylinder(Transform parent, string name, Vector3 localPosition, Vector3 localScale, Color color, bool transparent)
+    {
+        GameObject go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        go.name = name;
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localPosition;
+        go.transform.localScale = localScale;
+        Renderer r = go.GetComponent<Renderer>();
+        if (transparent)
+        {
+            Material m = new Material(Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard"));
+            ApplyTransparent(m, color);
+            r.sharedMaterial = m;
+        }
+        else
+        {
+            ApplySimpleMat(r, color);
+        }
+        return go;
+    }
+
+    private void WireLabStepButton(GameObject button, int stepIndex)
+    {
+        if (button == null) return;
+        var col = button.GetComponent<Collider>();
+        if (col == null) col = button.AddComponent<SphereCollider>();
+        col.isTrigger = false;
+
+        var si = button.GetComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>();
+        if (si == null) si = button.AddComponent<UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable>();
+        si.colliders.Clear();
+        foreach (var c in button.GetComponents<Collider>())
+            if (c != null) si.colliders.Add(c);
+        si.selectEntered.RemoveAllListeners();
+        si.selectEntered.AddListener(_ => ConfirmLabStep(stepIndex));
+    }
+
+    private void ConfirmLabStep(int stepIndex)
+    {
+        if (!_ccdLabSequenceStarted || stepIndex != _ccdLabActiveStep || _ccdLabStepDone[stepIndex])
+            return;
+
+        _ccdLabStepConfirmed = true;
+        if (_hud != null)
+            _hud.ShowNotifPublic("Tahap lab dikonfirmasi. Analisa berjalan...", 3f);
+    }
+
+    private void SetLabStepVisual(int stepIndex, bool active, bool done)
+    {
+        if (stepIndex < 0 || stepIndex >= _ccdLabStepStations.Length)
+            return;
+
+        Color pad = done ? new Color(0.05f, 0.35f, 0.12f) : active ? new Color(0.30f, 0.24f, 0.02f) : new Color(0.12f, 0.16f, 0.18f);
+        Transform station = _ccdLabStepStations[stepIndex] != null ? _ccdLabStepStations[stepIndex].transform : null;
+        Transform bench = station != null ? station.Find("BenchPad") : null;
+        if (bench != null && bench.TryGetComponent(out Renderer br))
+            ApplySimpleMat(br, pad);
+
+        Transform button = _ccdLabStepButtons[stepIndex];
+        if (button != null && button.TryGetComponent(out Renderer rr))
+            ApplySimpleMat(rr, done ? new Color(0.08f, 0.45f, 0.15f) : active ? new Color(1f, 0.86f, 0.1f) : new Color(0.05f, 0.85f, 0.25f));
+
+        if (_ccdLabStepLabels[stepIndex] != null)
+        {
+            TextMesh tm = _ccdLabStepLabels[stepIndex].GetComponent<TextMesh>();
+            if (tm != null)
+                tm.color = done ? new Color(0.55f, 1f, 0.55f) : active ? new Color(1f, 0.92f, 0.35f) : Color.white;
+        }
     }
 
     private void SubmitPLSToLab()
     {
-        if (_ccdLabSubmitted) return;
+        if (_ccdLabSubmitted || _ccdLabSequenceStarted) return;
+        _ccdLabSequenceStarted = true;
+        StartCoroutine(ImmersiveNickelPlsLabCoroutine());
+    }
+
+    private IEnumerator ImmersiveNickelPlsLabCoroutine()
+    {
+        if (_hud != null)
+            _hud.ShowNotifPublic("Lab menerima 3 botol PLS. Mulai chain-of-custody, filtrasi, titrasi, dan ICP-OES.", 7f);
+
+        string[] steps =
+        {
+            "01 SAMPLE LOGIN\nLabel Th-1/Th-3/Th-5, seal, volume, waktu sampling OK",
+            "02 FILTRASI / TSS\nFilter 0.45 um + gravimetri padatan tersuspensi",
+            "03 pH + FREE ACID\npH meter terkalibrasi, titrasi NaOH untuk H2SO4 bebas",
+            "04 ICP-OES METALS\nDilusi asam, baca Ni/Co/Fe/Al/Mg/Mn",
+            "05 VALIDASI CCD\nNi-Co sesuai target, TSS rendah, acid/impurities siap route neutralisasi-MHP"
+        };
+
+        string[] prompts =
+        {
+            "Scan label sample dan cek chain-of-custody.",
+            "Pasang filter 0.45 um untuk TSS/clarity.",
+            "Celup probe pH dan mulai titrasi free acid.",
+            "Masukkan vial ke ICP-OES untuk metals assay.",
+            "Bandingkan hasil dengan window proses CCD."
+        };
+
+        for (int i = 0; i < 3; i++)
+        {
+            if (_ccdLabSlotLiquids[i] == null) continue;
+            Vector3 baseScale = _ccdLabSlotLiquids[i].localScale;
+            Vector3 basePos = _ccdLabSlotLiquids[i].localPosition;
+            float fullY = Mathf.Abs(_ccdLabSlotBaseY[i]) > 0.0001f ? _ccdLabSlotBaseY[i] : 1.7f;
+            float elapsed = 0f;
+            if (_ccdLabScreenText != null)
+                _ccdLabScreenText.text = $"LOAD SAMPLE Th-{(i == 0 ? 1 : i == 1 ? 3 : 5)}\nBottle ID verified";
+            while (elapsed < 0.65f)
+            {
+                elapsed += Time.deltaTime;
+                float p = Mathf.Clamp01(elapsed / 0.65f);
+                float h = Mathf.Lerp(fullY * 0.02f, fullY, p);
+                _ccdLabSlotLiquids[i].localScale = new Vector3(baseScale.x, h, baseScale.z);
+                _ccdLabSlotLiquids[i].localPosition = basePos + new Vector3(0f, (h - fullY * 0.02f) * 0.5f, 0f);
+                yield return null;
+            }
+        }
+
+        for (int step = 0; step < steps.Length; step++)
+        {
+            yield return WaitForLabStepInput(step, prompts[step]);
+            float duration = step == 3 ? 2.0f : 1.35f;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                if (_ccdLabAnalyzerRotor != null)
+                    _ccdLabAnalyzerRotor.Rotate(Vector3.up, (step == 3 ? 520f : 260f) * Time.deltaTime, Space.Self);
+                if (_ccdLabScreenText != null)
+                {
+                    int pct = Mathf.RoundToInt(Mathf.Clamp01(elapsed / duration) * 100f);
+                    int bars = Mathf.RoundToInt(pct / 10f);
+                    _ccdLabScreenText.text = steps[step] + "\n[" + new string('#', bars) + new string('-', 10 - bars) + "] " + pct + "%";
+                }
+                yield return null;
+            }
+
+            _ccdLabStepDone[step] = true;
+            SetLabStepVisual(step, false, true);
+        }
+
+        _ccdLabActiveStep = -1;
         _ccdLabSubmitted = true;
-        StartCoroutine(LabAnalysisCoroutineL10());
+        if (_ccdLabScreenText != null)
+            _ccdLabScreenText.text = "QC SELESAI\nCCD OVERFLOW PASS\nNi 5.1 g/L | Co 0.52 g/L\nTSS 180 mg/L | Free acid 22 g/L";
+
+        ShowImmersiveL10LabResultCanvas();
+        if (_hud != null)
+            _hud.ShowNotifPublic("Hasil QC keluar: PLS memenuhi window proses. Klik ACCEPT atau tekan Enter untuk lanjut.", 8f);
+    }
+
+    private IEnumerator WaitForLabStepInput(int stepIndex, string prompt)
+    {
+        _ccdLabActiveStep = stepIndex;
+        _ccdLabStepConfirmed = false;
+        for (int i = 0; i < _ccdLabStepStations.Length; i++)
+            SetLabStepVisual(i, i == stepIndex, _ccdLabStepDone[i]);
+
+        if (_ccdLabScreenText != null)
+            _ccdLabScreenText.text = prompt + "\nTekan tombol kuning alat lab";
+        if (_hud != null)
+            _hud.ShowNotifPublic(prompt + " Tekan tombol kuning pada station lab yang ditandai.", 7f);
+
+        yield return null;
+        while (!_ccdLabStepConfirmed)
+        {
+            if (Input.GetKeyDown(KeyCode.G) || Input.GetKeyDown(KeyCode.Y) || Input.GetKeyDown(KeyCode.L))
+                ConfirmLabStep(stepIndex);
+
+            if (_ccdLabAnalyzerRotor != null)
+                _ccdLabAnalyzerRotor.Rotate(Vector3.up, 35f * Time.deltaTime, Space.Self);
+            yield return null;
+        }
     }
 
     private IEnumerator LabAnalysisCoroutineL10()
@@ -1328,25 +2576,81 @@ public class Level10CCDController : MonoBehaviour
         if (_hud != null) _hud.ShowNotifPublic("Hasil QC keluar: PLS dalam SOP. Klik tombol ACCEPT (atau tekan Enter) untuk lanjut.", 8f);
     }
 
+    private void ShowImmersiveL10LabResultCanvas()
+    {
+        if (_ccdLabQcCanvas != null)
+        {
+            _ccdLabQcCanvas.SetActive(true);
+            _labResultCanvasFollowPlayer = true;
+            PositionLabResultCanvas(_ccdLabQcCanvas.transform);
+            return;
+        }
+
+        var canvasGO = new GameObject("L9_LabQC_Canvas_Immersive");
+        canvasGO.transform.SetParent(transform, false);
+        var canvas = canvasGO.AddComponent<Canvas>();
+        canvas.renderMode = RenderMode.WorldSpace;
+        canvasGO.AddComponent<UnityEngine.UI.CanvasScaler>();
+        canvasGO.AddComponent<UnityEngine.UI.GraphicRaycaster>();
+
+        canvasGO.transform.localScale = Vector3.one * 0.85f;
+        var rect = canvasGO.GetComponent<RectTransform>();
+        rect.sizeDelta = new Vector2(2.15f, 1.55f);
+        _labResultCanvasFollowPlayer = true;
+        PositionLabResultCanvas(canvasGO.transform);
+
+        AddPanel(canvasGO.transform, "BG", new Color(0.035f, 0.07f, 0.12f, 0.98f), Vector2.zero, Vector2.one);
+        AddPanel(canvasGO.transform, "TitleBar", new Color(0.08f, 0.28f, 0.42f, 1f), new Vector2(0f, 0.86f), new Vector2(1f, 1f));
+        AddText(canvasGO.transform, "Title", "LAB QC - CCD OVERFLOW PLS",
+            new Color(0.7f, 1f, 0.85f), 30, FontStyle.Bold, TextAnchor.MiddleCenter,
+            new Vector2(0f, 0.86f), new Vector2(1f, 1f));
+
+        string[] rows =
+        {
+            "Chain-of-custody: 3 bottle sealed | ID Th-1/Th-3/Th-5 | volume OK",
+            "ICP-OES metals: Ni 5.1 g/L | Co 0.52 g/L | Fe 3.2 | Al 1.4 | Mg 16.8",
+            "Wet chemistry: pH 1.35 | free H2SO4 22 g/L | ORP stable",
+            "Solids/clarity: TSS 180 mg/L | turbidity low | no coarse carryover",
+            "CCD validation: soluble Ni/Co recovery 96% | overflow ready to purification/MHP route"
+        };
+        for (int i = 0; i < rows.Length; i++)
+        {
+            float yMin = 0.61f - i * 0.10f;
+            AddText(canvasGO.transform, "QCRow" + i, rows[i], Color.white, 16, FontStyle.Normal,
+                TextAnchor.MiddleLeft, new Vector2(0.05f, yMin), new Vector2(0.95f, yMin + 0.095f));
+        }
+
+        AddText(canvasGO.transform, "Verdict",
+            "VERDICT: PASS. Training window: Ni 3-6 g/L, Co 0.2-0.8 g/L, free acid 10-60 g/L, TSS <500 mg/L, recovery >=95%.",
+            new Color(0.6f, 1f, 0.7f), 17, FontStyle.Italic, TextAnchor.MiddleCenter,
+            new Vector2(0.05f, 0.13f), new Vector2(0.95f, 0.30f));
+        AddButton(canvasGO.transform, "ACCEPT & LANJUT",
+            new Vector2(0.3f, 0.04f), new Vector2(0.7f, 0.13f),
+            new Color(0.2f, 0.6f, 0.3f), () => OnL10LabAccepted());
+
+        _ccdLabQcCanvas = canvasGO;
+    }
+
     private void ShowL10LabResultCanvas()
     {
-        if (_ccdLabQcCanvas != null) { _ccdLabQcCanvas.SetActive(true); return; }
+        if (_ccdLabQcCanvas != null)
+        {
+            _ccdLabQcCanvas.SetActive(true);
+            _labResultCanvasFollowPlayer = true;
+            PositionLabResultCanvas(_ccdLabQcCanvas.transform);
+            return;
+        }
         var canvasGO = new GameObject("L9_LabQC_Canvas");
         canvasGO.transform.SetParent(transform, false);
         var canvas = canvasGO.AddComponent<Canvas>();
         canvas.renderMode = RenderMode.WorldSpace;
         canvasGO.AddComponent<UnityEngine.UI.CanvasScaler>();
         canvasGO.AddComponent<UnityEngine.UI.GraphicRaycaster>();
-        Vector3 head = GetPlayerHead();
-        Vector3 fwd = GetPlayerForward(); fwd.y = 0f;
-        if (fwd.sqrMagnitude < 0.001f) fwd = Vector3.forward;
-        fwd.Normalize();
-        // Posisikan setinggi mata, ~2.2m di depan, supaya tidak nabrak meja lab & terbaca penuh.
-        canvasGO.transform.position = new Vector3(head.x, head.y + 0.1f, head.z) + fwd * 2.2f;
-        canvasGO.transform.rotation = Quaternion.LookRotation(fwd, Vector3.up);
         var rect = canvasGO.GetComponent<RectTransform>();
         rect.sizeDelta = new Vector2(2.0f, 1.4f);
         canvasGO.transform.localScale = Vector3.one * 0.85f;
+        _labResultCanvasFollowPlayer = true;
+        PositionLabResultCanvas(canvasGO.transform);
 
         AddPanel(canvasGO.transform, "BG", new Color(0.04f, 0.08f, 0.13f, 0.98f), Vector2.zero, Vector2.one);
         AddPanel(canvasGO.transform, "TitleBar", new Color(0.10f, 0.30f, 0.45f, 1f), new Vector2(0f, 0.85f), new Vector2(1f, 1f));
@@ -1377,8 +2681,40 @@ public class Level10CCDController : MonoBehaviour
     private void OnL10LabAccepted()
     {
         if (_ccdLabQcCanvas != null) _ccdLabQcCanvas.SetActive(false);
+        _labResultCanvasFollowPlayer = false;
         GameLevelManager.Instance?.NotifyLevel10SamplePLSAccepted();
         if (_hud != null) _hud.ShowNotifPublic("Lab QC PLS lulus. Lapor HT (tahan T): 'CCD aktif, PLS lulus QC'.", 8f);
+    }
+
+    private void FollowLabResultCanvas()
+    {
+        if (!_labResultCanvasFollowPlayer || _ccdLabQcCanvas == null || !_ccdLabQcCanvas.activeInHierarchy)
+            return;
+
+        PositionLabResultCanvas(_ccdLabQcCanvas.transform);
+    }
+
+    private void PositionLabResultCanvas(Transform canvasTransform)
+    {
+        if (canvasTransform == null) return;
+
+        Vector3 head = GetPlayerHead();
+        Vector3 fwd = GetPlayerForward();
+        fwd.y = 0f;
+        if (fwd.sqrMagnitude < 0.001f) fwd = Vector3.forward;
+        fwd.Normalize();
+
+        Vector3 right = Vector3.Cross(Vector3.up, fwd);
+        if (right.sqrMagnitude < 0.001f) right = Vector3.right;
+        right.Normalize();
+
+        Vector3 pos = head + fwd * 1.25f + right * 1.05f + Vector3.down * 0.08f;
+        canvasTransform.position = pos;
+
+        Vector3 face = pos - head;
+        face.y = 0f;
+        if (face.sqrMagnitude < 0.001f) face = fwd;
+        canvasTransform.rotation = Quaternion.LookRotation(face.normalized, Vector3.up);
     }
 
     private Vector3 GetPlayerHead()
@@ -1463,6 +2799,7 @@ public class Level10CCDController : MonoBehaviour
     }
 
     private System.Action _pendingAcceptAction;
+    private bool _labResultCanvasFollowPlayer;
 
     // Tunggu 1 frame supaya layout RectTransform sudah final, baru pasang collider seukuran tombol.
     private IEnumerator AttachXrButtonNextFrame(GameObject go, RectTransform rt, System.Action onClick)

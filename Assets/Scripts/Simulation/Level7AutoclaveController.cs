@@ -968,6 +968,13 @@ public class Level7AutoclaveController : MonoBehaviour
             Transform p = FindByNameInactive(token);
             if (p != null) parts.Add(p);
         }
+        Transform l5Visual = ReplaceInletHandwheelVisualWithL5Model(hub, parts.ToArray());
+        if (l5Visual != null)
+        {
+            parts.Clear();
+            parts.Add(hub);
+            parts.Add(l5Visual);
+        }
         _handwheelParts = parts.ToArray();
 
         // BARU: putaran PERSIS seperti Level 8 Flash Vessel (GesturalHandwheel di hub).
@@ -975,6 +982,74 @@ public class Level7AutoclaveController : MonoBehaviour
         if (_inletGH == null) _inletGH = hub.gameObject.AddComponent<GesturalHandwheel>();
         _inletGH.fullOpenDegrees = _inletValveFullOpenDegrees;
         _inletGH.Setup(hub, _handwheelParts);
+    }
+
+    private Transform ReplaceInletHandwheelVisualWithL5Model(Transform hub, Transform[] oldParts)
+    {
+        if (hub == null)
+            return null;
+        Transform existing = hub.Find("L7_L5_Condensate_Drain_Handwheel_StirRedesign_Runtime")
+                          ?? hub.Find("L7_L5_Condensate_Drain_Handwheel_StirRedesign_Scene");
+        if (existing != null)
+            return existing;
+
+        Transform source = FindByNameInactive("L5_Condensate_Drain_Handwheel_StirRedesign");
+        if (source == null)
+            source = FindByNameContainsInactive("L5_Condensate_Drain_Handwheel_StirRedesign");
+        if (source == null)
+            source = FindByNameContainsInactive("L5_Condensate_Drain_Handwheel");
+        if (source == null)
+        {
+            SetRenderersEnabled(oldParts, true);
+            return null;
+        }
+
+        GameObject clone = Instantiate(source.gameObject);
+        clone.name = "L7_L5_Condensate_Drain_Handwheel_StirRedesign_Runtime";
+        clone.transform.SetParent(hub, true);
+        clone.transform.position = hub.position;
+        clone.transform.rotation = hub.rotation;
+        clone.transform.localScale = Vector3.one;
+        clone.SetActive(true);
+
+        foreach (var behaviour in clone.GetComponentsInChildren<MonoBehaviour>(true))
+        {
+            if (behaviour != null && behaviour.GetType() != typeof(GesturalHandwheel))
+                behaviour.enabled = false;
+        }
+        foreach (var collider in clone.GetComponentsInChildren<Collider>(true))
+            if (collider != null) Destroy(collider);
+        foreach (var rb in clone.GetComponentsInChildren<Rigidbody>(true))
+            if (rb != null) Destroy(rb);
+
+        Renderer[] cloneRenderers = clone.GetComponentsInChildren<Renderer>(true);
+        bool cloneVisible = false;
+        for (int i = 0; i < cloneRenderers.Length; i++)
+        {
+            if (cloneRenderers[i] == null) continue;
+            cloneRenderers[i].enabled = true;
+            cloneVisible = true;
+        }
+
+        if (cloneVisible)
+            SetRenderersEnabled(oldParts, false);
+        else
+            SetRenderersEnabled(oldParts, true);
+
+        return clone.transform;
+    }
+
+    private void SetRenderersEnabled(Transform[] roots, bool enabled)
+    {
+        if (roots == null)
+            return;
+        for (int i = 0; i < roots.Length; i++)
+        {
+            if (roots[i] == null) continue;
+            Renderer[] renderers = roots[i].GetComponentsInChildren<Renderer>(true);
+            for (int r = 0; r < renderers.Length; r++)
+                if (renderers[r] != null) renderers[r].enabled = enabled;
+        }
     }
 
     /// <summary>
@@ -1322,6 +1397,14 @@ public class Level7AutoclaveController : MonoBehaviour
     {
         foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
             if (t != null && t.name == name && t.gameObject.scene.IsValid()) return t;
+        return null;
+    }
+
+    private Transform FindByNameContainsInactive(string token)
+    {
+        foreach (Transform t in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            if (t != null && t.gameObject.scene.IsValid() && t.name.IndexOf(token, System.StringComparison.OrdinalIgnoreCase) >= 0)
+                return t;
         return null;
     }
 
