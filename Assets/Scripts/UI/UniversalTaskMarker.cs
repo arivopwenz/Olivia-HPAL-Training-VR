@@ -240,14 +240,16 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         PhaseManager pm = PhaseManager.Instance;
         if (pm == null) return null;
 
-        if (!pm.isHelmetWorn) return FindByName("Socket_Scanner_Hat");
-        if (!pm.isVestWorn) return FindByName("Socket_Scanner_Rompi");
-        if (!pm.isGlassesWorn) return FindByName("Socket_Scanner_Glassess");
-        if (!pm.isBootsWorn) return FindByName("Socket_Scanner_Boots");
-        if (!pm.isGlovesWorn) return FindByName("Socket_Scanner_Gloves");
-        if (!pm.isRespiratorWorn) return FindByName("Socket_Scanner_RespiratorMask");
-        if (!pm.isEarplugWorn) return FindByName("Socket_Scanner_EarPlug");
-        if (!pm.isWalkieTalkieTaken) return FindByName("Socket_Scanner_WalkieTalkie");
+        // Urutan natural pakai APD: kepala -> wajah -> telinga -> badan -> tangan -> kaki -> alat komunikasi.
+        // Cocok dengan SOP K3 dan layout panel dinding (Helm di kanan, Pelindung Telinga di kiri).
+        if (!pm.isHelmetWorn)       return FindByName("Socket_Scanner_Hat");          // 1. Helm
+        if (!pm.isGlassesWorn)      return FindByName("Socket_Scanner_Glassess");     // 2. Kacamata
+        if (!pm.isRespiratorWorn)   return FindByName("Socket_Scanner_RespiratorMask"); // 3. Masker
+        if (!pm.isEarplugWorn)      return FindByName("Socket_Scanner_EarPlug");      // 4. Pelindung telinga
+        if (!pm.isVestWorn)         return FindByName("Socket_Scanner_Rompi");        // 5. Rompi
+        if (!pm.isGlovesWorn)       return FindByName("Socket_Scanner_Gloves");       // 6. Sarung tangan
+        if (!pm.isBootsWorn)        return FindByName("Socket_Scanner_Boots");        // 7. Sepatu
+        if (!pm.isWalkieTalkieTaken) return FindByName("Socket_Scanner_WalkieTalkie"); // 8. Walkie talkie
         return null; // semua APD lengkap
     }
 
