@@ -64,6 +64,33 @@ public class Level12TailingFilterController : MonoBehaviour
     private static readonly int IdColor = Shader.PropertyToID("_Color");
     private static readonly int IdEmis = Shader.PropertyToID("_EmissionColor");
 
+    // ===== HT-GATED FLOW (lapor HT -> tailing naik -> lapor HT -> susu kapur) =====
+    private int _await;                 // 0 none, 1 alirkan tailing, 2 dosing kapur, 3 filter press, 4 report akhir
+    private GameObject _liquidBody;     // badan cairan tailing (volume penuh, level via shader _FillY)
+    private Renderer _liquidBodyR; private Material _liquidBodyMat;
+    private Vector3 _liqBaseScale, _liqBasePos;
+    private Material _surfMat;          // material instance permukaan (Neutralized_Surface)
+    // ---- Fluida gaya autoclave (shader Olivia/L7SlurryFill: world-Y clip + depth gradient + surface glow) ----
+    private float _fillBottomY = 1.30f;  // dasar cairan (match FLOOR_Z tangki baru)
+    private float _fillTopY = 5.15f;     // level penuh (tangki tinggi interior ~6.6, sisakan freeboard)
+    private static readonly Color _fluidAcidShallow = new Color(0.46f, 0.29f, 0.13f);
+    private static readonly Color _fluidAcidDeep    = new Color(0.26f, 0.15f, 0.06f);
+    private static readonly Color _fluidAcidEmis    = new Color(0.20f, 0.10f, 0.03f);
+    private static readonly Color _fluidNeutShallow = new Color(0.55f, 0.60f, 0.52f);
+    private static readonly Color _fluidNeutDeep    = new Color(0.30f, 0.38f, 0.32f);
+    private static readonly Color _fluidNeutEmis    = new Color(0.10f, 0.16f, 0.08f);
+    private GameObject _limePourGo;     // runtime susu kapur (kalau Limestone_Pour_Stream tak ada)
+    private Material _limePourMat;
+    private ParticleSystem _bubbles;    // gelembung reaksi
+    private bool _bubblesOn;
+    private bool _liquidReady;
+    // Warna riset: tailing asam coklat keruh -> setelah kapur abu-kehijauan netral (gypsum+hidroksida)
+    private static readonly Color _colAcidTailing = new Color(0.40f, 0.26f, 0.13f);   // asam, Fe + gypsum, keruh coklat
+    private static readonly Color _colNeutralTailing = new Color(0.52f, 0.56f, 0.50f); // netral, gypsum abu-kehijauan
+    private static readonly Color _colLimeSlurry = new Color(0.90f, 0.92f, 0.88f);    // susu kapur putih
+    // pusat tank netralisasi V3 (z~142.8)
+    private static readonly Vector3 _neutTankCenter = new Vector3(39.1f, 2.3f, 142.8f);
+
     // ---- Public props for HUD ----
     public bool LevelActive => _levelActive;
     public bool NeutralizeDone => _neutralizeDone;
@@ -73,6 +100,8 @@ public class Level12TailingFilterController : MonoBehaviour
     public bool QuestComplete => _questComplete;
     public float PHCurrent => _pHCurrent;
     public float CakeMoisture => _moisture;
+    public int AwaitStage => _await;   // 0 none, 1 alirkan tailing, 2 dosing kapur, 3 filter press
+    public int StageNow => _stage;     // 0 netralisasi, 1 filter press, 2 inspeksi, 3 compliance, 4 report
 
     private void Awake()
     {
@@ -87,12 +116,14 @@ public class Level12TailingFilterController : MonoBehaviour
     {
         GameLevelManager.OnLevelStarted += OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed += OnDcsButtonPressed;
+        WalkieTalkieManager.OnPTTDilepas += OnTailingHtReleased;
     }
 
     private void OnDisable()
     {
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed -= OnDcsButtonPressed;
+        WalkieTalkieManager.OnPTTDilepas -= OnTailingHtReleased;
         if (_seq != null) StopCoroutine(_seq);
         Stop(_agitatorAudio); Stop(_pressAudio);
     }
@@ -100,12 +131,13 @@ public class Level12TailingFilterController : MonoBehaviour
     private void OnLevelStarted(GameLevelManager.GameLevel level)
     {
         _levelActive = level == GameLevelManager.GameLevel.Level12_TailingDischarge;
-        if (!_levelActive) { SetProcessVisuals(false); ShowButton(false); ShowInfo(false); HideQc(); Stop(_agitatorAudio); return; }
+        if (!_levelActive) { SetProcessVisuals(false); ShowButton(false); ShowInfo(false); HideQc(); Stop(_agitatorAudio); if (_liquidReady) HideTailingLiquid(); _await = 0; return; }
         _glm = GameLevelManager.Instance;
-        _processStarted = false; _busy = false; _stage = 0;
+        _processStarted = false; _busy = false; _stage = 0; _await = 0;
         _pHCurrent = PhStart; _moisture = MoistStart;
         _neutralizeDone = _filterPressDone = _inspected = _complianceAccepted = _questComplete = false;
         PushPH(); SetProcessVisuals(false); ShowButton(false); ShowInfo(false); HideQc();
+        if (_liquidReady) HideTailingLiquid();
         if (_hud != null) _hud.ShowNotifPublic("Level 11: Tailing (underflow CCD) siap diolah. Tekan DCS 11 untuk mulai.");
         TeleportTo(_teleportTargetDcs != null ? _teleportTargetDcs.position : Vector3.zero, Vector3.forward, _teleportTargetDcs == null);
     }
@@ -121,14 +153,18 @@ public class Level12TailingFilterController : MonoBehaviour
     {
         if (_hud != null) _hud.PlayManualFade(_fadeDuration);
         yield return new WaitForSeconds(_fadeDuration * 0.5f);
-        // Field stand spot di depan neutralization tank + filter press (z~146)
-        TeleportTo(new Vector3(28f, 1.5f, 140f), new Vector3(0f, 0f, 1f), false);
-        yield return new WaitForSeconds(_fadeDuration * 0.5f + 0.5f);
-        SetProcessVisuals(true);
+        // Berdiri di depan tank netralisasi V3 (x39, z142.8)
+        Vector3 stand = new Vector3(32f, 1.5f, 138.5f);
+        Vector3 fwd = (_neutTankCenter - stand); fwd.y = 0f;
+        TeleportTo(stand, fwd, false);
+        yield return new WaitForSeconds(_fadeDuration * 0.5f + 0.4f);
         PlayAudio(_agitatorAudio, 0.32f);
+        EnsureLiquidBody();
+        HideTailingLiquid();                 // awal: tank KOSONG (belum ada cairan)
         BuildOperatorStation();
-        _stage = 0;
-        BeginStage();
+        ShowButton(false); ShowInfo(true);
+        _stage = 0; _await = 1;              // tunggu HT #1
+        if (_hud != null) _hud.ShowNotifPublic("TAILING (underflow CCD) siap diolah. Lapor HT (tahan T) untuk alirkan tailing asam ke tangki netralisasi.", 9f);
         _seq = null;
     }
 
@@ -138,7 +174,9 @@ public class Level12TailingFilterController : MonoBehaviour
         if (_agitatorRoot != null) _agitatorRoot.Rotate(Vector3.up, _agitatorRpm * 6f * Time.deltaTime, Space.World);
         if (_busy) AnimateRollers();
 
-        if (!_busy && _stage <= 1 && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Alpha1))) TryAction();
+        // Fallback keyboard utk HT gate (desktop): SPACE/1 = lapor HT
+        if (!_busy && _await > 0 && (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Alpha1))) OnTailingHtReleased();
+
         if (_stage == 2 && !_inspected) UpdateInspectProximity();
         if (_stage == 3 && !_complianceAccepted)
         {
@@ -149,51 +187,223 @@ public class Level12TailingFilterController : MonoBehaviour
         UpdateInfo();
     }
 
-    // ============================================================ STAGES
-    private void BeginStage()
+    // ============================================================ HT-GATED STAGES
+    // Gate utama: dipanggil saat operator melepas PTT (HT) ATAU keyboard SPACE fallback.
+    private void OnTailingHtReleased()
     {
-        ShowInfo(true); ShowButton(true);
-        if (_stage == 0)
-        {
-            _pHCurrent = PhStart; PushPH();
-            if (_btnLabel != null) _btnLabel.text = "DOSING LIMESTONE\n[ tekan / SPACE ]";
-            if (_hud != null) _hud.ShowNotifPublic("TAHAP 1: dosing LIMESTONE/KAPUR untuk netralkan tailing asam. Tekan tombol DOSING.", 6f);
-        }
-        else if (_stage == 1)
-        {
-            if (_btnLabel != null) _btnLabel.text = "RUN FILTER PRESS\n[ tekan / SPACE ]";
-            if (_hud != null) _hud.ShowNotifPublic("TAHAP 2: jalankan FILTER PRESS untuk dewater tailing jadi cake kering. Tekan tombol.", 6f);
-        }
+        if (!_levelActive || !_processStarted || _busy) return;
+        if (_await == 1) { _await = 0; _seq = StartCoroutine(FillTailingRoutine()); }
+        else if (_await == 2) { _await = 0; _seq = StartCoroutine(DoseLimeRoutine()); }
+        else if (_await == 3) { _await = 0; _seq = StartCoroutine(RunFilterPressRoutine()); }
+        // _await == 4 (report akhir) ditangani lewat QC accept -> NotifyLevel12TailingFilterComplete
     }
 
-    private void TryAction()
+    // Tombol konsol = fallback ekuivalen HT (disembunyikan secara default).
+    private void TryAction() { OnTailingHtReleased(); }
+
+    // Bangun badan cairan tailing: VOLUME PENUH, level diatur via shader _FillY (gaya fluida autoclave).
+    private void EnsureLiquidBody()
     {
-        if (_busy || _stage > 1) return;
-        _busy = true; ShowButton(false);
-        _seq = StartCoroutine(_stage == 0 ? NeutralizeRoutine() : FilterPressRoutine());
+        if (_liquidReady) return;
+        // Turunkan posisi & dimensi cairan dari SHELL tangki aktual (robust terhadap rebuild tangki).
+        Vector3 cen = _neutTankCenter;
+        float dia = 5.0f;
+        var shellGo = GameObject.Find("TNT_Shell_Glass");
+        Renderer shellR = shellGo != null ? shellGo.GetComponent<Renderer>() : null;
+        if (shellR != null)
+        {
+            Bounds sb = shellR.bounds;
+            cen = new Vector3(sb.center.x, sb.center.y, sb.center.z);
+            _fillBottomY = sb.min.y + 0.20f;          // dasar cairan tepat di atas lantai tangki
+            _fillTopY = sb.max.y - 0.55f;             // sisakan freeboard di bawah bibir
+            dia = Mathf.Min(sb.extents.x, sb.extents.z) * 2f * 0.86f; // muat di dalam shell
+        }
+
+        _liquidBody = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+        _liquidBody.name = "Tailing_Neut_LiquidBody";
+        Object.Destroy(_liquidBody.GetComponent<Collider>());
+        _liquidBody.transform.SetParent(transform, false);
+        // volume selalu ukuran penuh; level visual via shader _FillY
+        float cyTop = _fillTopY + 0.45f;
+        float cyBot = _fillBottomY - 0.10f;
+        float h = cyTop - cyBot;
+        _liquidBody.transform.position = new Vector3(cen.x, cyBot + h * 0.5f, cen.z);
+        // kompensasi lossyScale parent supaya diameter dunia = dia (di DALAM shell), tinggi=h
+        Vector3 pls = transform.lossyScale;
+        _liquidBody.transform.localScale = new Vector3(
+            dia / Mathf.Max(0.0001f, pls.x),
+            (h * 0.5f) / Mathf.Max(0.0001f, pls.y),
+            dia / Mathf.Max(0.0001f, pls.z));
+        _liqBaseScale = _liquidBody.transform.localScale;
+        _liqBasePos = _liquidBody.transform.position;
+        _liquidBodyR = _liquidBody.GetComponent<Renderer>();
+        _liquidBodyMat = BuildTailingFluidMaterial();
+        if (_liquidBodyMat.HasProperty("_SwirlAxisZ")) _liquidBodyMat.SetFloat("_SwirlAxisZ", cen.z);
+        if (_liquidBodyMat.HasProperty("_DepthRange")) _liquidBodyMat.SetFloat("_DepthRange", Mathf.Max(2f, _fillTopY - _fillBottomY));
+        _liquidBodyR.sharedMaterial = _liquidBodyMat;
+        SetFluidColors(_fluidAcidShallow, _fluidAcidDeep, _fluidAcidEmis);
+        SetFillY(-1000f); // kosong (ter-clip semua)
+        if (_neutralizedSurface != null) _neutralizedSurface.SetActive(false); // shader punya surface band sendiri
+        _liquidReady = true;
     }
 
-    private IEnumerator NeutralizeRoutine()
+    // Material fluida gaya autoclave (Olivia/L7SlurryFill: world-Y clip + depth gradient + glow + swirl).
+    private Material BuildTailingFluidMaterial()
     {
-        PlayAudio(_pressAudio, 0.0f);
-        if (_limestonePour != null) _limestonePour.SetActive(true);
-        float t = 0f;
-        while (t < _doseDuration)
+        Shader sh = Shader.Find("Olivia/L7SlurryFill");
+        if (sh == null) sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+        var m = new Material(sh) { name = "M_Tailing_Fluid_Runtime" };
+        if (m.HasProperty("_EmissionIntensity")) m.SetFloat("_EmissionIntensity", 0.16f);
+        if (m.HasProperty("_SurfaceGlow")) m.SetFloat("_SurfaceGlow", 2.2f);
+        if (m.HasProperty("_SurfaceWidth")) m.SetFloat("_SurfaceWidth", 0.40f);
+        if (m.HasProperty("_DepthRange")) m.SetFloat("_DepthRange", 4.0f);
+        if (m.HasProperty("_Alpha")) m.SetFloat("_Alpha", 0.82f);
+        if (m.HasProperty("_RippleStrength")) m.SetFloat("_RippleStrength", 0.05f);
+        if (m.HasProperty("_SwirlSpeed")) m.SetFloat("_SwirlSpeed", 0.6f);
+        if (m.HasProperty("_SwirlStrength")) m.SetFloat("_SwirlStrength", 0.30f);
+        if (m.HasProperty("_SwirlAxisZ")) m.SetFloat("_SwirlAxisZ", _neutTankCenter.z);
+        if (m.HasProperty("_SwirlSpacing")) m.SetFloat("_SwirlSpacing", 80f); // 1 poros (tank tunggal)
+        m.EnableKeyword("_EMISSION");
+        return m;
+    }
+
+    private void SetFillY(float y)
+    {
+        if (_liquidBodyMat != null && _liquidBodyMat.HasProperty("_FillY")) _liquidBodyMat.SetFloat("_FillY", y);
+    }
+    private void SetFluidColors(Color shallow, Color deep, Color emis)
+    {
+        if (_liquidBodyMat == null) return;
+        if (_liquidBodyMat.HasProperty("_BaseColor")) _liquidBodyMat.SetColor("_BaseColor", shallow);
+        if (_liquidBodyMat.HasProperty("_DeepColor")) _liquidBodyMat.SetColor("_DeepColor", deep);
+        if (_liquidBodyMat.HasProperty("_EmissionColor")) _liquidBodyMat.SetColor("_EmissionColor", emis);
+    }
+
+    private void HideTailingLiquid()
+    {
+        EnsureLiquidBody();
+        if (_liquidBody != null) _liquidBody.SetActive(false);
+        if (_neutralizedSurface != null) _neutralizedSurface.SetActive(false);
+        if (_limestonePour != null) _limestonePour.SetActive(false);
+        if (_limePourGo != null) _limePourGo.SetActive(false);
+    }
+
+    // HT #1: tailing asam mengalir & NAIK dari dasar tangki.
+    private IEnumerator FillTailingRoutine()
+    {
+        _busy = true;
+        EnsureLiquidBody();
+        PlayAudio(_pressAudio, 0.12f);
+        if (_hud != null) _hud.ShowNotifPublic("Valve dibuka. Tailing asam (pH 2.3) mengalir, level naik dari dasar...", 6f);
+        _pHCurrent = PhStart; PushPH(); UpdatePhNeedle();
+        if (_liquidBody != null) _liquidBody.SetActive(true);
+        SetFluidColors(_fluidAcidShallow, _fluidAcidDeep, _fluidAcidEmis);
+        float dur = 5.5f, t = 0f;
+        SetFillY(_fillBottomY - 0.05f);
+        while (t < dur)
         {
-            t += Time.deltaTime; float e = Smooth(Mathf.Clamp01(t / _doseDuration));
-            _pHCurrent = Mathf.Lerp(PhStart, PhTarget, e); PushPH();
-            UpdatePhNeedle();
-            Tint(_neutralizedSurface, Color.Lerp(new Color(0.42f, 0.30f, 0.16f), new Color(0.55f, 0.58f, 0.5f), e)); // coklat asam -> abu netral
+            t += Time.deltaTime; float p = Smooth(t / dur);
+            SetFillY(Mathf.Lerp(_fillBottomY - 0.05f, _fillTopY, p)); // permukaan naik dari dasar (gaya autoclave)
+            yield return null;
+        }
+        SetFillY(_fillTopY);
+        Stop(_pressAudio);
+        _busy = false; _await = 2;
+        if (_hud != null) _hud.ShowNotifPublic("Tangki terisi tailing asam. Lapor HT (tahan T) untuk dosing SUSU KAPUR (lime slurry).", 9f);
+    }
+
+    // HT #2: susu kapur turun dari atas, reaksi netralisasi (warna + pH + gelembung).
+    private IEnumerator DoseLimeRoutine()
+    {
+        _busy = true;
+        EnsureBubbles();
+        ShowLimePour(true);
+        ShowBubbles(true);
+        PlayAudio(_pressAudio, 0.28f);
+        if (_hud != null) _hud.ShowNotifPublic("Susu kapur Ca(OH)2 didosing: H2SO4 sisa + kapur -> gypsum. Asam dinetralkan, logam berat mengendap...", 7f);
+        float dur = 6f, t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime; float e = Smooth(Mathf.Clamp01(t / dur));
+            _pHCurrent = Mathf.Lerp(PhStart, PhTarget, e); PushPH(); UpdatePhNeedle();
+            SetFluidColors(
+                Color.Lerp(_fluidAcidShallow, _fluidNeutShallow, e),
+                Color.Lerp(_fluidAcidDeep, _fluidNeutDeep, e),
+                Color.Lerp(_fluidAcidEmis, _fluidNeutEmis, e));
             yield return null;
         }
         _pHCurrent = PhTarget; PushPH(); UpdatePhNeedle();
+        ShowLimePour(false); ShowBubbles(false); Stop(_pressAudio);
         SetActive(_phStatusGreen, true); SetActive(_phStatusRed, false);
         SetActive(_beaconGreen, true); SetActive(_beaconRed, false);
-        if (_limestonePour != null) _limestonePour.SetActive(false);
         if (_polishedFlow != null) _polishedFlow.SetActive(true);
-        _neutralizeDone = true; _busy = false; _stage = 1;
-        BeginStage();
-        _seq = null;
+        _neutralizeDone = true; _busy = false; _await = 3;
+        PlayAudio(_readyAudio, 0.3f);
+        if (_hud != null) _hud.ShowNotifPublic("Tailing NETRAL (pH 8). Lapor HT (tahan T) untuk kirim ke FILTER PRESS (peras air jadi cake).", 9f);
+    }
+
+    // HT #3: pindah ke filter press lalu jalankan dewatering.
+    private IEnumerator RunFilterPressRoutine()
+    {
+        _busy = true;
+        if (_hud != null) _hud.PlayManualFade(_fadeDuration);
+        yield return new WaitForSeconds(_fadeDuration * 0.5f);
+        TeleportTo(new Vector3(33.5f, 1.5f, 152f), new Vector3(1f, 0f, 0.2f), false);
+        yield return new WaitForSeconds(_fadeDuration * 0.5f + 0.3f);
+        _stage = 1;
+        yield return StartCoroutine(FilterPressRoutine());
+    }
+
+    private void EnsureBubbles()
+    {
+        if (_bubbles != null) return;
+        var go = new GameObject("Tailing_Reaction_Bubbles");
+        go.transform.SetParent(transform, false);
+        go.transform.position = new Vector3(_neutTankCenter.x, 3.2f, _neutTankCenter.z);
+        _bubbles = go.AddComponent<ParticleSystem>();
+        var main = _bubbles.main; main.startLifetime = 1.4f; main.startSpeed = 0.8f; main.startSize = 0.25f;
+        main.startColor = new Color(0.95f, 0.97f, 0.9f, 0.7f); main.maxParticles = 200; main.playOnAwake = false;
+        var em = _bubbles.emission; em.rateOverTime = 0f;
+        var sh = _bubbles.shape; sh.shapeType = ParticleSystemShapeType.Circle; sh.radius = 2.0f;
+        var r = _bubbles.GetComponent<ParticleSystemRenderer>();
+        r.sharedMaterial = new Material(Shader.Find("Sprites/Default")) { color = new Color(0.95f, 0.97f, 0.9f, 0.7f) };
+        _bubbles.Stop();
+    }
+
+    private void ShowBubbles(bool on)
+    {
+        if (_bubbles == null) return;
+        _bubblesOn = on;
+        if (on) { _bubbles.Play(); StartCoroutine(EmitBubbles()); }
+        else _bubbles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+    }
+    private IEnumerator EmitBubbles()
+    {
+        while (_bubblesOn && _bubbles != null) { _bubbles.Emit(4); yield return new WaitForSeconds(0.08f); }
+    }
+
+    private void ShowLimePour(bool on)
+    {
+        if (_limestonePour != null) { _limestonePour.SetActive(on); if (on) Tint(_limestonePour, _colLimeSlurry); return; }
+        if (_limePourGo == null)
+        {
+            _limePourGo = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            _limePourGo.name = "Lime_Slurry_Pour_Runtime";
+            Object.Destroy(_limePourGo.GetComponent<Collider>());
+            _limePourGo.transform.SetParent(transform, false);
+            _limePourGo.transform.position = new Vector3(_neutTankCenter.x, 4.6f, _neutTankCenter.z);
+            _limePourGo.transform.localScale = new Vector3(0.18f, 1.6f, 0.18f);
+            _limePourGo.GetComponent<Renderer>().sharedMaterial = OpaqueMat(_colLimeSlurry);
+        }
+        _limePourGo.SetActive(on);
+    }
+
+    private void SetMatColor(Material m, Color c)
+    {
+        if (m == null) return;
+        if (m.HasProperty(IdBase)) m.SetColor(IdBase, c);
+        if (m.HasProperty(IdColor)) m.SetColor(IdColor, c);
+        m.color = c;
     }
 
     private IEnumerator FilterPressRoutine()
@@ -330,10 +540,10 @@ private void UpdateInfo()
         if (_infoText == null || _infoPanel == null || !_infoPanel.activeSelf) return;
         string body;
         if (_stage == 0)
-            body = "PENGOLAHAN LIMBAH HPAL - TAHAP 1/2 NETRALISASI\n" +
-                   "Reagen : LIMESTONE CaCO3 / KAPUR Ca(OH)2\n" +
-                   "Reaksi : H2SO4 sisa + CaCO3 -> CaSO4 + H2O + CO2\n" +
-                   "Fungsi : netralkan asam + endapkan logam berat\n" +
+            body = "PENGOLAHAN TAILING HPAL - NETRALISASI (via HT)\n" +
+                   "1) Lapor HT -> tailing asam naik mengisi tangki\n" +
+                   "2) Lapor HT -> dosing SUSU KAPUR Ca(OH)2\n" +
+                   "Reaksi : H2SO4 sisa + Ca(OH)2 -> CaSO4 + H2O\n" +
                    "Target pH : 2.3 -> 8.0 (baku mutu lingkungan 6-9)";
         else if (_stage == 1)
             body = "TAHAP 2/2 - FILTER PRESS (plate & frame)\n" +

@@ -105,7 +105,7 @@ public class Level8FlashTrainController : MonoBehaviour
     [TextArea(2, 4)] [SerializeField] private string _msgFv2Done =
         "FV2 tertutup, uap lebih kecil berhenti. Cairan mengalir ke FV3... berpindah ke FV3.";
     [TextArea(2, 4)] [SerializeField] private string _msgFv3Done =
-        "FV3 tertutup. Tekanan turun ke ~1 atm dan suhu ~102°C. Flash train stabil; slurry aman dialirkan ke CCD untuk pemisahan dan sampling PLS.";
+        "FV3 tertutup. Tekanan turun ke ~1 atm, suhu ~102°C. Flash train STABIL.\nLapor HT (tahan T): 'Flash train stabil, slurry siap dialirkan ke CCD.'";
     [TextArea(2, 4)] [SerializeField] private string _msgFv2Intro =
         "FV2: uap masih keluar (lebih kecil dari FV1). Putar handwheel untuk menutup valve.";
     [TextArea(2, 4)] [SerializeField] private string _msgFv3Intro =
@@ -219,6 +219,10 @@ public class Level8FlashTrainController : MonoBehaviour
         // Pakai XRSimpleInteractable: deteksi "pegang" TANPA memindahkan objek.
         // (XRGrabInteractable lama bikin handwheel ketarik ke tangan -> bug bunderan ikut).
         public UnityEngine.XR.Interaction.Toolkit.Interactables.XRSimpleInteractable grab;
+
+        // BARU: kalau pakai model L5_SteamValve_Handwheel_Redesign + GesturalHandwheel,
+        // rotasi & interaksi di-handle komponen ini (mekanisme ikut tangan seperti Level 5/7).
+        public GesturalHandwheel gh;
     }
 
     private void Awake()
@@ -317,9 +321,11 @@ public class Level8FlashTrainController : MonoBehaviour
         float d = Mathf.Max(2f, _fadeTransitionDuration);
         if (_hud != null) _hud.PlayManualFade(d);
         yield return new WaitForSeconds(d * 0.5f);
-        // Teleport ke valve letdown autoclave (kalau ada), kalau tidak ke spawn FV1.
-        Transform firstTarget = _autoclaveValveHub != null ? _autoclaveValveHub : (_spawnFv1 != null ? _spawnFv1 : _teleportTargetField);
-        // Spawn berdiri ~2.5m dari valve menghadap valve.
+        // Teleport ke valve letdown autoclave. Spawn DIDEPAN OuterRing handwheel valve.
+        Transform outerRing = FindByNameInactive("AutoclaveToFlash_LetdownValve_Handwheel_OuterRing");
+        Transform firstTarget = outerRing != null ? outerRing
+            : (_autoclaveValveHub != null ? _autoclaveValveHub : (_spawnFv1 != null ? _spawnFv1 : _teleportTargetField));
+        // Spawn berdiri ~3m di depan valve menghadap valve.
         _teleportTargetField = MakeStandSpot(firstTarget, _spawnFv1);
         TeleportPlayerToField();
         yield return new WaitForSeconds(d * 0.5f);
@@ -357,10 +363,9 @@ public class Level8FlashTrainController : MonoBehaviour
         var existing = GameObject.Find("SpawnPoint_Lvl8_AutoValve_Runtime");
         var sp = existing != null ? existing : new GameObject("SpawnPoint_Lvl8_AutoValve_Runtime");
         Vector3 dir = new Vector3(1f, 0f, 0f); // berdiri di sisi +X valve (arah player umum)
-        // Berdiri ~4.2m dari valve supaya handwheel TIDAK menutupi seluruh layar (bug "bunderan
-        // gede nutupin view"). Tinggi feet diset agar mata (~1.6m di atas) sejajar pusat handwheel.
-        Vector3 pos = target.position + dir * 4.2f;
-        pos.y = Mathf.Max(0.1f, target.position.y - 1.6f);
+        // Berdiri ~3.0m di depan valve supaya handwheel terlihat penuh tanpa menutupi layar.
+        Vector3 pos = target.position + dir * 3.0f;
+        pos.y = Mathf.Max(0.1f, target.position.y - 1.55f);
         sp.transform.position = pos;
         Vector3 look = target.position - pos; look.y = 0f;
         sp.transform.rotation = look.sqrMagnitude > 0.001f ? Quaternion.LookRotation(look.normalized, Vector3.up) : Quaternion.identity;
@@ -430,6 +435,11 @@ public class Level8FlashTrainController : MonoBehaviour
         if (hw == null || !hw.initialized)
         {
             _autoStage.openPercent = Mathf.Clamp01(_autoStage.openPercent + Time.deltaTime * 0.35f);
+        }
+        else if (hw.gh != null)
+        {
+            // Model L5 + GesturalHandwheel: baca bukaan dari komponen (ikut tangan).
+            _autoStage.openPercent = Mathf.Clamp01(hw.gh.OpenPercent01);
         }
         else
         {
@@ -569,6 +579,23 @@ public class Level8FlashTrainController : MonoBehaviour
     private void UpdateHandwheel(HandwheelState hw, FlashStage stage, KeyCode debugKey)
     {
         if (hw == null || !hw.initialized) return;
+
+        // === MODE BARU: GesturalHandwheel (model L5) — baca OpenPercent01 langsung. ===
+        if (hw.gh != null)
+        {
+            float prevOpen = stage.openPercent;
+            stage.openPercent = Mathf.Clamp01(hw.gh.OpenPercent01);
+            if (Mathf.Abs(stage.openPercent - prevOpen) < 0.0001f) return;
+            stage.pressureCurrent = Mathf.Lerp(stage.pressureStart, stage.pressureTarget, stage.openPercent);
+            stage.tempCurrent = Mathf.Lerp(stage.tempStart, stage.tempTarget, stage.openPercent);
+            int gi = stage == _fv1 ? 0 : stage == _fv2 ? 1 : 2;
+            float gMult = _steamMult[gi] > 0f ? _steamMult[gi] : (gi == 0 ? _steamMultFv1 : gi == 1 ? _steamMultFv2 : _steamMultFv3);
+            float gRemain = 1f - stage.openPercent;
+            ParticleSystem gps = gi == 0 ? _fv1VaporFX : gi == 1 ? _fv2VaporFX : _fv3VaporFX;
+            SetVaporIntensity(gps, _vaporBaseRate[gi], gRemain * gMult);
+            StartAudio(_steamReleaseAudio, Mathf.Max(0.05f, _steamReleaseVolume * gMult * gRemain));
+            return;
+        }
 
         float deltaDeg = 0f;
 
@@ -781,6 +808,9 @@ public class Level8FlashTrainController : MonoBehaviour
     private void EnsureHandwheelInteractable(HandwheelState hw)
     {
         if (hw == null || hw.hub == null) return;
+        // Kalau pakai model L5 + GesturalHandwheel, komponen itu sudah pasang collider+interactable
+        // sendiri di clone. Jangan tambah interactable di hub (hindari dobel/bentrok).
+        if (hw.gh != null) return;
         Transform target = hw.hub;
         var go = target.gameObject;
 
@@ -854,12 +884,79 @@ public class Level8FlashTrainController : MonoBehaviour
         }
     }
 
+    // Pasang model L5_SteamValve_Handwheel_Redesign + GesturalHandwheel pada valve hub.
+    // Mekanisme berputar ikut tangan (sama Level 5/7). Sembunyikan handwheel FBX lama.
+    private GesturalHandwheel EnsureL5GesturalWheel(Transform valveHub, KeyCode key)
+    {
+        if (valveHub == null) return null;
+        string cloneName = "L8_L5Wheel_" + valveHub.name;
+        Transform existing = valveHub.Find(cloneName);
+        GameObject clone;
+        if (existing != null)
+        {
+            clone = existing.gameObject;
+        }
+        else
+        {
+            Transform src = FindByNameInactive("L5_SteamValve_Handwheel_Redesign");
+            if (src == null) return null;
+            clone = Instantiate(src.gameObject);
+            clone.name = cloneName;
+            clone.transform.SetParent(valveHub, true);
+            clone.transform.position = valveHub.position;
+            clone.transform.rotation = valveHub.rotation;
+            clone.transform.localScale = Vector3.one;
+            clone.SetActive(true);
+            foreach (var b in clone.GetComponentsInChildren<MonoBehaviour>(true))
+                if (b != null && !(b is GesturalHandwheel)) b.enabled = false;
+        }
+        HideOldFbxHandwheel(valveHub, clone.transform);
+        var gh = clone.GetComponent<GesturalHandwheel>();
+        if (gh == null) gh = clone.AddComponent<GesturalHandwheel>();
+        gh.fullOpenDegrees = _handwheelFullOpenDegrees;
+        gh.gesturalGain = 1.0f;
+        gh.debugKey = key;
+        gh.Setup(clone.transform, null);
+        return gh;
+    }
+
+    // Sembunyikan renderer handwheel FBX lama (hub + sibling OuterRing/Spoke/Hub set yang sama)
+    // supaya tidak dobel dengan model L5 baru. JANGAN sembunyikan clone (keep).
+    private void HideOldFbxHandwheel(Transform hub, Transform keep)
+    {
+        var hr = hub.GetComponent<Renderer>();
+        if (hr != null) hr.enabled = false;
+        if (hub.parent != null)
+        {
+            foreach (Transform sib in hub.parent)
+            {
+                if (sib == hub || sib == keep || sib.IsChildOf(keep)) continue;
+                if (Vector3.Distance(sib.position, hub.position) > 1.2f) continue;
+                if (sib.name.Contains("OuterRing") || sib.name.Contains("Spoke") || sib.name.Contains("Hub"))
+                    foreach (var r in sib.GetComponentsInChildren<Renderer>(true))
+                        if (r != null && !r.transform.IsChildOf(keep)) r.enabled = false;
+            }
+        }
+    }
+
     private HandwheelState BuildHandwheelState(Transform hub)
     {
         if (hub == null) return null;
         var hw = new HandwheelState();
         hw.hub = hub;
         hw.pivotWorld = hub.position;
+
+        // === BARU: pakai model L5_SteamValve_Handwheel_Redesign + GesturalHandwheel ===
+        // Mekanisme PERSIS Level 5/7: wheel berputar mengikuti gerakan tangan player.
+        KeyCode key = hub == _fv2HandwheelHub ? _key2Open : hub == _fv3HandwheelHub ? _key3Open : _key1Open;
+        var gh = EnsureL5GesturalWheel(hub, key);
+        if (gh != null)
+        {
+            hw.gh = gh;
+            hw.initialized = true;
+            return hw; // GesturalHandwheel meng-handle rotasi + collider/hover/select sendiri.
+        }
+        // (Fallback ke mekanisme lama di bawah kalau model L5 tidak ketemu.)
 
         // Deck handwheel runtime (nama "L8_..._DeckHandwheel"): disc menghadap +X,
         // jadi spin di sumbu X dunia. parts = hub saja (rim/spoke CHILD ikut berputar).
@@ -1960,10 +2057,16 @@ public class Level8FlashTrainController : MonoBehaviour
         var origin = _playerRigRoot.GetComponent<XROrigin>();
         if (origin != null)
         {
-            origin.MoveCameraToWorldLocation(_teleportTargetField.position);
+            // KANONIK: spawn = posisi KAKI; kamera = kaki + CameraYOffset. JANGAN double-set
+            // (MoveCamera + SetPositionAndRotation) -> bikin player melayang ~1.36m.
+            Vector3 camTarget = _teleportTargetField.position + Vector3.up * origin.CameraYOffset;
+            origin.MoveCameraToWorldLocation(camTarget);
             origin.MatchOriginUpCameraForward(Vector3.up, _teleportTargetField.forward);
         }
-        _playerRigRoot.SetPositionAndRotation(_teleportTargetField.position, _teleportTargetField.rotation);
+        else
+        {
+            _playerRigRoot.SetPositionAndRotation(_teleportTargetField.position, _teleportTargetField.rotation);
+        }
         if (ccOn) cc.enabled = true;
     }
 
@@ -2014,6 +2117,67 @@ public class Level8FlashTrainController : MonoBehaviour
                 if (r != null) _slurryFlowRenderers.Add(r);
             }
         }
+        // Tint SEMUA material slurry (static + plug share Mat_Slurry*) jadi COKLAT cairan
+        // mengikuti output akhir autoclave (slurry leached panas coklat-kemerahan).
+        TintSlurryFlowBrown();
+    }
+
+    // Set warna slurry pipa autoclave->flash jadi coklat cairan (base + emisi redup).
+    private Material _slurryLiquidMat;
+    private void TintSlurryFlowBrown()
+    {
+        Color brownBase = new Color(0.34f, 0.19f, 0.09f);   // coklat karat slurry
+        Color brownEmis = new Color(0.30f, 0.13f, 0.04f);   // emisi panas redup
+
+        // Material CAIRAN coklat (pakai shader liquid autoclave Olivia/L7SlurryFill,
+        // tanpa clip = pipa penuh) -> bagian tube/liquid tampak cairan beriak nyata.
+        if (_slurryLiquidMat == null)
+        {
+            Shader liq = Shader.Find("Olivia/L7SlurryFill");
+            if (liq != null)
+            {
+                _slurryLiquidMat = new Material(liq) { name = "M_L8_SlurryLiquid_Runtime" };
+                _slurryLiquidMat.SetColor("_BaseColor", new Color(0.40f, 0.22f, 0.10f));
+                _slurryLiquidMat.SetColor("_DeepColor", new Color(0.20f, 0.10f, 0.04f));
+                _slurryLiquidMat.SetColor("_EmissionColor", brownEmis);
+                _slurryLiquidMat.SetFloat("_EmissionIntensity", 0.35f);
+                _slurryLiquidMat.SetFloat("_FillY", 99999f);     // pipa: jangan clip
+                _slurryLiquidMat.SetFloat("_Alpha", 0.86f);
+                _slurryLiquidMat.SetFloat("_RippleScale", 9f);
+                _slurryLiquidMat.SetFloat("_RippleSpeed", 1.3f);
+                _slurryLiquidMat.SetFloat("_RippleStrength", 0.08f);
+                _slurryLiquidMat.SetFloat("_SwirlSpeed", 0f);
+                _slurryLiquidMat.EnableKeyword("_EMISSION");
+                _slurryLiquidMat.renderQueue = 3010;
+            }
+        }
+
+        foreach (var t in FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (t == null || !t.gameObject.scene.IsValid()) continue;
+            if (!t.name.StartsWith("AutoclaveToFlash_Slurry")) continue;
+            var r = t.GetComponent<Renderer>();
+            if (r == null) continue;
+
+            // Bagian CAIRAN/tube (Liquid/Seg/Core/XRayFlow/Elbow) -> shader cairan coklat.
+            bool isLiquidPart = t.name.Contains("_Liquid") || t.name.Contains("_Seg")
+                || t.name.Contains("_Core") || t.name.Contains("_XRayFlow") || t.name.Contains("Elbow");
+            if (isLiquidPart && _slurryLiquidMat != null)
+            {
+                r.sharedMaterial = _slurryLiquidMat;
+                continue;
+            }
+
+            // Bagian padatan (Rock/Cap) -> tetap coklat (solid tersuspensi).
+            foreach (var m in r.sharedMaterials)
+            {
+                if (m == null) continue;
+                if (m.HasProperty("_BaseColor")) m.SetColor("_BaseColor", brownBase);
+                if (m.HasProperty("_Color")) m.SetColor("_Color", brownBase);
+                m.EnableKeyword("_EMISSION");
+                if (m.HasProperty("_EmissionColor")) m.SetColor("_EmissionColor", brownEmis);
+            }
+        }
     }
 
     // Sembunyikan / tampilkan slurry STATIS (batang kuning di dalam pipa).
@@ -2040,7 +2204,7 @@ public class Level8FlashTrainController : MonoBehaviour
         _slurryFlowPhase += Time.deltaTime * 2.2f;
         // Pulse emisi (slurry panas mengalir) + scroll tekstur kalau ada.
         float pulse = 0.7f + 0.3f * Mathf.Sin(_slurryFlowPhase * 3f);
-        Color hot = new Color(0.95f, 0.34f, 0.07f) * (1.6f * pulse);
+        Color hot = new Color(0.45f, 0.22f, 0.07f) * (1.3f * pulse);  // COKLAT slurry panas (output autoclave)
         foreach (var r in _slurryFlowRenderers)
         {
             if (r == null) continue;
@@ -2087,9 +2251,14 @@ public class Level8FlashTrainController : MonoBehaviour
         if (_steamAnchor3 == null) _steamAnchor3 = FindByNameInactive("SteamRiser_Connect_7");
 
         // Per-vessel spawn points (teleport tiap vessel sebelum putar handwheel).
-        if (_spawnFv1 == null) _spawnFv1 = FindByNameInactive("SpawnPoint_Lv8");
-        if (_spawnFv2 == null) _spawnFv2 = FindByNameInactive("SpawnPoint_Lv8 (1)");
-        if (_spawnFv3 == null) _spawnFv3 = FindByNameInactive("SpawnPoint_Lv8 (2)");
+        // FORCE-resolve by name (abaikan serialized lama yg mungkin nyasar) supaya
+        // spawn FV1/2/3 PERSIS di SpawnPoint_Lv8 / (1) / (2).
+        var sp1 = FindByNameInactive("SpawnPoint_Lv8");
+        var sp2 = FindByNameInactive("SpawnPoint_Lv8 (1)");
+        var sp3 = FindByNameInactive("SpawnPoint_Lv8 (2)");
+        if (sp1 != null) _spawnFv1 = sp1;
+        if (sp2 != null) _spawnFv2 = sp2;
+        if (sp3 != null) _spawnFv3 = sp3;
         // Spawn awal level = SpawnPoint_Lv8 (depan FV1).
         if (_teleportTargetField == null) _teleportTargetField = _spawnFv1;
 

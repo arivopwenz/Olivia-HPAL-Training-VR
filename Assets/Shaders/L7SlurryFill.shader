@@ -17,6 +17,10 @@ Shader "Olivia/L7SlurryFill"
         _RippleScale ("Ripple Scale", Range(0.1, 20)) = 6.0
         _RippleSpeed ("Ripple Speed", Range(0, 4)) = 0.8
         _RippleStrength ("Ripple Strength", Range(0, 0.5)) = 0.06
+        _SwirlSpeed ("Swirl Speed (rotor RPM driven)", Range(0, 6)) = 0.0
+        _SwirlStrength ("Swirl Strength", Range(0, 1)) = 0.35
+        _SwirlAxisZ ("Swirl Axis Z (autoclave center)", Float) = 83.7
+        _SwirlSpacing ("Swirl Rotor Spacing X", Float) = 6.7
     }
 
     SubShader
@@ -73,6 +77,10 @@ Shader "Olivia/L7SlurryFill"
                 float _RippleScale;
                 float _RippleSpeed;
                 float _RippleStrength;
+                float _SwirlSpeed;
+                float _SwirlStrength;
+                float _SwirlAxisZ;
+                float _SwirlSpacing;
             CBUFFER_END
 
             Varyings vert(Attributes IN)
@@ -84,13 +92,29 @@ Shader "Olivia/L7SlurryFill"
                 return OUT;
             }
 
-            // Cheap animated surface ripple normal perturbation.
+            // Cheap animated surface ripple normal perturbation + rotor-driven swirl/vortex.
             float3 RippleNormal(float3 baseN, float3 wp)
             {
                 float t = _Time.y * _RippleSpeed;
                 float r1 = sin(wp.x * _RippleScale + t) * cos(wp.z * _RippleScale * 0.9 - t * 1.1);
                 float r2 = sin(wp.z * _RippleScale * 1.3 + t * 0.7);
-                float3 perturb = float3(r1, 0, r2) * _RippleStrength;
+
+                // SWIRL/VORTEX: cairan berputar mengelilingi sumbu vertikal tiap rotor.
+                // Rotor tersebar periodik sepanjang X (_SwirlSpacing). Saat rotor berputar
+                // (_SwirlSpeed > 0) cairan churning; saat 0 (rotor mati) tidak ada swirl.
+                float swSpd = max(_SwirlSpeed, 0.0);
+                float nearestRotorX = round(wp.x / max(_SwirlSpacing, 0.01)) * _SwirlSpacing;
+                float2 d = float2(wp.x - nearestRotorX, wp.z - _SwirlAxisZ);
+                float ang = atan2(d.y, d.x);
+                float rad = length(d) + 0.001;
+                float swT = _Time.y * (swSpd * 1.2);
+                // tangensial: putaran cepat dekat poros, melemah ke tepi
+                float tang = sin(ang * 2.0 - swT * 6.2831 + rad * 1.2) * _SwirlStrength * saturate(swSpd) / (1.0 + rad * 0.35);
+                float2 tangentialDir = float2(-d.y, d.x) / rad; // arah putar
+                float swX = tangentialDir.x * tang;
+                float swZ = tangentialDir.y * tang;
+
+                float3 perturb = float3(r1 + swX, 0, r2 + swZ) * _RippleStrength;
                 return normalize(baseN + perturb);
             }
 

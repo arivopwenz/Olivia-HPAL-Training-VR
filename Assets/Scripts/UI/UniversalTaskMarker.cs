@@ -217,9 +217,7 @@ public sealed class UniversalTaskMarker : MonoBehaviour
                 return FindByName("Level11_PurificationMHP_BlenderRig", "MHP_SampleBottle");
 
             case GameLevelManager.GameLevel.Level12_TailingDischarge:
-                if (!_glm.SudahTekanTombolDcs) return FindDcsButton(11);
-                if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
-                return FindByName("Tailing_Neutralization_Tank", "FilterPress");
+                return ResolveLevel12TailingTarget();
 
             case GameLevelManager.GameLevel.Level13_TailingWaste:
                 if (!_glm.SudahTekanTombolDcs) return FindDcsButton(12);
@@ -387,6 +385,35 @@ public sealed class UniversalTaskMarker : MonoBehaviour
         if (!_glm.Level10SamplePLSAccepted)
             return ccd != null ? ccd.GetCurrentTaskMarkerTarget() : FindByName("L9_PLS_SampleStation_Th1", "L9_LabBuilding", "CCD_Field");
 
+        if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
+        return null;
+    }
+
+    private Transform ResolveLevel12TailingTarget()
+    {
+        // Task 1: tekan DCS 11
+        if (!_glm.SudahTekanTombolDcs) return FindDcsButton(11);
+
+        var tail = FindFirstObjectByType<Level12TailingFilterController>(FindObjectsInactive.Include);
+        if (tail == null)
+        {
+            if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
+            return null;
+        }
+
+        // HT-gate: await 1 (alirkan tailing), 2 (dosing kapur), 3 (filter press) -> semua lapor HT (tahan T)
+        if (tail.AwaitStage == 1 || tail.AwaitStage == 2 || tail.AwaitStage == 3)
+            return FindWalkieTalkie();
+
+        // stage 2 = inspeksi cake (jalan ke konveyor cake)
+        if (tail.StageNow == 2 && !tail.Inspected)
+            return FindByName("Cake_On_Conveyor", "Cake_Block_00", "Cake_Transfer_Conveyor", "Final_FilterPress_Unit");
+
+        // stage 3 = Compliance QC pop-up (tombol ACCEPT di canvas, marker tak perlu)
+        if (tail.StageNow == 3 && !tail.ComplianceAccepted)
+            return null;
+
+        // task akhir: lapor HT "limbah dialirkan"
         if (!_glm.SudahLaporanHt) return FindWalkieTalkie();
         return null;
     }

@@ -107,6 +107,419 @@ public class Level11MHPController : MonoBehaviour
     private float _dispatchProgress; private float _dispatchDuration = 8f;
     private Vector3 _baggingHeapBase; private Vector3[] _exportHeapBase;
 
+    // ===== NEW: HT-GATED 3-TANK FLOW (limestone -> lime -> MgO) =====
+    private readonly Renderer[] _tankBody = new Renderer[3];     // LiquidGhost (badan cairan, di-rise dari dasar)
+    private readonly Renderer[] _tankSurface = new Renderer[3];  // Liquid_Surface (permukaan atas)
+    private readonly Vector3[] _tankBodyBaseScale = new Vector3[3];
+    private readonly Vector3[] _tankBodyBaseLocalPos = new Vector3[3];
+    private readonly Vector3[] _tankSurfBaseLocalPos = new Vector3[3];
+    private readonly TankFluidColumn[] _tankFluid = new TankFluidColumn[3]; // cairan TERANG naik dari dasar (1 volume, no ghost)
+    private bool _rotorOn; // rotor/agitator baru berputar setelah HT#2 (dosing)
+    private bool _mhpRefsReady;
+    private static readonly string[] _tankNames = { "Neutralization_Purification_Tank", "Polishing_Tank", "MHP_Precipitation_Tank" };
+    // Warna riset (chemistry-verified): PLS asam hijau -> per tahap.
+    private static readonly Color _colPlsAcidGreen = new Color(0.52f, 0.60f, 0.20f);  // input CCD PLS (asam, Ni hijau + Fe amber)
+    private static readonly Color _colAfterLimestone = new Color(0.50f, 0.30f, 0.11f); // Fe/Al hydroxide coklat-oranye
+    private static readonly Color _colAfterLime = new Color(0.22f, 0.52f, 0.50f);       // teal (Ni jernih, Al/Cr buang)
+    private static readonly Color _colAfterMgO = new Color(0.18f, 0.62f, 0.40f);        // MHP hijau-kebiruan
+
+    private void EnsureMhpTankRefs()
+    {
+        if (_mhpRefsReady) return;
+        for (int i = 0; i < 3; i++)
+        {
+            _tankBody[i] = FindSceneRenderer(_tankNames[i] + "_LiquidGhost");
+            _tankSurface[i] = FindSceneRenderer(_tankNames[i] + "_Liquid_Surface");
+            if (_tankBody[i] != null) { _tankBodyBaseScale[i] = _tankBody[i].transform.localScale; _tankBodyBaseLocalPos[i] = _tankBody[i].transform.localPosition; }
+            if (_tankSurface[i] != null) _tankSurfBaseLocalPos[i] = _tankSurface[i].transform.localPosition;
+            // SATU cairan TERANG (shader L7SlurryFill, naik dari dasar) pada mesh volume Ghost.
+            if (_tankBody[i] != null)
+            {
+                var fc = _tankBody[i].GetComponent<TankFluidColumn>();
+                if (fc == null) fc = _tankBody[i].gameObject.AddComponent<TankFluidColumn>();
+                Color sh = _fillColor[i];
+                fc.Setup(_tankBody[i], sh, sh * 0.55f, sh * 0.30f);
+                fc.SetLevel01(0f);
+                fc.Hide();
+                _tankFluid[i] = fc;
+            }
+            // disc Surface tipis TIDAK dipakai (shader sudah punya surface band) -> sembunyikan permanen.
+            if (_tankSurface[i] != null) _tankSurface[i].gameObject.SetActive(false);
+        }
+        _mhpRefsReady = true;
+    }
+
+    private Renderer FindSceneRenderer(string n)
+    {
+        foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+            if (t.name == n && t.gameObject.scene.IsValid()) return t.GetComponent<Renderer>();
+        return null;
+    }
+
+    // Kosongkan SEMUA tangki Level 10 (awal level: tidak ada cairan).
+    private void HideAllTankLiquids()
+    {
+        EnsureMhpTankRefs();
+        _rotorOn = false;
+        for (int i = 0; i < 3; i++)
+        {
+            if (_tankFluid[i] != null) { _tankFluid[i].SetLevel01(0f); _tankFluid[i].SetSwirl(0f); _tankFluid[i].Hide(); }
+            if (_tankBody[i] != null) _tankBody[i].gameObject.SetActive(false);
+            if (_tankSurface[i] != null) _tankSurface[i].gameObject.SetActive(false);
+        }
+        if (_neutralToPolishLiquid != null) _neutralToPolishLiquid.SetActive(false);
+        if (_polishToMhpLiquid != null) _polishToMhpLiquid.SetActive(false);
+        if (_feedLiquid != null) _feedLiquid.SetActive(false);
+        if (_reagentLiquid != null) _reagentLiquid.SetActive(false);
+    }
+
+    // ===== STATE & FLOW =====
+    private bool _mhpFlowActive, _mhpBusy;
+    private int _mhpTank, _mhpAwait; // _mhpAwait: 0 none, 1 fill, 2 dose, 3 final report
+    private readonly Transform[] _tankStand = new Transform[3];
+    private GameObject _mhpStream; private ParticleSystem _mhpBubbles;
+    private static readonly Color[] _fillColor = {
+        new Color(0.52f,0.60f,0.20f),  // T1 PLS asam hijau (dari CCD)
+        new Color(0.40f,0.52f,0.28f),  // T2 jernih pucat (Fe/Al sudah dibuang)
+        new Color(0.22f,0.52f,0.50f),  // T3 teal (dari polishing)
+    };
+    private static readonly Color[] _doseColorOut = {
+        new Color(0.50f,0.30f,0.11f),  // T1 setelah limestone: Fe/Al hydroxide coklat-oranye
+        new Color(0.22f,0.52f,0.50f),  // T2 setelah lime: teal jernih
+        new Color(0.18f,0.62f,0.40f),  // T3 setelah MgO: MHP hijau-kebiruan
+    };
+    private static readonly string[] _reagentName = { "LIMESTONE (CaCO3)", "KAPUR Ca(OH)2", "MAGNESIA MgO" };
+    private static readonly float[] _phAfter = { 3.5f, 5.0f, 7.5f };
+
+    private Transform GetTankStand(int idx)
+    {
+        if (_tankStand[idx] != null) return _tankStand[idx];
+        EnsureMhpTankRefs();
+        // posisi tangki: T1 x73.2, T2 x62.6, T3 x52.0, semua z~121.2
+        float[] tx = { 73.2f, 62.6f, 52.0f };
+        var go = new GameObject("L10_TankStand_" + idx);
+        Vector3 tankCenter = new Vector3(tx[idx], 6.5f, 121.2f);
+        Vector3 standPos = new Vector3(tx[idx], 1.0f, 128.6f); // berdiri di sisi akses (z lebih besar)
+        go.transform.position = standPos;
+        Vector3 look = tankCenter - standPos; look.y = 0f;
+        go.transform.rotation = look.sqrMagnitude > 0.001f ? Quaternion.LookRotation(look.normalized, Vector3.up) : Quaternion.identity;
+        _tankStand[idx] = go.transform;
+        return go.transform;
+    }
+
+    // Dipanggil saat PTT (HT) dilepas — gate utama flow Level 10.
+    private void OnMhpHtReleased()
+    {
+        if (!_mhpFlowActive || _mhpBusy) return;
+        if (_mhpAwait == 1) { _mhpAwait = 0; _seq = StartCoroutine(FillTankRoutine(_mhpTank)); }
+        else if (_mhpAwait == 2) { _mhpAwait = 0; _seq = StartCoroutine(DoseTankRoutine(_mhpTank)); }
+        else if (_mhpAwait == 3) { _mhpAwait = 0; FinishMhp(); }
+    }
+
+    private void StartMhpFlow()
+    {
+        HideAllTankLiquids();
+        _mhpFlowActive = true; _mhpBusy = false; _mhpTank = 0; _mhpAwait = 1;
+        PlayAudio(_agitatorAudio, 0.30f);
+        TeleportPlayer(GetTankStand(0));
+        if (_hud != null) _hud.ShowNotifPublic("TANGKI 1 (Netralisasi). Lapor HT (tahan T) untuk membuka pipa PLS dari CCD turun ke tangki.", 8f);
+    }
+
+    // Cairan TURUN dari atas (pipa) + NAIK dari dasar tangki.
+    private IEnumerator FillTankRoutine(int idx)
+    {
+        _mhpBusy = true;
+        EnsureMhpTankRefs();
+        var body = _tankBody[idx]; var surf = _tankSurface[idx];
+        Color col = _fillColor[idx];
+        // anchor stream: T1 dari PLS_Overflow_Pipe_Flange_End (1), lainnya dari atas tangki.
+        float[] tx = { 73.2f, 62.6f, 52.0f };
+        Vector3 tankTop = new Vector3(tx[idx], 10.6f, 121.2f);
+        Vector3 streamTop = idx == 0 ? FindWorldPos("PLS_Overflow_Pipe_Flange_End (1)", new Vector3(71.4f,10.7f,119.3f)) : tankTop + Vector3.up * 3.2f;
+        ShowFillStream(streamTop, tankTop, col, true);
+        if (_hud != null) _hud.ShowNotifPublic("Cairan PLS mengalir turun ke tangki, level naik dari dasar...", 6f);
+
+        var fluid = _tankFluid[idx];
+        if (fluid != null)
+        {
+            fluid.Show(); fluid.SetColors(col, col * 0.55f, col * 0.30f);
+            if (surf != null) surf.gameObject.SetActive(false); // pakai 1 volume terang saja, no disc/ghost ganda
+            float dur = 6f, t = 0f;
+            fluid.SetLevel01(0f);
+            while (t < dur)
+            {
+                t += Time.deltaTime; float p = Smooth(t / dur);
+                fluid.SetLevel01(p); // permukaan NAIK dari dasar ke atas (world-Y clip)
+                yield return null;
+            }
+            fluid.SetLevel01(1f);
+        }
+        else yield return new WaitForSeconds(4f);
+
+        ShowFillStream(Vector3.zero, Vector3.zero, col, false);
+        _mhpBusy = false; _mhpAwait = 2;
+        if (_hud != null) _hud.ShowNotifPublic($"Tangki {idx + 1} terisi PLS. Lapor HT (tahan T) untuk dosing {_reagentName[idx]}.", 8f);
+    }
+
+    // Dosing reagen: gelembung reaksi + warna berubah sesuai kimia + pH naik.
+    private IEnumerator DoseTankRoutine(int idx)
+    {
+        _mhpBusy = true;
+        var body = _tankBody[idx]; var surf = _tankSurface[idx];
+        float[] tx = { 73.2f, 62.6f, 52.0f };
+        Vector3 tankCenter = new Vector3(tx[idx], 6.8f, 121.2f);
+        ShowBubbles(tankCenter, true);
+        PlayAudio(_doseAudio, 0.32f);
+        // HT#2 (dosing): rotor/agitator MULAI berputar + cairan ikut berputar (swirl)
+        _rotorOn = true;
+        if (_tankFluid[idx] != null) _tankFluid[idx].SetSwirl(1.2f);
+        if (_hud != null) _hud.ShowNotifPublic($"Dosing {_reagentName[idx]}: reaksi berlangsung, larutan berubah warna...", 6f);
+        Color from = _fillColor[idx], to = _doseColorOut[idx];
+        float pHFrom = _pHCurrent, pHTo = _phAfter[idx];
+        float dur = 6f, t = 0f;
+        while (t < dur)
+        {
+            t += Time.deltaTime; float p = Smooth(t / dur);
+            Color c = Color.Lerp(from, to, p);
+            if (_tankFluid[idx] != null) _tankFluid[idx].SetColors(c, c * 0.55f, c * 0.30f);
+            _pHCurrent = Mathf.Lerp(pHFrom, pHTo, p); PushPH();
+            if (idx == 2) _mhpQuality = Mathf.Lerp(0f, 92f, p);
+            yield return null;
+        }
+        ShowBubbles(Vector3.zero, false);
+        if (idx == 0) _stage1 = true; else if (idx == 1) _stage2 = true; else _stage3 = true;
+        _mhpBusy = false;
+
+        if (idx < 2)
+        {
+            yield return StartCoroutine(FadeToTank(idx + 1));
+        }
+        else
+        {
+            _sampleTaken = true; _labAccepted = true; // tak ada misi sample/lab/gudang lagi
+            // STAGE AKHIR: filter press mencetak cairan MHP jadi cake padat (keluar satu per satu).
+            yield return StartCoroutine(FilterPressFinaleRoutine());
+            _mhpAwait = 3;
+            if (_hud != null) _hud.ShowNotifPublic("MHP cake tercetak lengkap! Lapor HT (tahan T): 'MHP terbentuk'.", 9f);
+        }
+    }
+
+    private IEnumerator FadeToTank(int idx)
+    {
+        if (_hud != null) _hud.PlayManualFade(_fadeDuration);
+        yield return new WaitForSeconds(_fadeDuration * 0.5f);
+        TeleportPlayer(GetTankStand(idx));
+        _mhpTank = idx; _mhpAwait = 1;
+        yield return new WaitForSeconds(_fadeDuration * 0.5f);
+        string[] tn = { "Netralisasi", "Polishing", "Presipitasi MHP" };
+        if (_hud != null) _hud.ShowNotifPublic($"TANGKI {idx + 1} ({tn[idx]}). Lapor HT (tahan T) untuk alirkan cairan ke tangki ini.", 8f);
+        _seq = null;
+    }
+
+    // ============================================================ STAGE AKHIR: FILTER PRESS MHP
+    // Cairan MHP dipompa ke filter press -> plate menekan -> cake padat keluar SATU PER SATU
+    // dari hydraulic ram ke tray.
+    private IEnumerator FilterPressFinaleRoutine()
+    {
+        if (_hud != null) _hud.PlayManualFade(_fadeDuration);
+        yield return new WaitForSeconds(_fadeDuration * 0.5f);
+        TeleportPlayer(GetFilterPressStand());
+        yield return new WaitForSeconds(_fadeDuration * 0.5f);
+        if (_hud != null) _hud.ShowNotifPublic("Cairan MHP dipompa ke FILTER PRESS. Plate menekan, air terperas, padatan jadi cake...", 7f);
+        PlayAudio(_doseAudio, 0.30f);
+
+        Transform ram = FindWorldTransform("FilterPress_HydraulicRam_Main");
+        Transform cloud = FindWorldTransform("MHP_Precipitation_ProductCloud");
+        Vector3 cloudBaseScale = cloud != null ? cloud.localScale : Vector3.one;
+
+        var cakes = new List<Transform>();
+        for (int i = 0; i < 16; i++)
+        {
+            var ct = FindWorldTransform("MHP_Cake_RoughChunk_Tray_" + i.ToString("00"));
+            if (ct != null) cakes.Add(ct);
+        }
+        // Simpan posisi akhir + sembunyikan dulu (cake belum tercetak).
+        var cakeEnd = new Vector3[cakes.Count];
+        for (int i = 0; i < cakes.Count; i++) { cakeEnd[i] = cakes[i].position; cakes[i].gameObject.SetActive(false); }
+
+        Vector3 ramExit = ram != null ? ram.position : new Vector3(47.6f, 2.74f, 134.96f);
+        Vector3 ramBase = ram != null ? ram.localPosition : Vector3.zero;
+
+        // Fase 1: hydraulic ram menekan (maju-mundur) 3x = filter press hidup.
+        if (ram != null)
+        {
+            for (int p = 0; p < 3; p++)
+            {
+                float tt = 0f;
+                while (tt < 0.55f)
+                {
+                    tt += Time.deltaTime;
+                    float k = Mathf.Sin(tt / 0.55f * Mathf.PI);
+                    ram.localPosition = ramBase + new Vector3(0.45f * k, 0f, 0f); // dorong ke arah plate frame
+                    yield return null;
+                }
+            }
+            ram.localPosition = ramBase;
+        }
+        PlayAudio(_readyAudio, 0.3f);
+
+        // Fase 2: cake MHP keluar SATU PER SATU dari ram -> meluncur ke posisi tray.
+        for (int i = 0; i < cakes.Count; i++)
+        {
+            var ck = cakes[i];
+            ck.gameObject.SetActive(true);
+            // sentakan ram tiap cake keluar
+            if (ram != null) StartCoroutine(RamKick(ram, ramBase));
+            float tt = 0f, dur = 0.42f;
+            while (tt < dur)
+            {
+                tt += Time.deltaTime; float k = Smooth(tt / dur);
+                ck.position = Vector3.Lerp(ramExit, cakeEnd[i], k);
+                yield return null;
+            }
+            ck.position = cakeEnd[i];
+            // product cloud (cairan MHP) menyusut seiring cake terbentuk.
+            if (cloud != null) cloud.localScale = cloudBaseScale * Mathf.Max(0.04f, 1f - (i + 1f) / cakes.Count);
+            yield return new WaitForSeconds(0.28f);
+        }
+        if (cloud != null) cloud.gameObject.SetActive(false);
+        if (_hud != null) _hud.ShowNotifPublic("MHP cake padat (Ni-Co hidroksida) tercetak lengkap di tray.", 6f);
+        yield return new WaitForSeconds(0.8f);
+    }
+
+    // Reset cake + cloud ke kondisi awal (cake disembunyikan, cloud full) supaya finale bisa diulang.
+    private Vector3 _cloudBaseScale = Vector3.one; private bool _cloudBaseCaptured;
+    private void ResetFilterPressFinale()
+    {
+        var cloud = FindWorldTransform("MHP_Precipitation_ProductCloud");
+        if (cloud != null)
+        {
+            if (!_cloudBaseCaptured) { _cloudBaseScale = cloud.localScale; _cloudBaseCaptured = true; }
+            cloud.localScale = _cloudBaseScale;
+            cloud.gameObject.SetActive(true);
+        }
+        for (int i = 0; i < 16; i++)
+        {
+            var ct = FindWorldTransform("MHP_Cake_RoughChunk_Tray_" + i.ToString("00"));
+            if (ct != null) ct.gameObject.SetActive(false); // cake muncul saat finale
+        }
+    }
+
+    private IEnumerator RamKick(Transform ram, Vector3 ramBase)
+    {
+        float tt = 0f;
+        while (tt < 0.25f)
+        {
+            tt += Time.deltaTime; float k = Mathf.Sin(tt / 0.25f * Mathf.PI);
+            ram.localPosition = ramBase + new Vector3(0.30f * k, 0f, 0f);
+            yield return null;
+        }
+        ram.localPosition = ramBase;
+    }
+
+    private Transform GetFilterPressStand()
+    {
+        var go = GameObject.Find("L10_FilterPressStand_Runtime") ?? new GameObject("L10_FilterPressStand_Runtime");
+        Vector3 standPos = new Vector3(47.5f, 0.6f, 129.8f);     // depan tray cake, hadap +z
+        Vector3 lookAt = new Vector3(47.5f, 2.5f, 135.5f);
+        go.transform.position = standPos;
+        Vector3 look = lookAt - standPos; look.y = 0f;
+        go.transform.rotation = look.sqrMagnitude > 0.001f ? Quaternion.LookRotation(look.normalized, Vector3.up) : Quaternion.identity;
+        return go.transform;
+    }
+
+    private Transform FindWorldTransform(string n)
+    {
+        foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+            if (t.name == n && t.gameObject.scene.IsValid()) return t;
+        return null;
+    }
+
+    private void FinishMhp()
+    {
+        _questComplete = true;
+        _glm?.NotifyLevel11MHPComplete();
+        if (_hud != null) _hud.ShowNotifPublic("MHP terbentuk & dilaporkan. Produk siap ke gudang. Lanjut level berikutnya.", 7f);
+    }
+
+    // Stream cairan jatuh (cylinder dari atas ke tangki).
+    private void ShowFillStream(Vector3 top, Vector3 bottom, Color col, bool on)
+    {
+        if (!on) { if (_mhpStream != null) _mhpStream.SetActive(false); return; }
+        if (_mhpStream == null)
+        {
+            _mhpStream = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            _mhpStream.name = "L10_FillStream_Runtime";
+            var col0 = _mhpStream.GetComponent<Collider>(); if (col0 != null) Object.Destroy(col0);
+            _mhpStream.transform.SetParent(transform, true);
+        }
+        _mhpStream.SetActive(true);
+        var r = _mhpStream.GetComponent<Renderer>();
+        var m = OpaqueMat(col); m.EnableKeyword("_EMISSION"); m.SetColor("_EmissionColor", col * 0.4f);
+        r.sharedMaterial = m;
+        Vector3 mid = (top + bottom) * 0.5f; Vector3 dir = (bottom - top);
+        float len = Mathf.Max(0.5f, dir.magnitude);
+        _mhpStream.transform.position = mid;
+        _mhpStream.transform.up = dir.sqrMagnitude > 0.001f ? dir.normalized : Vector3.down;
+        _mhpStream.transform.localScale = new Vector3(0.35f, len * 0.5f, 0.35f);
+    }
+
+    // Gelembung reaksi (ParticleSystem naik).
+    // Uap reaksi REALISTIS: netralisasi asam+kapur eksotermik -> uap air tipis (transparan) + sedikit CO2.
+    // Bukan asap putih tebal. Warna di-tint halus per tahap (vapor).
+    private Color _vaporTint = new Color(0.85f, 0.88f, 0.92f, 0.22f);
+    private void ShowBubbles(Vector3 pos, bool on)
+    {
+        if (!on) { if (_mhpBubbles != null) _mhpBubbles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear); return; }
+        if (_mhpBubbles == null)
+        {
+            var go = new GameObject("L10_ReactionVapor_Runtime");
+            go.transform.SetParent(transform, true);
+            _mhpBubbles = go.AddComponent<ParticleSystem>();
+            var rend = _mhpBubbles.GetComponent<ParticleSystemRenderer>();
+            rend.material = new Material(Shader.Find("Sprites/Default"));
+            var main = _mhpBubbles.main;
+            main.startSize = 0.9f;          // gumpalan uap besar tipis
+            main.startSpeed = 0.7f;         // naik perlahan
+            main.startLifetime = 2.6f;
+            main.maxParticles = 80;
+            main.playOnAwake = false;
+            main.gravityModifier = -0.04f;  // sedikit naik (uap panas)
+            var sh = _mhpBubbles.shape; sh.shapeType = ParticleSystemShapeType.Cone; sh.angle = 18f; sh.radius = 1.6f; sh.rotation = new Vector3(-90f, 0f, 0f);
+            var em = _mhpBubbles.emission; em.rateOverTime = 14f; // tipis, tidak deras
+            // fade out (alpha menurun) -> uap menghilang seperti asli
+            var col = _mhpBubbles.colorOverLifetime; col.enabled = true;
+            var grad = new Gradient();
+            grad.SetKeys(
+                new[] { new GradientColorKey(Color.white, 0f), new GradientColorKey(Color.white, 1f) },
+                new[] { new GradientAlphaKey(0f, 0f), new GradientAlphaKey(0.6f, 0.25f), new GradientAlphaKey(0f, 1f) });
+            col.color = grad;
+        }
+        var m = _mhpBubbles.main; m.startColor = _vaporTint;
+        _mhpBubbles.transform.position = pos + Vector3.up * 0.6f;
+        _mhpBubbles.Play();
+    }
+
+    private void ApplyColor(Renderer r, Color c)
+    {
+        if (r == null) return;
+        // PENTING: URP SRP Batcher mengabaikan MaterialPropertyBlock untuk _BaseColor.
+        // Pakai material instance per-renderer supaya warna BENAR-BENAR ter-render.
+        var m = r.material; // instance (dibuat sekali, lalu reuse)
+        if (m == null) return;
+        if (m.HasProperty(IdBase)) m.SetColor(IdBase, c);
+        if (m.HasProperty(IdColor)) m.SetColor(IdColor, c);
+        m.EnableKeyword("_EMISSION");
+        if (m.HasProperty("_EmissionColor")) m.SetColor("_EmissionColor", c * 0.18f);
+    }
+
+    private Vector3 FindWorldPos(string n, Vector3 fallback)
+    {
+        foreach (var t in Resources.FindObjectsOfTypeAll<Transform>())
+            if (t.name == n && t.gameObject.scene.IsValid()) return t.position;
+        return fallback;
+    }
+
     // ---- Public props for HUD ----
     public bool LevelActive => _levelActive;
     public bool Stage1Done => _stage1;
@@ -133,12 +546,14 @@ public class Level11MHPController : MonoBehaviour
     {
         GameLevelManager.OnLevelStarted += OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed += OnDcsButtonPressed;
+        WalkieTalkieManager.OnPTTDilepas += OnMhpHtReleased;
     }
 
     private void OnDisable()
     {
         GameLevelManager.OnLevelStarted -= OnLevelStarted;
         GameLevelManager.OnDCSButtonPressed -= OnDcsButtonPressed;
+        WalkieTalkieManager.OnPTTDilepas -= OnMhpHtReleased;
         if (_seq != null) StopCoroutine(_seq);
         Stop(_agitatorAudio); Stop(_doseAudio);
     }
@@ -150,6 +565,7 @@ public class Level11MHPController : MonoBehaviour
 
         _glm = GameLevelManager.Instance;
         _processStarted = false; _stageIndex = PhaseInitialSample; _dosing = false;
+        _mhpFlowActive = false; _mhpBusy = false; _mhpAwait = 0; _mhpTank = 0;
         _pHCurrent = _stages[0].pHFrom; _mhpQuality = 0f;
         _stage1 = _stage2 = _stage3 = _sampleTaken = _labAccepted = _questComplete = false;
         _initialSampleAnalyzed = _feSeparated = _validationSampleTaken = _transferValveOpen = _filterProductDone = false;
@@ -157,6 +573,8 @@ public class Level11MHPController : MonoBehaviour
         _reagentFlow = 0f; _tankLevel = 62f; _turbidity = 95f;
         _warehouseStarted = _dispatching = _baggingDone = false; _dispatchProgress = 0f; HideDispatchStation(); SetFillStream(false); EnsureWarehouseRefs(); RestoreWarehouseHeaps();
         PushPH(); SetProcessVisuals(false); ShowDoseButton(false); ShowInfoPanel(false); HideLab();
+        HideAllTankLiquids();
+        ResetFilterPressFinale();
         if (_hud != null) _hud.ShowNotifPublic("Level 10: Larutan PLS dari CCD masuk pemurnian. Tekan DCS 10 untuk mulai.");
         TeleportPlayer(_teleportTargetDcs);
     }
@@ -172,15 +590,8 @@ public class Level11MHPController : MonoBehaviour
     {
         if (_hud != null) _hud.PlayManualFade(_fadeDuration);
         yield return new WaitForSeconds(_fadeDuration * 0.5f);
-        TeleportPlayer(_teleportTargetField);
-        yield return new WaitForSeconds(_fadeDuration * 0.5f + 0.5f);
-
-        SetProcessVisuals(true);
-        if (_feedLiquid != null) _feedLiquid.SetActive(true);
-        PlayAudio(_agitatorAudio, 0.34f);
-        BuildOperatorStation();
-        _stageIndex = PhaseInitialSample;
-        BeginOperatorStep();
+        StartMhpFlow(); // hide liquids, teleport tangki 1, tunggu HT
+        yield return new WaitForSeconds(_fadeDuration * 0.5f);
         _seq = null;
     }
 
@@ -188,6 +599,7 @@ public class Level11MHPController : MonoBehaviour
     {
         if (!_levelActive || !_processStarted) return;
         AnimateAgitators();
+        if (_mhpFlowActive) return; // flow baru di-drive event HT + coroutine
         if (_dosing) AnimateSkid();
 
         // Operator input (keyboard fallback): SPACE atau 1
@@ -774,11 +1186,12 @@ private void ShowDoseButton(bool on)
         if (on && _stageIndex >= 0 && _stageIndex <= 2) ResolveSkidMotors(_stageIndex);
         if (on && _doseLabel != null) _doseLabel.text = GetActionButtonLabel();
     }
-    private void ShowInfoPanel(bool on) { if (_infoPanel != null) _infoPanel.SetActive(on); }
+    private void ShowInfoPanel(bool on) { if (_infoPanel != null) _infoPanel.SetActive(false); }
 
     // ============================================================ HELPERS
     private void AnimateAgitators()
     {
+        if (!_rotorOn) return; // rotor baru berputar setelah HT#2 (dosing)
         if (_agitatorRoots == null) return;
         float d = _agitatorRpm * 6f * Time.deltaTime;
         foreach (var a in _agitatorRoots) if (a != null) a.Rotate(Vector3.up, d, Space.World);

@@ -907,3 +907,115 @@ Pump tie-in detail (3 rubber exp-joint y2.55/2.8/3.05, hazard y4.4, `DischargeKn
 **LESSON**: (a) Teleport XR HARUS kanonik: spawn=KAKI, `MoveCameraToWorldLocation(feet+up*CameraYOffset)`, JANGAN tambah `SetPositionAndRotation(spawn)` (bikin rig-root di spawn → kamera +1.36 ketinggian). (b) Occlusion culling = musuh berulang objek interaktif/kecil (handwheel, masker, HT) → SELALU exclude dari OccludeeStatic sebelum bake. Part 52 (masker/HT) + Part 58 (handwheel) pola sama.
 
 **Files**: Level6AcidInjectionController.cs (TeleportPlayer kanonik), PlayerHUD.cs (task masker L6), UniversalTaskMarker.cs (marker masker L6), Level1_MainBroken.unity (SpawnPoint_Lvl6 y→0.05, clear 105 occludee handwheel, rebake occlusion, saved). 0 compile error. Belum commit/push.
+
+
+---
+
+### 2026-06-09 (Part 59) — Level 11 (Tailing) REWORK jadi HT-gated liquid flow + deep research urutan proses
+
+**Konteks**: Lanjutan Level 10 (MHP) selesai (finale filter press + reset replay verified, Part TASK 9). User minta mekanik Level 11 (Tailing, enum `Level12_TailingDischarge`, controller `Level12TailingFilterController`, DCS 11) diubah: research dulu bentuk limestone (bongkahan vs cairan) + urutan proses (apakah dijemur dulu sebelum filter press).
+
+**DEEP RESEARCH (web: BSSA, Nickel Institute, Carmeuse/National Lime Assoc, MDPI filtered tailings, UWA ACG, tailings.info, Earthworks Indonesia)**:
+1. **Limestone/kapur = CAIRAN SLURRY** (milk of lime / lime slurry), bukan bongkahan. Limestone batu digiling→serbuk→slurry di-pump; atau CaO→slake→Ca(OH)2 serbuk→+air = susu kapur. Masuk tank sbg cairan di-dosing + agitator. → mekanik HARUS via HT (gaya Level 10), bukan taruh batu.
+2. **Urutan user (tank→dry stack→jemur→filter press) SALAH/terbalik.** Benar: tank netralisasi → **FILTER PRESS (peras air mekanis dulu → cake ~22%)** → angkut ke DRY STACK → **baru dijemur+dipadatkan di dry stack**. Alasan fisika: keluar tank masih slurry cair (bisa dipompa); cake kering hasil filter press TIDAK bisa dialirkan/dipompa ("filtered cake no longer transported by pipeline" tailings.info; "dry stacking... cannot be pumped" UWA). Penjemuran = evaporative drying/konsolidasi SETELAH deposisi di dry stack (Level 12), bukan pra-filter-press. Disampaikan ke user dgn jelas.
+
+**REWORK `Level12TailingFilterController.cs` (button-gated → HT-gated, mirror pola Level11MHPController)**:
+- Hook `WalkieTalkieManager.OnPTTDilepas += OnTailingHtReleased` di OnEnable/OnDisable.
+- State `_await`: 0 none, 1 alirkan tailing, 2 dosing kapur, 3 filter press, 4 report. Fallback keyboard SPACE/1 di Update.
+- `StartFieldSequence`: DCS11 → fade → teleport depan tank netralisasi V3 (stand 32,1.5,138.5 hadap tank) → `EnsureLiquidBody` + `HideTailingLiquid` (tank KOSONG di awal) → info panel → `_await=1`.
+- **HT #1 `FillTailingRoutine`**: cairan tailing asam NAIK dari dasar (silinder `Tailing_Neut_LiquidBody` r4.6 di tank V3 center 39.1,2.3,142.8; scaleY 0.02→full + posisi naik dari bottomY 1.30; `Neutralized_Surface` ikut naik). Warna coklat-asam `_colAcidTailing (0.40,0.26,0.13)`. pH 2.3.
+- **HT #2 `DoseLimeRoutine`**: `ShowLimePour` (Limestone_Pour_Stream di-tint putih susu kapur, fallback bikin cylinder runtime) + `ShowBubbles` (gelembung reaksi) + warna lerp coklat-asam→abu-kehijauan netral `_colNeutralTailing (0.52,0.56,0.50)` + pH 2.3→8.0 + jarum pH. Beacon hijau ON. `_neutralizeDone=true`, `_await=3`.
+- **HT #3 `RunFilterPressRoutine`**: fade → teleport ke filter press (33.5,1.5,152) → `FilterPressRoutine` existing (8 cake muncul progresif, moisture 60→22%, roller spin) → stage=2.
+- Inspeksi proximity (Cake_On_Conveyor) → Compliance QC pop-up → ACCEPT → `NotifyLevel12TailingFilterComplete` → lapor HT "limbah dialirkan" (tak diubah).
+- **Warna via MATERIAL INSTANCE** (`_liquidBodyMat`, `_surfMat` + `SetMatColor`), BUKAN MaterialPropertyBlock (gotcha SRP Batcher abaikan MPB utk _BaseColor — sama spt Level 10).
+- `TryAction` jadi thin wrapper → OnTailingHtReleased (tombol konsol = fallback HT, disembunyikan). BeginStage/NeutralizeRoutine lama dihapus.
+
+**BUG ditemukan & FIXED (play-test)**: gelembung tak berhenti — `EmitBubbles` loop pakai `while(_bubbles.isPlaying)` + `Emit()` manual terus bikin partikel hidup → isPlaying selalu true → infinite. FIX: flag eksplisit `_bubblesOn`; `ShowBubbles(false)` → `Stop(true, StopEmittingAndClear)`; loop `while(_bubblesOn)`. Verified particleCount=0 setelah dose.
+
+**VERIFIED play-mode (reflection, HT gate dipicu manual)**: DCS11→await=1, liquidBody dibuat+HIDDEN (tank kosong). HT#1→cairan naik scaleY 0.02→1.0, pH 2.3, await=2. HT#2→pH 2.3→8.00, warna→(0.52,0.56,0.50) netral, NeutralizeDone, gelembung jalan lalu BERHENTI bersih, await=3. HT#3→FilterPressDone, moisture 22%, 8 cake aktif, stage=2. Inspeksi+QC+OnAccept→ComplianceAccepted, QuestComplete, GLM `_level12TailingFilterComplete`=True. Screenshot tank: cairan abu-kehijauan terisi + gelembung + filter press. Compile 0 error. Console noise baseline only.
+
+**STATUS: Level 11 HT-gated FULLY FUNCTIONAL & VERIFIED.** Alur: DCS11 → HT(alirkan tailing naik dari dasar, coklat asam) → HT(susu kapur turun, warna→netral abu-kehijauan, pH 2.3→8, gelembung) → HT(filter press, cake 22%) → inspeksi → compliance QC → lapor HT "limbah dialirkan". TIDAK perlu save scene (liquid body/bubbles/lime pour semua runtime; controller sudah ter-attach; tak ada objek scene berubah). Belum commit/push.
+
+**Files**: Assets/Scripts/Simulation/Level12TailingFilterController.cs (rework HT-gated + liquid rise + lime slurry + bubbles + fix). Screenshots Assets/Screenshots (harmless).
+
+
+---
+
+### 2026-06-09 (Part 60) — Tangki Netralisasi Tailing (Level 11) REBUILD industrial + fluida gaya autoclave (transparan, lihat liquid)
+
+**User**: bangun ulang TANGKI netralisasi tailing realistis seperti industri nikel via Blender headless, agak transparan biar liquid kelihatan, fluida di-upgrade ke style autoclave; HT#1-#3 dari Part 59 dipertahankan. Tanya juga kenapa Blender MCP gagal konek di Kiro.
+
+**Build (Blender headless, file Assets/Art/TailingNeutTankBlender/build_tailing_neut_tank.py sudah ada dari sesi sebelumnya)**: jalan via lender.exe --background --python ... -> TailingNeutTank_IndustrialUV.fbx (592KB). Authored Z-up local origin, parent ke empty rig TailingNeutTank_IndustrialRig, export pply_unit_scale=True, apply_scale_options='FBX_SCALE_ALL', bake_space_transform=True, axis_up=Y, axis_forward=-Z, object_types={EMPTY,MESH}. Komponen TNT_*: pad beton + plinth + 8 anchor bolt, dished bottom + lantai, **shell silinder semi-transparan TNT_Shell_Glass** (Rsh 2.90, FLOOR_Z 1.30 -> WALL_TOP 6.60), 4 weld stiffener ring, hazard band low/high, top curb, overflow launder + downpipe, inlet nozzle bertopologi flange (sisi -X 210deg, dari arah CCD underflow), sludge outlet bawah, drive bridge A+B + grate deck + gearbox + motor blue + fan, **drive shaft + 2-tier pitched-blade impeller (TNT_Impeller_Hub_0/1, TNT_Impeller_Blade_*)** (di-reparent ke pivot agitator existing), lime lance + header + nozzle, pH probe + gauge box + green status lamp, ladder dengan safety cage 4 hoop, handrail platform grate + 10 post + top/mid rail, label plate.
+
+**Integrasi scene (execute_code edit-mode)**: InstantiatePrefab FBX -> TailingNeutTank_IndustrialUV parent Level13_DryStack_Field/Level12_13_Tailing_IndustrialUV_BlenderRig_V3, world pos (39.08, 0, 142.83) rot identity, lossy=1 (compensate parent scale). DestroyImmediate Neutralization_Tank_Shell lama. Renderer TNT_Shell_Glass di-overlay material baru M_TailTank_GlassTransparent (URP/Lit transparent: _Surface=1, SrcBlend5/DstBlend10, ZWrite=0, queue 3000, alpha 0.20, smoothness 0.85). 11 part impeller (TNT_Impeller_* + TNT_Agitator_Shaft) di-reparent ke Polishing_Agitator_Root (controller terus memutarnya). 4 Polishing_Agitator_Blade_NN lama disembunyikan. tank bounds ctr (39.52, 4.32, 142.83) size (8.01, 8.64, 7.14). Scene saved.
+
+**Upgrade fluida ke gaya AUTOCLAVE (Level12TailingFilterController.cs)**:
+- EnsureLiquidBody di-rewrite: cylinder VOLUME PENUH (tinggi cy 4.4m menutup _fillBottom 1.30 .. _fillTop 5.15), **diameter dunia 5.0** via kompensasi parent.lossyScale (localScale = 5.0/lossy.x per axis) supaya cairan TIDAK nembus shell yang 5.8m diameter (parent rig lossy 1.28x bikin cylinder over-scale ke 6.93m kalau tak dikompensasi -- bug ditemukan & diperbaiki saat play-test).
+- Material baru BuildTailingFluidMaterial: shader Olivia/L7SlurryFill (sama autoclave) dengan _SwirlSpeed 0.6, _SwirlStrength 0.30, _SwirlAxisZ 142.83, _SwirlSpacing 80, _SurfaceGlow 2.2, _DepthRange 4.0, _Alpha 0.82, _RippleStrength 0.05.
+- HT#1 FillTailingRoutine: alih-alih scaling cylinder, animasi _FillY shader prop dari (_fillBottom-0.05) -> _fillTop selama 5.5s (Smooth) -> permukaan cairan naik gaya autoclave (world-Y clip + surface band glow).
+- HT#2 DoseLimeRoutine: lerp 3 prop warna (_BaseColor shallow, _DeepColor, _EmissionColor) acid->neutral. Asam (0.46,0.29,0.13)/(0.26,0.15,0.06)/(0.20,0.10,0.03) -> Netral (0.55,0.60,0.52)/(0.30,0.38,0.32)/(0.10,0.16,0.08). pH 2.3 -> 8.0.
+- HT#3 (filter press) tak diubah.
+- Neutralized_Surface kini di-disable (shader sendiri punya surface band) -- hindari double-surface.
+- _surfMat field tetap ada untuk backwards compat (tak dipakai aktif).
+
+**VERIFIED play-mode (reflection)**: shader Olivia/L7SlurryFill aktif. HT#1 -> _FillY 5.15 (penuh), warna asam coklat, pH 2.3, _await=2. HT#2 -> warna netral abu-kehijauan (0.55,0.60,0.52), pH 8.0, NeutralizeDone=True, _await=3. liq world bounds size=(5.00, 4.40, 5.00) PAS di dalam shell 5.8m. Screenshot game-view positioned: tangki industrial bersih (drive bridge+motor+gearbox+handrail+launder+hazard band), shell transparan biru-kehijauan, **cairan netral kelihatan jelas di dalam, impeller terendam, surface glow band di permukaan**. Compile 0 error CS. Console cuma noise baseline.
+
+**Files**:
+- Assets/Art/TailingNeutTankBlender/build_tailing_neut_tank.py (sudah ada, dijalankan)
+- Assets/Art/TailingNeutTankBlender/TailingNeutTank_IndustrialUV.fbx (BARU, 592KB)
+- Assets/Scripts/Simulation/Level12TailingFilterController.cs (EnsureLiquidBody rewrite + BuildTailingFluidMaterial + SetFillY + SetFluidColors + FillTailingRoutine pakai _FillY + DoseLimeRoutine pakai 3 prop warna)
+- Assets/Scenes/Level1_MainBroken.unity (instance tank baru, hapus shell lama, reparent impeller, hide blade lama, transparent material, saved)
+
+**LESSON penting**:
+1. Cylinder runtime di parent ber-scale != 1 -> WAJIB kompensasi localScale = wantWorldDim / parent.lossyScale.axis per axis. Memory tertulis berkali-kali tapi mudah lupa di code baru.
+2. Object ambiguous (UnityEngine.Object vs object) di execute_code -> WAJIB UnityEngine.Object.DestroyImmediate(...) lengkap.
+3. Shader Olivia/L7SlurryFill reusable untuk fluida tank manapun -- ganti _SwirlAxisZ ke pusat tank, _FillY untuk level, _BaseColor/_DeepColor/_EmissionColor untuk warna fasa proses.
+
+**Blender MCP "connection failed" di Kiro -- DIAGNOSA & FIX**:
+- Server side OK: uvx --python 3.12 blender-mcp start normal (test PowerShell, exit code 0, jalan terus). uvx 0.11.15 + uv terinstall di C:\Users\mp2dz\.local\bin.
+- **Akar masalah: Blender side**. Server lender-mcp connect ke addon BlenderMCP via TCP socket (default 127.0.0.1:9876). Kalau Blender TIDAK running ATAU addon BlenderMCP belum di-enable + tombol "Connect to Claude" belum ditekan -> server gagal handshake -> Kiro tampil "connection failed".
+- **Fix**: 
+  1. Buka Blender 5.1.
+  2. Edit > Preferences > Add-ons -> cari "BlenderMCP" atau install dari .py (https://github.com/ahujasid/blender-mcp).
+  3. Enable centang. Save preferences.
+  4. Di 3D Viewport, sidebar (N) -> tab "BlenderMCP" -> klik **"Connect to Claude"** (toggle hijau).
+  5. Restart MCP server di Kiro (atau reload window) -> connection OK.
+- **Workaround sementara (yang dipakai sesi ini)**: Blender headless --background --python script.py SELALU bekerja (independen MCP). Untuk build asset terjadwal/repeatable, headless lebih reliable.
+
+
+---
+
+### 2026-06-09 (Part 61) — Cairan tabung SURFACE rise-from-bottom (CCD+MHP), masker kuning fix, tailing liquid masuk tabung, Level 12 marker
+
+**Konteks**: lanjutan request panjang user (TASK 2). Recovery setelah crash. Scene `Level1_MainBroken.unity`. Semua edit validate 0 error CS.
+
+**Komponen kunci `TankFluidColumn.cs`** (sudah dibuat sesi sebelumnya): cairan TERANG satu volume via shader `Olivia/L7SlurryFill`. API: `Setup(renderer, shallow, deep, emis)` (hitung bottom/top + swirl center dari renderer.bounds), `SetLevel01(0..1)` (permukaan NAIK DARI DASAR via `_FillY`, BUKAN melebar dari tengah), `SetColors`, `SetSwirl(speed)` (rotor), `Hide/Show`.
+
+**(1) CCD (Level10CCDController.cs) — cairan ungu pakai TankFluidColumn**:
+- Tambah field `TankFluidColumn[] _ccdFluid[3]` + `bool _ccdRotorOn` + 6 warna konstanta ungu (turbid shallow/deep/emis -> clear shallow/deep/emis).
+- `EnsureCcdFluidColumns()` BARU: attach TankFluidColumn ke tiap `CCDn_SettlingZone_XRayColumn` (volume X-ray utama, bounds ~10m diameter x 4.6m), SEMBUNYIKAN layer lama (`_clearPlsSurfaces` disc, `_feedwellCores`, `_underflowPools`) -> hilangkan DOUBLE-LIQUID + bug "melebar dari tengah".
+- `PrepareCcdLiquidAtBottom` -> EnsureCcdFluidColumns + level 0 (kosong di dasar) + rotor off.
+- `AnimateCcdLiquidRise` -> drive `_ccdFluid[i].SetLevel01(t)` (rise dari dasar), buang scaling settling-zone lama.
+- `UpdateMudLayers` -> cuma lerp warna keruh->jernih via `SetColors` + level 1 (buang scaling underflow/feedwell yg melebar dari tengah).
+- `AnimateCcdLiquidMotion` -> cuma `SetSwirl` (rotor) saat `_ccdRotorOn`, buang RotateAround transform (yg merusak bounds).
+- `_ccdRotorOn=true` di-set SETELAH `AnimateCcdLiquidRise` selesai (di RunCCDSequence) -> rotor mengaduk hanya setelah cairan naik penuh.
+- `SetProcessVisuals(false)` -> Hide semua fluid + swirl 0 (cairan ungu TAK tampil di awal).
+- **VERIFIED edit-mode**: 3 settling zone resolve, TankFluidColumn Ready=True, `_FillY` lvl0=1.24 (dasar) -> lvl1=5.95 (atas) = NAIK DARI DASAR terbukti, shader Olivia/L7SlurryFill, swirl set 1.2 OK.
+
+**(2) MHP (Level11MHPController.cs)** — sudah pakai TankFluidColumn (sesi sblm). VERIFIED: 3 `_tankFluid` Ready=True. Mekanisme `_FillY` sama persis CCD (proven).
+
+**(3) MASKER KUNING Level 3 — FIXED (Level3OreSlurryController.cs `AktifkanGlowMaskerDiBaju`)**: glow masker pakai `_warnaGlowMasker=(1,0.85,0.2)` KUNING via MPB `_EmissionColor` + EnableKeyword `_EMISSION`. Saat glow OFF, kode LAMA cuma set `_EmissionColor=black` tapi MPB tetap nempel + keyword `_EMISSION` TETAP nyala -> masker kuning residual. **FIX**: saat OFF -> `_glowMpb.Clear()` + `rend.SetPropertyBlock(null)` (bersih total) + `DisableKeyword("_EMISSION")`. Material `Respirator_Material` base putih (1,1,1) -> kembali normal.
+
+**(4) CANVAS VR Level 3** — fix Part 54 (`LevelTransitionChoicePanel.AttachXrSimpleInteractable`: collider pakai `rect.rect.width/height` setelah ForceUpdateCanvases, bukan sizeDelta~0; register colliders eksplisit) MASIH ADA & benar. Panel auto-create fresh tiap `EnsureChoicePanel` -> XR-clickable. (Kalau user masih lihat mouse-only, kemungkinan build lama; kode sudah benar.)
+
+**(5) TAILING_NEUT_LIQUIDBODY "masih di luar tabung" — FIXED (Level12TailingFilterController.cs `EnsureLiquidBody`)**: liquid runtime pakai hardcoded `_neutTankCenter=(39.1,2.3,142.8)` + fillBottom 1.30, TAPI tangki rebuild (Part 60 TailingNeutTank_IndustrialUV) shell `TNT_Shell_Glass` bounds ctr (39.08,5.16,143.58) span y2.51-7.81 -> Z meleset 0.78m + floor 1.2m kerendahan = liquid di luar. **FIX**: `EnsureLiquidBody` sekarang DERIVE dari `TNT_Shell_Glass` renderer.bounds (center X/Z, fillBottom=min.y+0.20, fillTop=max.y-0.55, diameter=min(ext.x,ext.z)*2*0.86) + update `_SwirlAxisZ`/`_DepthRange`. **VERIFIED**: liqBounds ctr (39.08,5.16,143.58) ext 2.49 PAS di dalam shell ext 2.90 -> INSIDE_SHELL=True.
+
+**(6) LEVEL 12 marker + kejelasan task** — `UniversalTaskMarker.ResolveLevel12TailingTarget` (phase-aware) + props `AwaitStage`/`StageNow` di controller SUDAH ada & compile. Alur: DCS11 -> HT gate await 1/2/3 (semua arah WalkieTalkie utk tahan T) -> stage2 inspeksi cake (Cake_On_Conveyor/Final_FilterPress_Unit) -> stage3 QC (null, tombol ACCEPT) -> HT akhir "limbah dialirkan".
+
+**(7) UAP/asap** — MHP `ShowBubbles` sudah di-rework jadi thin vapor (Cone, gravityModifier -0.04 naik, colorOverLifetime fade, `_vaporTint` dinamis) — netralisasi HPAL eksotermik -> uap air+CO2 nyata, realistis putih-transparan tipis (bukan blok putih solid). Tailing `ShowBubbles` punya flag `_bubblesOn` (fix infinite loop Part 59).
+
+**CATATAN console**: NRE `XRSocketInteractor.OnEnable line 292 'routine is null'` = bug internal XRI package (StartCoroutine saat GO transisi enable) — PRE-EXISTING (dari socket dada Part 53), non-blocking, BUKAN dari edit sesi ini. Semua socket activeInHierarchy=True di edit mode. Generators.ai.unity 'UserUnauthorized' = network benign.
+
+**Files**: Level10CCDController.cs (TankFluidColumn CCD), Level3OreSlurryController.cs (masker glow clear), Level12TailingFilterController.cs (EnsureLiquidBody dari shell bounds). Compile 0 error. Scene TIDAK perlu save (semua cairan/fluid runtime; komponen sudah ter-attach). Belum commit/push (user belum minta).
+
+**TODO next**: play-test VR asli (mekanik fluida sudah proven edit-mode + reflection). Opsional: bersihkan NRE XRSocketInteractor (guard GO active sebelum OnEnable, atau package issue). Commit Indonesia + push saat user minta.

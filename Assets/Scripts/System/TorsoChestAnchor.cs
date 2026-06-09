@@ -13,7 +13,7 @@ using UnityEngine;
 ///   2. Pasang script ini, assign field _camera ke Main Camera.
 ///   3. Pindahkan socket APD (mis. Socket_Respirator_Baju) jadi child TorsoAnchor.
 /// </summary>
-[DefaultExecutionOrder(-100)]
+[DefaultExecutionOrder(200)]
 public class TorsoChestAnchor : MonoBehaviour
 {
     [Header("=== Referensi Kamera ===")]
@@ -45,6 +45,7 @@ public class TorsoChestAnchor : MonoBehaviour
     private Vector3 _velocityPos;
     private float _yawSekarang;
     private float _yawVelocity;
+    private bool _sudahInit;
 
     private void Reset()
     {
@@ -55,6 +56,14 @@ public class TorsoChestAnchor : MonoBehaviour
     private void OnEnable()
     {
         ForceSyncNow();
+        // Ikuti pose kamera di onBeforeRender = pose PALING FRESH yang dipakai render.
+        // Menghilangkan jitter/patah-patah karena LateUpdate kadang baca pose 1 frame basi.
+        Application.onBeforeRender += FollowBeforeRender;
+    }
+
+    private void OnDisable()
+    {
+        Application.onBeforeRender -= FollowBeforeRender;
     }
 
     private void Start()
@@ -64,6 +73,18 @@ public class TorsoChestAnchor : MonoBehaviour
 
     private void LateUpdate()
     {
+        // Follow utama di-handle onBeforeRender (lebih smooth). LateUpdate hanya
+        // jaga-jaga kalau onBeforeRender tidak ter-fire.
+        StepFollow(Time.deltaTime);
+    }
+
+    private void FollowBeforeRender()
+    {
+        StepFollow(Time.unscaledDeltaTime);
+    }
+
+    private void StepFollow(float dt)
+    {
         if (_camera == null)
         {
             if (Camera.main != null)
@@ -71,6 +92,7 @@ public class TorsoChestAnchor : MonoBehaviour
             else
                 return;
         }
+        if (dt <= 0f) dt = Time.unscaledDeltaTime;
 
         PakaiDefaultDadaYangTerlihat();
 
@@ -82,16 +104,27 @@ public class TorsoChestAnchor : MonoBehaviour
             + forwardYaw * _offsetDepan
             + rightYaw * _offsetSamping;
 
+        if (!_sudahInit)
+        {
+            transform.position = targetPos;
+            _yawSekarang = Mathf.Atan2(forwardYaw.x, forwardYaw.z) * Mathf.Rad2Deg;
+            transform.rotation = Quaternion.Euler(0f, _yawSekarang, 0f);
+            _velocityPos = Vector3.zero;
+            _yawVelocity = 0f;
+            _sudahInit = true;
+            return;
+        }
+
         if (_smoothPos <= 0.0001f)
             transform.position = targetPos;
         else
-            transform.position = Vector3.SmoothDamp(transform.position, targetPos, ref _velocityPos, _smoothPos);
+            transform.position = Vector3.SmoothDamp(transform.position, targetPos, ref _velocityPos, _smoothPos, Mathf.Infinity, dt);
 
         float yawTarget = Mathf.Atan2(forwardYaw.x, forwardYaw.z) * Mathf.Rad2Deg;
         if (_smoothRot <= 0.0001f)
             _yawSekarang = yawTarget;
         else
-            _yawSekarang = Mathf.SmoothDampAngle(_yawSekarang, yawTarget, ref _yawVelocity, _smoothRot);
+            _yawSekarang = Mathf.SmoothDampAngle(_yawSekarang, yawTarget, ref _yawVelocity, _smoothRot, Mathf.Infinity, dt);
 
         transform.rotation = Quaternion.Euler(0f, _yawSekarang, 0f);
     }

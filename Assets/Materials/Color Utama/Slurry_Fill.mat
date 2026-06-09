@@ -46,11 +46,11 @@ Material:
     - _BaseMap:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0.83382475}
+        m_Offset: {x: 0, y: 0.19327867}
     - _MainTex:
         m_Texture: {fileID: 0}
         m_Scale: {x: 1, y: 1}
-        m_Offset: {x: 0, y: 0.022067785}
+        m_Offset: {x: 0, y: 0.7587597}
     m_Ints: []
     m_Floats:
     - _DstBlend: 10

@@ -37,6 +37,18 @@ public class Level10CCDController : MonoBehaviour
     private Renderer[] _settlingZones = new Renderer[3];         // zona pengendapan (x-ray)
     private Renderer[] _underflowPools = new Renderer[3];        // lumpur underflow di dasar
 
+    // Cairan tabung TERANG (satu volume) yang permukaannya NAIK DARI DASAR via shader _FillY.
+    // Menggantikan layer disc/pool lama (yang melebar dari tengah & double-liquid).
+    private TankFluidColumn[] _ccdFluid = new TankFluidColumn[3];
+    private bool _ccdRotorOn;                                     // rotor/rake swirl aktif (sesudah cairan naik)
+    // Warna PLS CCD: keruh ungu-coklat (awal) -> ungu jernih kebiruan (sesudah pemisahan).
+    private readonly Color _ccdTurbidShallow = new Color(0.46f, 0.32f, 0.52f, 1f);
+    private readonly Color _ccdTurbidDeep    = new Color(0.30f, 0.18f, 0.40f, 1f);
+    private readonly Color _ccdTurbidEmis    = new Color(0.20f, 0.10f, 0.28f, 1f);
+    private readonly Color _ccdClearShallow  = new Color(0.46f, 0.42f, 0.70f, 1f);
+    private readonly Color _ccdClearDeep     = new Color(0.30f, 0.34f, 0.58f, 1f);
+    private readonly Color _ccdClearEmis     = new Color(0.18f, 0.18f, 0.36f, 1f);
+
     // Pipa proses (CCD -> MHP / Filter Press) yang dibuat di Blender. Flow tube di-animasikan
     // (emissive pulse + scroll) untuk menunjukkan PLS & slurry mengalir keluar dari CCD.
     private Renderer _plsFlowPipe;        // PLS overflow -> Level 10 Pemurnian (hijau)
@@ -296,6 +308,7 @@ public class Level10CCDController : MonoBehaviour
         yield return AnimateCcdLiquidRise(4.2f);
 
         _separationRunning = true;
+        _ccdRotorOn = true;   // rotor/rake mulai mengaduk SETELAH cairan naik penuh
         if (_hud != null)
             _hud.ShowNotifPublic(_msgObserve);
         StartAudio(_driveAudio, _driveVolume);
@@ -494,28 +507,10 @@ public class Level10CCDController : MonoBehaviour
 
     private void AnimateCcdLiquidMotion()
     {
-        float dt = Time.deltaTime;
-        float rakeStep = _rakeRpm * 6f * dt;
-        float phase = Time.time * Mathf.Max(0.2f, _rakeRpm);
-
+        // Cairan satu volume berputar via shader swirl (rotor) HANYA saat rotor aktif.
+        float swirl = _ccdRotorOn ? Mathf.Max(0.2f, _rakeRpm) : 0f;
         for (int i = 0; i < 3; i++)
-        {
-            Vector3 axisPoint = i < _rakeTankAxis.Length && _rakeTankAxis[i] != Vector3.zero
-                ? _rakeTankAxis[i]
-                : Vector3.zero;
-            if (axisPoint == Vector3.zero && _clearPlsSurfaces[i] != null)
-                axisPoint = _clearPlsSurfaces[i].bounds.center;
-
-            RotateLiquidLayer(_clearPlsSurfaces[i], axisPoint, rakeStep * 0.22f);
-            RotateLiquidLayer(_feedwellCores[i], axisPoint, rakeStep * 0.85f);
-            RotateLiquidLayer(_settlingZones[i], axisPoint, rakeStep * 0.55f);
-            RotateLiquidLayer(_underflowPools[i], axisPoint, rakeStep * 0.70f);
-
-            if (_feedwellCores[i] != null)
-                PulseLiquidTint(_feedwellCores[i], Color.Lerp(_turbidSlurry, new Color(0.50f, 0.38f, 0.70f, 0.86f), 0.45f + 0.25f * Mathf.Sin(phase + i)));
-            if (_underflowPools[i] != null)
-                PulseLiquidTint(_underflowPools[i], new Color(0.28f + 0.04f * Mathf.Sin(phase + i), 0.14f, 0.32f, 0.88f));
-        }
+            if (_ccdFluid[i] != null) _ccdFluid[i].SetSwirl(swirl);
     }
 
     private void RotateLiquidLayer(Renderer renderer, Vector3 axisPoint, float degrees)
@@ -610,81 +605,173 @@ public class Level10CCDController : MonoBehaviour
     // permukaan PLS makin jernih (warna lerp turbid->clear), lumpur underflow naik di dasar.
     private void UpdateMudLayers(float t)
     {
-        if (_mpb == null) _mpb = new MaterialPropertyBlock();
-        float settle = SmoothStep(t);
         float clarity = SmoothStep(Mathf.Clamp01((t - 0.15f) / 0.85f));
-
-        // 1) Permukaan PLS jernih: warna keruh -> jernih (selalu tampil, hanya warnanya berubah).
+        // Cairan satu volume: warna lerp keruh ungu-coklat -> ungu jernih kebiruan seiring pemisahan.
         for (int i = 0; i < 3; i++)
         {
-            if (_clearPlsSurfaces[i] != null)
-            {
-                if (!_clearPlsSurfaces[i].enabled) _clearPlsSurfaces[i].enabled = true;
-                Color c = Color.Lerp(_turbidSlurry, _clearPls, clarity);
-                ApplyTint(_clearPlsSurfaces[i], c);
-            }
-            // 2) Feedwell core (slurry keruh masuk): menyusut sedikit saat padatan turun.
-            if (_feedwellCores[i] != null)
-            {
-                float coreScale = Mathf.Lerp(1f, 0.55f, settle);
-                var tr = _feedwellCores[i].transform;
-                Vector3 baseS = _feedwellBaseScale[i];
-                tr.localScale = new Vector3(baseS.x * coreScale, baseS.y, baseS.z * coreScale);
-            }
-            // 3) Lumpur underflow di dasar: naik tinggi seiring padatan mengendap.
-            if (_underflowPools[i] != null)
-            {
-                var tr = _underflowPools[i].transform;
-                Vector3 baseS = _underflowBaseScale[i];
-                float h = Mathf.Lerp(0.25f, 1.0f, settle);
-                tr.localScale = new Vector3(baseS.x, baseS.y * h, baseS.z);
-            }
+            if (_ccdFluid[i] == null) continue;
+            _ccdFluid[i].SetColors(
+                Color.Lerp(_ccdTurbidShallow, _ccdClearShallow, clarity),
+                Color.Lerp(_ccdTurbidDeep, _ccdClearDeep, clarity),
+                Color.Lerp(_ccdTurbidEmis, _ccdClearEmis, clarity));
+            _ccdFluid[i].SetLevel01(1f);
+        }
+    }
+
+    // Pasang TankFluidColumn (cairan TERANG satu volume) pada zona settling tiap thickener,
+    // dan SEMBUNYIKAN layer disc/pool lama (clearPLS surface, feedwell core, underflow pool) supaya
+    // tidak ada double-liquid & tidak ada animasi "melebar dari tengah". Idempotent.
+    private void EnsureCcdFluidColumns()
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (_ccdFluid[i] != null) continue;
+            Renderer vol = _settlingZones[i];
+            if (vol == null) continue;
+            // Pastikan transform settling zone di skala/posisi penuh sebelum bounds di-capture.
+            Transform tr = vol.transform;
+            if (_settlingBaseScale[i] != Vector3.zero) tr.localScale = _settlingBaseScale[i];
+            tr.localPosition = _settlingBaseLocalPosition[i];
+            vol.enabled = true;
+            var col = vol.GetComponent<TankFluidColumn>();
+            if (col == null) col = vol.gameObject.AddComponent<TankFluidColumn>();
+            col.Setup(vol, _ccdTurbidShallow, _ccdTurbidDeep, _ccdTurbidEmis);
+            _ccdFluid[i] = col;
+            // Sembunyikan layer lama agar hanya satu volume cairan terang yang tampil.
+            if (_clearPlsSurfaces[i] != null) _clearPlsSurfaces[i].enabled = false;
+            if (_feedwellCores[i] != null) _feedwellCores[i].enabled = false;
+            if (_underflowPools[i] != null) _underflowPools[i].enabled = false;
         }
     }
 
     private void PrepareCcdLiquidAtBottom()
     {
+        EnsureCcdFluidColumns();
+        _ccdRotorOn = false;
         for (int i = 0; i < 3; i++)
         {
-            if (_settlingZones[i] == null)
-                continue;
-
-            Transform tr = _settlingZones[i].transform;
-            Vector3 baseS = _settlingBaseScale[i] == Vector3.zero ? tr.localScale : _settlingBaseScale[i];
-            Vector3 baseP = _settlingBaseLocalPosition[i];
-            tr.localScale = new Vector3(baseS.x, Mathf.Max(0.01f, baseS.y * 0.03f), baseS.z);
-            tr.localPosition = baseP + Vector3.down * Mathf.Max(0.2f, Mathf.Abs(baseS.y) * 0.48f);
-            _settlingZones[i].enabled = true;
-            ApplyTint(_settlingZones[i], new Color(0.43f, 0.29f, 0.52f, 0.56f));
+            if (_ccdFluid[i] == null) continue;
+            _ccdFluid[i].Show();
+            _ccdFluid[i].SetColors(_ccdTurbidShallow, _ccdTurbidDeep, _ccdTurbidEmis);
+            _ccdFluid[i].SetSwirl(0f);
+            _ccdFluid[i].SetLevel01(0f);   // mulai KOSONG, permukaan di dasar
         }
-
-        UpdateMudLayers(0f);
     }
 
     private IEnumerator AnimateCcdLiquidRise(float duration)
     {
         duration = Mathf.Max(0.1f, duration);
+        EnsureFeedInflowStreams();
+        SetFeedInflowActive(true);
         float elapsed = 0f;
         while (elapsed < duration)
         {
             elapsed += Time.deltaTime;
             float t = SmoothStep(Mathf.Clamp01(elapsed / duration));
+            // Permukaan cairan NAIK DARI DASAR ke atas (shader _FillY), bukan melebar dari tengah.
             for (int i = 0; i < 3; i++)
-            {
-                if (_settlingZones[i] == null)
-                    continue;
-
-                Transform tr = _settlingZones[i].transform;
-                Vector3 baseS = _settlingBaseScale[i] == Vector3.zero ? tr.localScale : _settlingBaseScale[i];
-                Vector3 baseP = _settlingBaseLocalPosition[i];
-                float yScale = Mathf.Lerp(Mathf.Max(0.01f, baseS.y * 0.03f), baseS.y, t);
-                tr.localScale = new Vector3(baseS.x, yScale, baseS.z);
-                tr.localPosition = Vector3.Lerp(baseP + Vector3.down * Mathf.Max(0.2f, Mathf.Abs(baseS.y) * 0.48f), baseP, t);
-                ApplyTint(_settlingZones[i], Color.Lerp(new Color(0.32f, 0.20f, 0.38f, 0.45f), new Color(0.50f, 0.36f, 0.72f, 0.60f), t));
-            }
+                if (_ccdFluid[i] != null) _ccdFluid[i].SetLevel01(t);
+            UpdateFeedInflow();
             yield return null;
         }
+        for (int i = 0; i < 3; i++)
+            if (_ccdFluid[i] != null) _ccdFluid[i].SetLevel01(1f);
     }
+
+    // ============================================================
+    //  FEED INFLOW — cairan slurry TURUN dari atas masuk feedwell tiap thickener.
+    //  Inilah yang "menyebabkan" cairan settling zone naik (umpan dari flash vessel).
+    // ============================================================
+    private GameObject[] _feedInflow = new GameObject[3];
+    private ParticleSystem[] _feedSplashFx = new ParticleSystem[3];
+    private Material _feedInflowMat;
+    private float _feedInflowPhase;
+
+    private void EnsureFeedInflowStreams()
+    {
+        if (_feedInflowMat == null)
+        {
+            Shader sh = Shader.Find("Universal Render Pipeline/Lit") ?? Shader.Find("Standard");
+            _feedInflowMat = new Material(sh) { name = "M_CCD_FeedInflow_Runtime" };
+            Color feed = new Color(0.34f, 0.22f, 0.12f); // slurry umpan coklat (dari flash vessel)
+            if (_feedInflowMat.HasProperty("_BaseColor")) _feedInflowMat.SetColor("_BaseColor", feed);
+            if (_feedInflowMat.HasProperty("_Color")) _feedInflowMat.SetColor("_Color", feed);
+            _feedInflowMat.EnableKeyword("_EMISSION");
+            if (_feedInflowMat.HasProperty("_EmissionColor")) _feedInflowMat.SetColor("_EmissionColor", feed * 0.5f);
+            if (_feedInflowMat.HasProperty("_Smoothness")) _feedInflowMat.SetFloat("_Smoothness", 0.75f);
+            if (_feedInflowMat.HasProperty("_Metallic")) _feedInflowMat.SetFloat("_Metallic", 0.0f);
+        }
+        for (int i = 0; i < 3; i++)
+        {
+            if (_settlingZones[i] == null || _feedInflow[i] != null) continue;
+            var go = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            go.name = "CCD_FeedInflow_" + i;
+            var col = go.GetComponent<Collider>(); if (col != null) Destroy(col);
+            go.transform.SetParent(transform, true);
+            var r = go.GetComponent<Renderer>(); if (r != null) r.sharedMaterial = _feedInflowMat;
+            go.SetActive(false);
+            _feedInflow[i] = go;
+
+            // Splash particle di titik jatuh (cipratan slurry masuk).
+            var splashGo = new GameObject("CCD_FeedSplash_" + i);
+            splashGo.transform.SetParent(transform, true);
+            var ps = splashGo.AddComponent<ParticleSystem>();
+            ps.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            var main = ps.main; main.startLifetime = 0.5f; main.startSpeed = 1.2f;
+            main.startSize = 0.18f; main.gravityModifier = 1.1f; main.maxParticles = 60;
+            main.startColor = new Color(0.34f, 0.22f, 0.12f, 0.9f);
+            var em = ps.emission; em.rateOverTime = 28f;
+            var sh2 = ps.shape; sh2.shapeType = ParticleSystemShapeType.Cone; sh2.angle = 28f; sh2.radius = 0.25f;
+            var pr = ps.GetComponent<ParticleSystemRenderer>();
+            var pmat = new Material(Shader.Find("Universal Render Pipeline/Particles/Unlit") ?? Shader.Find("Sprites/Default"));
+            if (pmat.HasProperty("_BaseColor")) pmat.SetColor("_BaseColor", new Color(0.34f, 0.22f, 0.12f, 0.9f));
+            pr.sharedMaterial = pmat;
+            _feedSplashFx[i] = ps;
+        }
+    }
+
+    private void SetFeedInflowActive(bool on)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (_feedInflow[i] != null) _feedInflow[i].SetActive(on);
+            if (_feedSplashFx[i] != null)
+            {
+                if (on) _feedSplashFx[i].Play();
+                else _feedSplashFx[i].Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+        }
+        if (on) UpdateFeedInflow();
+    }
+
+    private void UpdateFeedInflow()
+    {
+        _feedInflowPhase += Time.deltaTime * 2.5f;
+        for (int i = 0; i < 3; i++)
+        {
+            if (_feedInflow[i] == null || _settlingZones[i] == null) continue;
+            var b = _settlingZones[i].bounds;
+            float surfaceY = b.max.y;               // permukaan cairan yang sedang naik
+            float feedTopY = b.center.y + b.size.y * 0.5f + 2.4f; // titik umpan di atas kolom
+            if (feedTopY <= surfaceY + 0.05f) { _feedInflow[i].SetActive(false); continue; }
+            if (!_feedInflow[i].activeSelf) _feedInflow[i].SetActive(true);
+            Vector3 top = new Vector3(b.center.x, feedTopY, b.center.z);
+            Vector3 bot = new Vector3(b.center.x, surfaceY, b.center.z);
+            Vector3 mid = (top + bot) * 0.5f;
+            float len = (top - bot).magnitude;
+            var tr = _feedInflow[i].transform;
+            tr.position = mid;
+            tr.up = Vector3.up;
+            // gelombang lebar tipis-tebal supaya terlihat mengalir
+            float wob = 0.16f + 0.03f * Mathf.Sin(_feedInflowPhase * 3f + i);
+            tr.localScale = new Vector3(wob, len * 0.5f, wob);
+            // splash di permukaan
+            if (_feedSplashFx[i] != null) _feedSplashFx[i].transform.position = bot;
+        }
+    }
+
+
+
 
     private void StartSettlingParticleFx()
     {
@@ -789,17 +876,26 @@ public class Level10CCDController : MonoBehaviour
 
         if (_mpb == null) _mpb = new MaterialPropertyBlock();
 
+        // Cairan satu volume terang: sembunyikan saat tidak aktif (cairan ungu tak tampil di awal).
+        if (!active)
+        {
+            _ccdRotorOn = false;
+            for (int i = 0; i < 3; i++)
+                if (_ccdFluid[i] != null) { _ccdFluid[i].SetSwirl(0f); _ccdFluid[i].Hide(); }
+        }
+
         // State awal: PLS surface keruh (coklat slurry) tapi TETAP tampil, core feedwell penuh,
         // lumpur underflow rendah. Saat aktif, sequence menganimasikan keruh->jernih.
         for (int i = 0; i < 3; i++)
         {
             if (_clearPlsSurfaces[i] != null)
             {
-                if (!_clearPlsSurfaces[i].enabled) _clearPlsSurfaces[i].enabled = true;
-                if (active) ApplyTint(_clearPlsSurfaces[i], _turbidSlurry);
+                // Layer disc lama selalu disembunyikan — diganti volume TankFluidColumn.
+                if (_ccdFluid[i] != null) _clearPlsSurfaces[i].enabled = false;
+                else if (!_clearPlsSurfaces[i].enabled) _clearPlsSurfaces[i].enabled = true;
             }
         }
-        if (!active)
+        if (!active && _ccdFluid[0] == null)
             UpdateMudLayers(0f);
 
         if (active)
@@ -819,6 +915,7 @@ public class Level10CCDController : MonoBehaviour
         {
             _separationFx.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
             StopSettlingParticleFx();
+            SetFeedInflowActive(false);
         }
     }
 
@@ -2708,7 +2805,8 @@ public class Level10CCDController : MonoBehaviour
         if (right.sqrMagnitude < 0.001f) right = Vector3.right;
         right.Normalize();
 
-        Vector3 pos = head + fwd * 1.25f + right * 1.05f + Vector3.down * 0.08f;
+        // DI DEPAN player (bukan menyamping) supaya jelas terbaca + tombol ACCEPT mudah diklik.
+        Vector3 pos = head + fwd * 1.7f + Vector3.down * 0.05f;
         canvasTransform.position = pos;
 
         Vector3 face = pos - head;

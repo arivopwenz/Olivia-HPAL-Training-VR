@@ -1149,14 +1149,16 @@ public class Level3OreSlurryController : MonoBehaviour
         }
         else
         {
-            _glowMpb.SetColor("_EmissionColor", Color.black);
+            // Matikan glow: bersihkan property block SELURUHNYA (hindari polusi warna residual).
+            _glowMpb.Clear();
         }
-        rend.SetPropertyBlock(_glowMpb);
+        rend.SetPropertyBlock(aktif ? _glowMpb : null);
 
-        // Pastikan keyword EMISSION aktif di material runtime untuk Standard shader.
+        // Pastikan keyword EMISSION aktif/nonaktif di material runtime.
         if (rend.sharedMaterial != null)
         {
             if (aktif) rend.sharedMaterial.EnableKeyword("_EMISSION");
+            else rend.sharedMaterial.DisableKeyword("_EMISSION");
         }
 
         _glowMaskerAktif = aktif;

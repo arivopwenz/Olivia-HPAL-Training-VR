@@ -841,6 +841,31 @@ public class Level7AutoclaveController : MonoBehaviour
         var renderer = _innerSlurryVolume.GetComponent<Renderer>();
         renderer.sharedMaterial = _slurryFillMaterial;
 
+        // Pakai mesh CAIRAN dari Blender (silinder subdivided halus 64 segmen) bila ada.
+        // Mesh ini axis-X, panjang 30, radius 4.15 -> ganti scale jadi langsung 1:1 ukuran fit.
+        Mesh bMesh = null;
+#if UNITY_EDITOR
+        var bFbx = UnityEditor.AssetDatabase.LoadAssetAtPath<Mesh>("Assets/Art/Level7AutoclaveLiquid/AutoclaveLiquid.fbx");
+        if (bFbx == null)
+        {
+            var go = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Art/Level7AutoclaveLiquid/AutoclaveLiquid.fbx");
+            if (go != null) { var mfb = go.GetComponentInChildren<MeshFilter>(); if (mfb != null) bMesh = mfb.sharedMesh; }
+        }
+        else bMesh = bFbx;
+#endif
+        if (bMesh == null) bMesh = Resources.Load<Mesh>("AutoclaveLiquid");
+        if (bMesh != null)
+        {
+            var mf = _innerSlurryVolume.GetComponent<MeshFilter>();
+            if (mf != null) mf.sharedMesh = bMesh;
+            // Mesh Blender sudah axis-X horizontal: reset rotasi, scale fit ke inner volume.
+            _innerSlurryVolume.transform.rotation = Quaternion.identity;
+            // Blender mesh bounds: X=30 (length), Y=Z=8.3 (diameter).
+            float sx = innerLength / 30f;
+            float syz = (innerRadius * 2f) / 8.3f;
+            _innerSlurryVolume.transform.localScale = new Vector3(sx, syz, syz);
+        }
+
         _innerSlurryVolume.SetActive(false); // Mulai hidden.
     }
 
@@ -856,30 +881,55 @@ public class Level7AutoclaveController : MonoBehaviour
         }
         Material mat = new Material(shader);
         mat.name = "M_L7_SlurryFill_Runtime";
-        // HPAL slurry/PLS = cairan asam panas, render sebagai air 3D translucent realistic
-        // (biru-teal, gradient gelap di dalam, permukaan glowing). Bukan solid ungu.
-        Color shallow = new Color(0.16f, 0.55f, 0.62f);   // warna dekat permukaan (terang teal)
-        Color deep = new Color(0.03f, 0.17f, 0.27f);      // warna dalam (gelap biru)
+        // HPAL slurry MENTAH (limonit) = COKLAT KARAT PEKAT (kaya oksida besi).
+        // Nanti berubah jadi olive-green PLS saat dicampur asam sulfat (lihat TintSlurryToPLS).
+        Color shallow = new Color(0.40f, 0.22f, 0.10f);   // coklat karat dekat permukaan
+        Color deep = new Color(0.20f, 0.10f, 0.04f);      // coklat gelap pekat di dalam
         if (mat.HasProperty("_BaseColor")) mat.SetColor("_BaseColor", shallow);
         if (mat.HasProperty("_Color")) mat.SetColor("_Color", shallow);
         if (mat.HasProperty("_DeepColor")) mat.SetColor("_DeepColor", deep);
-        if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", new Color(0.12f, 0.45f, 0.55f));
-        if (mat.HasProperty("_EmissionIntensity")) mat.SetFloat("_EmissionIntensity", 0.25f);
-        if (mat.HasProperty("_SurfaceGlow")) mat.SetFloat("_SurfaceGlow", 2.5f);
+        if (mat.HasProperty("_EmissionColor")) mat.SetColor("_EmissionColor", new Color(0.22f, 0.10f, 0.03f));
+        if (mat.HasProperty("_EmissionIntensity")) mat.SetFloat("_EmissionIntensity", 0.18f);
+        if (mat.HasProperty("_SurfaceGlow")) mat.SetFloat("_SurfaceGlow", 2.0f);
         if (mat.HasProperty("_SurfaceWidth")) mat.SetFloat("_SurfaceWidth", 0.45f);
         if (mat.HasProperty("_DepthRange")) mat.SetFloat("_DepthRange", 8f);
         if (mat.HasProperty("_FresnelPower")) mat.SetFloat("_FresnelPower", 3f);
         if (mat.HasProperty("_SpecPower")) mat.SetFloat("_SpecPower", 64f);
-        if (mat.HasProperty("_SpecIntensity")) mat.SetFloat("_SpecIntensity", 1.4f);
+        if (mat.HasProperty("_SpecIntensity")) mat.SetFloat("_SpecIntensity", 1.2f);
         if (mat.HasProperty("_RippleScale")) mat.SetFloat("_RippleScale", 6f);
         if (mat.HasProperty("_RippleSpeed")) mat.SetFloat("_RippleSpeed", 0.8f);
-        if (mat.HasProperty("_RippleStrength")) mat.SetFloat("_RippleStrength", 0.06f);
-        if (mat.HasProperty("_Alpha")) mat.SetFloat("_Alpha", 0.7f); // translucent
+        if (mat.HasProperty("_RippleStrength")) mat.SetFloat("_RippleStrength", 0.07f);
+        // Swirl/vortex: 0 saat rotor mati, di-set dari RPM di UpdateLiquidSwirl.
+        if (mat.HasProperty("_SwirlSpeed")) mat.SetFloat("_SwirlSpeed", 0f);
+        if (mat.HasProperty("_SwirlStrength")) mat.SetFloat("_SwirlStrength", 0.4f);
+        if (mat.HasProperty("_SwirlAxisZ")) mat.SetFloat("_SwirlAxisZ", 83.7f);
+        if (mat.HasProperty("_SwirlSpacing")) mat.SetFloat("_SwirlSpacing", 6.7f);
+        if (mat.HasProperty("_Alpha")) mat.SetFloat("_Alpha", 0.72f); // translucent
         if (mat.HasProperty("_FillY")) mat.SetFloat("_FillY", -1000f);
         mat.EnableKeyword("_EMISSION");
         // Force render queue Transparent.
         mat.renderQueue = 3010;
+        _acidMix = 0f; // reset transisi warna
         return mat;
+    }
+
+    // Transisi warna BROWN (limonit mentah) -> OLIVE-GREEN PLS (setelah asam sulfat).
+    // t: 0 = coklat karat, 1 = PLS olive (Ni sulfat hijau + Fe sulfat amber).
+    private float _acidMix = 0f;
+    private void TintSlurryToPLS(float t)
+    {
+        if (_slurryFillMaterial == null) return;
+        t = Mathf.Clamp01(t);
+        _acidMix = t;
+        Color brownShallow = new Color(0.40f, 0.22f, 0.10f);
+        Color brownDeep    = new Color(0.20f, 0.10f, 0.04f);
+        Color plsShallow   = new Color(0.42f, 0.42f, 0.15f);  // olive-amber terang
+        Color plsDeep      = new Color(0.18f, 0.22f, 0.06f);  // hijau-olive gelap
+        Color plsEmis      = new Color(0.16f, 0.24f, 0.07f);  // emisi kehijauan (Ni sulfat)
+        Color brownEmis    = new Color(0.22f, 0.10f, 0.03f);
+        if (_slurryFillMaterial.HasProperty("_BaseColor")) _slurryFillMaterial.SetColor("_BaseColor", Color.Lerp(brownShallow, plsShallow, t));
+        if (_slurryFillMaterial.HasProperty("_DeepColor")) _slurryFillMaterial.SetColor("_DeepColor", Color.Lerp(brownDeep, plsDeep, t));
+        if (_slurryFillMaterial.HasProperty("_EmissionColor")) _slurryFillMaterial.SetColor("_EmissionColor", Color.Lerp(brownEmis, plsEmis, t));
     }
 
     private void UpdateSlurryShader(float t)
@@ -1470,10 +1520,16 @@ public class Level7AutoclaveController : MonoBehaviour
         var origin = _playerRigRoot.GetComponent<XROrigin>();
         if (origin != null)
         {
-            origin.MoveCameraToWorldLocation(target.position);
+            // KANONIK: spawn = posisi KAKI. Kamera = kaki + CameraYOffset.
+            // JANGAN tambah SetPositionAndRotation(target) (bikin rig-root di spawn -> kamera naik ~1.36m).
+            Vector3 camTarget = target.position + Vector3.up * origin.CameraYOffset;
+            origin.MoveCameraToWorldLocation(camTarget);
             origin.MatchOriginUpCameraForward(Vector3.up, target.forward);
         }
-        _playerRigRoot.SetPositionAndRotation(target.position, target.rotation);
+        else
+        {
+            _playerRigRoot.SetPositionAndRotation(target.position, target.rotation);
+        }
         if (ccOn) cc.enabled = true;
     }
 
@@ -1787,6 +1843,9 @@ public class Level7AutoclaveController : MonoBehaviour
         {
             holdT += Time.deltaTime;
             UpdateAcidCylinder(acidTopAnchor, acidBottom, fullLen, radius);
+            // REAKSI LEACHING: warna slurry coklat karat -> olive-green PLS bertahap
+            // (asam sulfat melarutkan Ni/Fe; Ni sulfat hijau + Fe sulfat amber = olive).
+            TintSlurryToPLS(Mathf.Clamp01(holdDur > 0.01f ? holdT / holdDur : 1f));
             // UV scroll: offset Y ke bawah secara konstan untuk efek liquid mengalir.
             if (_acidMaterial.HasProperty("_BaseMap_ST"))
             {
@@ -1797,6 +1856,7 @@ public class Level7AutoclaveController : MonoBehaviour
                 _acidMaterial.SetColor("_EmissionColor", _acidColor * (1.5f + 0.5f * Mathf.Sin(Time.time * 12f)));
             yield return null;
         }
+        TintSlurryToPLS(1f); // pastikan warna PLS final tercapai
 
         // Phase 3: shrink dari atas (acid mulai habis dari nozzle)
         float t3 = 0f;
@@ -1851,16 +1911,19 @@ public class Level7AutoclaveController : MonoBehaviour
 
     private void UpdateLiquidSwirl()
     {
-        if (_innerSlurrySurface == null || _slurryFillMaterial == null) return;
-        // Rotate slurry mesh perlahan di sumbu Y dunia (mengikuti rotor swirl)
-        _swirlAngle += _swirlRPM * 6f * Time.deltaTime;
-        // Alih-alih rotate mesh (karena bisa keluar dari shell), kita modulasi emission warna untuk efek swirl ringan.
-        // Warna swirl tetap di range air biru-teal (bukan ungu) supaya cairan terlihat seperti air realistic.
-        float pulseR = 0.10f + 0.06f * Mathf.Sin(_swirlAngle * Mathf.Deg2Rad);
-        float pulseG = 0.42f + 0.08f * Mathf.Sin(_swirlAngle * Mathf.Deg2Rad * 0.7f);
-        float pulseB = 0.55f + 0.10f * Mathf.Cos(_swirlAngle * Mathf.Deg2Rad * 1.3f);
-        if (_slurryFillMaterial.HasProperty("_EmissionColor"))
-            _slurryFillMaterial.SetColor("_EmissionColor", new Color(pulseR, pulseG, pulseB) * _swirlIntensity);
+        if (_slurryFillMaterial == null) return;
+        // SWIRL/VORTEX nyata: kecepatan putar cairan = RPM agitator (rotor berputar -> cairan berputar).
+        // Map RPM 0..60 -> swirl speed 0..3.2. Saat rotor mati, swirl = 0 (cairan diam).
+        float swirlSpeed = Mathf.Clamp01(_agitatorCurrentRPM / Mathf.Max(1f, _agitatorRPM)) * 3.2f;
+        if (_slurryFillMaterial.HasProperty("_SwirlSpeed"))
+            _slurryFillMaterial.SetFloat("_SwirlSpeed", swirlSpeed);
+        // Emission berdenyut halus mengikuti swirl (intensitas, BUKAN ganti warna PLS).
+        _swirlAngle += _agitatorCurrentRPM * 6f * Time.deltaTime;
+        if (_slurryFillMaterial.HasProperty("_EmissionIntensity"))
+        {
+            float pulse = 0.5f + 0.25f * Mathf.Sin(_swirlAngle * Mathf.Deg2Rad);
+            _slurryFillMaterial.SetFloat("_EmissionIntensity", Mathf.Lerp(0.3f, 1.0f, Mathf.Clamp01(swirlSpeed / 3.2f)) * pulse + 0.2f);
+        }
     }
 
     // ============================================================
