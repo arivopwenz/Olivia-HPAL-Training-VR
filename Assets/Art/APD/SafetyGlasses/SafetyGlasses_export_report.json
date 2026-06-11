@@ -1,0 +1,20 @@
+{
+  "source": "D:\\My Folder\\Kuliah\\Semester 4\\Pemrograman Game\\DESAIN 3D\\komponen olivia.blend",
+  "source_object": "model.001",
+  "export_object": "SafetyGlasses",
+  "fbx": "D:\\My Folder\\Kuliah\\Olivia 2026\\Olivia-HPAL-Training-VR\\Assets\\Art\\APD\\SafetyGlasses\\SafetyGlasses.fbx",
+  "textures": [
+    "D:\\My Folder\\Kuliah\\Olivia 2026\\Olivia-HPAL-Training-VR\\Assets\\Art\\APD\\SafetyGlasses\\SafetyGlasses_BaseColor.png",
+    "D:\\My Folder\\Kuliah\\Olivia 2026\\Olivia-HPAL-Training-VR\\Assets\\Art\\APD\\SafetyGlasses\\SafetyGlasses_ORM.png",
+    "D:\\My Folder\\Kuliah\\Olivia 2026\\Olivia-HPAL-Training-VR\\Assets\\Art\\APD\\SafetyGlasses\\SafetyGlasses_Normal.png",
+    "D:\\My Folder\\Kuliah\\Olivia 2026\\Olivia-HPAL-Training-VR\\Assets\\Art\\APD\\SafetyGlasses\\SafetyGlasses_MetallicSmoothness.png",
+    "D:\\My Folder\\Kuliah\\Olivia 2026\\Olivia-HPAL-Training-VR\\Assets\\Art\\APD\\SafetyGlasses\\SafetyGlasses_Occlusion.png"
+  ],
+  "vertices": 9454,
+  "polygons": 17338,
+  "dimensions_m": [
+    0.6035,
+    0.63551,
+    0.20284
+  ]
+}
