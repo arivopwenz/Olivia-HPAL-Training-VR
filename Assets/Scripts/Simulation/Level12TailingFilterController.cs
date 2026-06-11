@@ -34,6 +34,8 @@ public class Level12TailingFilterController : MonoBehaviour
     [SerializeField] private GameObject _beaconGreen, _beaconRed;
     [SerializeField] private GameObject[] _cakeBlocks;         // Cake_Block_00..05
     [SerializeField] private Transform[] _rollers;             // Conveyor_Roller_*
+    private Transform[] _pressPlates;
+    private Vector3[] _pressPlateBaseLocal;
 
     [Header("=== Process Settings ===")]
     [SerializeField] private float _fadeDuration = 2.5f;
@@ -133,6 +135,8 @@ public class Level12TailingFilterController : MonoBehaviour
         _levelActive = level == GameLevelManager.GameLevel.Level12_TailingDischarge;
         if (!_levelActive) { SetProcessVisuals(false); ShowButton(false); ShowInfo(false); HideQc(); Stop(_agitatorAudio); if (_liquidReady) HideTailingLiquid(); _await = 0; return; }
         _glm = GameLevelManager.Instance;
+        AutoFindReferences();
+        ProtectTailingEquipmentFromOcclusion();
         _processStarted = false; _busy = false; _stage = 0; _await = 0;
         _pHCurrent = PhStart; _moisture = MoistStart;
         _neutralizeDone = _filterPressDone = _inspected = _complianceAccepted = _questComplete = false;
@@ -154,7 +158,7 @@ public class Level12TailingFilterController : MonoBehaviour
         if (_hud != null) _hud.PlayManualFade(_fadeDuration);
         yield return new WaitForSeconds(_fadeDuration * 0.5f);
         // Berdiri di depan tank netralisasi V3 (x39, z142.8)
-        Vector3 stand = new Vector3(32f, 1.5f, 138.5f);
+        Vector3 stand = new Vector3(32f, 0.10f, 138.5f);
         Vector3 fwd = (_neutTankCenter - stand); fwd.y = 0f;
         TeleportTo(stand, fwd, false);
         yield return new WaitForSeconds(_fadeDuration * 0.5f + 0.4f);
@@ -408,29 +412,135 @@ public class Level12TailingFilterController : MonoBehaviour
 
     private IEnumerator FilterPressRoutine()
     {
+        CapturePressPlateLayout();
         PlayAudio(_pressAudio, 0.42f);
+        if (_hud != null) _hud.ShowNotifPublic("FILTER PRESS: hydraulic closing. Plate merapat sebelum slurry dipompa.", 5f);
+
+        float closeTime = 0f;
+        while (closeTime < 1.8f)
+        {
+            closeTime += Time.deltaTime;
+            SetPressPlateCompression(Smooth(closeTime / 1.8f));
+            yield return null;
+        }
+        SetPressPlateCompression(1f);
+
         if (_filtrateChannel != null) _filtrateChannel.SetActive(true);
-        int shown = 0;
+        if (_hud != null) _hud.ShowNotifPublic("DEWATERING: tekanan naik, filtrat keluar ke WWTP, moisture cake turun menuju <25%.", 7f);
         float t = 0f;
         while (t < _pressDuration)
         {
             t += Time.deltaTime; float e = Smooth(Mathf.Clamp01(t / _pressDuration));
             _moisture = Mathf.Lerp(MoistStart, MoistTarget, e);
-            // reveal cake blocks progresif + tint makin kering (gelap)
-            if (_cakeBlocks != null)
-            {
-                int want = Mathf.RoundToInt(e * _cakeBlocks.Length);
-                for (; shown < want && shown < _cakeBlocks.Length; shown++)
-                { if (_cakeBlocks[shown] != null) { _cakeBlocks[shown].SetActive(true); Tint(_cakeBlocks[shown], new Color(0.35f, 0.27f, 0.2f)); } }
-            }
             yield return null;
         }
         _moisture = MoistTarget;
-        Stop(_pressAudio); PlayAudio(_readyAudio, 0.3f);
-        _filterPressDone = true; _busy = false; _stage = 2;
+        if (_filtrateChannel != null) _filtrateChannel.SetActive(false);
+
+        if (_hud != null) _hud.ShowNotifPublic("FILTRASI SELESAI. Plate membuka berurutan dan cake jatuh ke conveyor.", 6f);
+        int cakeCount = _cakeBlocks != null ? _cakeBlocks.Length : 0;
+        float openDuration = Mathf.Max(2.4f, cakeCount * 0.32f);
+        float openTime = 0f;
+        int shown = 0;
+        while (openTime < openDuration)
+        {
+            openTime += Time.deltaTime;
+            float p = Smooth(openTime / openDuration);
+            SetPressPlateCompression(1f - p);
+            int want = Mathf.RoundToInt(p * cakeCount);
+            while (shown < want && shown < cakeCount)
+            {
+                GameObject cake = _cakeBlocks[shown++];
+                if (cake != null)
+                {
+                    cake.SetActive(true);
+                    Tint(cake, new Color(0.35f, 0.27f, 0.20f));
+                }
+            }
+            AnimateRollers();
+            yield return null;
+        }
+        SetPressPlateCompression(0f);
+
+        Stop(_pressAudio);
+        PlayAudio(_readyAudio, 0.3f);
+        _filterPressDone = true; _stage = 2;
         ShowButton(false);
-        if (_hud != null) _hud.ShowNotifPublic("Cake terbentuk (moisture 22%). Jalan ke KONVEYOR CAKE untuk inspeksi.", 7f);
+        yield return MovePlayerToCakeInspection();
+        _busy = false;
+        if (_hud != null) _hud.ShowNotifPublic("Cake terbentuk (moisture 22%). Dekati cake di conveyor dan lakukan inspeksi visual.", 8f);
         _seq = null;
+    }
+
+    private void CapturePressPlateLayout()
+    {
+        if (_pressPlates == null || _pressPlates.Length == 0)
+            return;
+        if (_pressPlateBaseLocal != null && _pressPlateBaseLocal.Length == _pressPlates.Length)
+            return;
+
+        _pressPlateBaseLocal = new Vector3[_pressPlates.Length];
+        for (int i = 0; i < _pressPlates.Length; i++)
+            _pressPlateBaseLocal[i] = _pressPlates[i] != null ? _pressPlates[i].localPosition : Vector3.zero;
+    }
+
+    private void SetPressPlateCompression(float amount)
+    {
+        if (_pressPlates == null || _pressPlateBaseLocal == null || _pressPlates.Length == 0)
+            return;
+
+        Vector3 min = _pressPlateBaseLocal[0];
+        Vector3 max = min;
+        Vector3 center = Vector3.zero;
+        for (int i = 0; i < _pressPlateBaseLocal.Length; i++)
+        {
+            min = Vector3.Min(min, _pressPlateBaseLocal[i]);
+            max = Vector3.Max(max, _pressPlateBaseLocal[i]);
+            center += _pressPlateBaseLocal[i];
+        }
+        center /= _pressPlateBaseLocal.Length;
+        Vector3 range = max - min;
+        int axis = range.x >= range.y && range.x >= range.z ? 0 : range.y >= range.z ? 1 : 2;
+
+        for (int i = 0; i < _pressPlates.Length; i++)
+        {
+            if (_pressPlates[i] == null) continue;
+            Vector3 open = _pressPlateBaseLocal[i];
+            Vector3 closed = open;
+            if (axis == 0) closed.x = Mathf.Lerp(open.x, center.x, 0.52f);
+            else if (axis == 1) closed.y = Mathf.Lerp(open.y, center.y, 0.52f);
+            else closed.z = Mathf.Lerp(open.z, center.z, 0.52f);
+            _pressPlates[i].localPosition = Vector3.Lerp(open, closed, Mathf.Clamp01(amount));
+        }
+    }
+
+    private IEnumerator MovePlayerToCakeInspection()
+    {
+        Transform cake = ResolveCakeInspectionTarget();
+        if (cake == null)
+            yield break;
+
+        if (_hud != null) _hud.PlayManualFade(_fadeDuration);
+        yield return new WaitForSeconds(_fadeDuration * 0.5f);
+        Vector3 target = cake.position;
+        Vector3 away = new Vector3(-1f, 0f, -1f).normalized;
+        Vector3 stand = target + away * 4.5f;
+        stand.y = 0.10f;
+        Vector3 forward = target - stand;
+        forward.y = 0f;
+        TeleportTo(stand, forward, false);
+        yield return new WaitForSeconds(_fadeDuration * 0.5f);
+    }
+
+    private Transform ResolveCakeInspectionTarget()
+    {
+        if (_cakeBlocks != null)
+        {
+            foreach (GameObject cake in _cakeBlocks)
+                if (cake != null && cake.activeInHierarchy)
+                    return cake.transform;
+        }
+        return FindChild("Cake_On_Conveyor") ?? FindChild("Cake_Transfer_Conveyor");
     }
 
     private void AnimateRollers()
@@ -451,7 +561,7 @@ public class Level12TailingFilterController : MonoBehaviour
     // ============================================================ INSPEKSI
     private void UpdateInspectProximity()
     {
-        Transform cake = FindChild("Cake_On_Conveyor") ?? FindChild("Cake_Block_00") ?? FindChild("Cake_Transfer_Conveyor");
+        Transform cake = ResolveCakeInspectionTarget();
         Vector3 target = cake != null ? cake.position : new Vector3(14.58f, 1.67f, 146.12f);
         Vector3 head = GetPlayerHead();
         if (Vector2.Distance(new Vector2(head.x, head.z), new Vector2(target.x, target.z)) <= _inspectRadius)
@@ -540,16 +650,20 @@ private void UpdateInfo()
         if (_infoText == null || _infoPanel == null || !_infoPanel.activeSelf) return;
         string body;
         if (_stage == 0)
-            body = "PENGOLAHAN TAILING HPAL - NETRALISASI (via HT)\n" +
-                   "1) Lapor HT -> tailing asam naik mengisi tangki\n" +
-                   "2) Lapor HT -> dosing SUSU KAPUR Ca(OH)2\n" +
-                   "Reaksi : H2SO4 sisa + Ca(OH)2 -> CaSO4 + H2O\n" +
-                   "Target pH : 2.3 -> 8.0 (baku mutu lingkungan 6-9)";
+            body = "LEVEL 11 - TAILING NEUTRALIZATION\n" +
+                   (_await == 1
+                       ? "AKSI SEKARANG: tahan HT untuk buka inlet tailing CCD.\nAmati slurry asam naik dari dasar tangki."
+                       : _await == 2
+                           ? "AKSI SEKARANG: tahan HT untuk dosing susu kapur.\nAmati perubahan warna, reaksi, dan pH."
+                           : _await == 3
+                               ? "AKSI SEKARANG: tahan HT untuk transfer ke filter press.\nInterlock: pH harus 8.0 sebelum dewatering."
+                               : "Proses sedang berjalan. Amati indikator dan cairan.") +
+                   "\nReaksi: H2SO4 + Ca(OH)2 -> CaSO4 + H2O\nTarget pH lingkungan: 6-9";
         else if (_stage == 1)
-            body = "TAHAP 2/2 - FILTER PRESS (plate & frame)\n" +
-                   "Dewatering tailing: tekan slurry, filtrat keluar\n" +
-                   "Filtrat jernih -> WWTP ; padatan jadi CAKE\n" +
-                   "Target moisture cake : 60% -> < 25% (stackable)";
+            body = "LEVEL 11 - FILTER PRESS CYCLE\n" +
+                   "1 PLATE CLOSE -> 2 PUMP/FILTRATE -> 3 PLATE OPEN\n" +
+                   "Filtrat jernih menuju WWTP; padatan tertahan sebagai cake.\n" +
+                   "Target moisture: 60% -> <25% agar stackable";
         else
             body = "DEWATERING SELESAI\nCake kering -> DRY STACK (aman, anti-jebol)\nFiltrat -> WWTP. Lanjut: inspeksi + compliance QC";
         _infoText.text = body + $"\n--------------------------------\npH : {_pHCurrent:0.0}   |   MOISTURE CAKE : {_moisture:0} %";
@@ -686,6 +800,51 @@ private void UpdateInfo()
             var list = new List<Transform>();
             foreach (Transform t in _rig.GetComponentsInChildren<Transform>(true)) if (t.name.StartsWith("Conveyor_Roller_")) list.Add(t);
             _rollers = list.ToArray();
+        }
+        if (_pressPlates == null || _pressPlates.Length == 0)
+        {
+            var list = new List<Transform>();
+            foreach (Transform t in _rig.GetComponentsInChildren<Transform>(true))
+                if (t.name.StartsWith("PressPlate_")
+                    || t.name.Contains("FilterPlate_")) list.Add(t);
+            list.Sort((a, b) => string.CompareOrdinal(a.name, b.name));
+            _pressPlates = list.ToArray();
+            _pressPlateBaseLocal = null;
+        }
+    }
+
+    private void ProtectTailingEquipmentFromOcclusion()
+    {
+        if (_rig == null)
+            return;
+
+        foreach (Transform t in _rig.GetComponentsInChildren<Transform>(true))
+        {
+            string n = t.name;
+            bool critical = n.Contains("Cake_On_Conveyor")
+                || n.StartsWith("Cake_Block_")
+                || n.StartsWith("PressPlate_")
+                || n.Contains("FilterPlate_")
+                || n.StartsWith("Conveyor_Roller_")
+                || n.Contains("Filtrate")
+                || n.Contains("FilterPress");
+            if (!critical)
+                continue;
+
+            if (n == "Cake_On_Conveyor")
+                t.gameObject.SetActive(true);
+
+            foreach (Renderer renderer in t.GetComponentsInChildren<Renderer>(true))
+            {
+                renderer.enabled = true;
+                renderer.forceRenderingOff = false;
+                renderer.allowOcclusionWhenDynamic = false;
+#if UNITY_EDITOR
+                var flags = UnityEditor.GameObjectUtility.GetStaticEditorFlags(renderer.gameObject);
+                flags &= ~(UnityEditor.StaticEditorFlags.OccludeeStatic | UnityEditor.StaticEditorFlags.OccluderStatic);
+                UnityEditor.GameObjectUtility.SetStaticEditorFlags(renderer.gameObject, flags);
+#endif
+            }
         }
     }
 

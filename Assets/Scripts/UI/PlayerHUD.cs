@@ -59,6 +59,11 @@ public class PlayerHUD : MonoBehaviour
     public TextMeshProUGUI taskEarplug;
     public TextMeshProUGUI taskWalkieTalkie;
 
+    [Header("=== Panel Visual Level 1 APD ===")]
+    [SerializeField] private Sprite _apdPanelBackground;
+    [SerializeField] private Sprite[] _apdSpritesPending = new Sprite[7];
+    [SerializeField] private Sprite[] _apdSpritesDone = new Sprite[7];
+
     [Header("=== Panel Operasional ===")]
     public GameObject panelOperasional;
     public TextMeshProUGUI txtParameterInfo;
@@ -110,6 +115,9 @@ public class PlayerHUD : MonoBehaviour
     private RectTransform _apdRect;
     private Image _transitionOverlay;
     private Coroutine _transitionCoroutine;
+    [SerializeField] private GameObject _level1ApdPanel;
+    [SerializeField] private TextMeshProUGUI _level1ApdMission;
+    [SerializeField] private Image[] _level1ApdRows = new Image[7];
 
     private void OnValidate()
     {
@@ -137,6 +145,7 @@ public class PlayerHUD : MonoBehaviour
         WalkieTalkieManager.OnPTTDilepas += OnPTTRelease;
 
         CacheAndFixLayout();
+        EnsureLevel1ApdPanel();
         SetFase(FaseQuest.Tutorial);
 
         if (GameLevelManager.Instance != null)
@@ -171,14 +180,18 @@ public class PlayerHUD : MonoBehaviour
 
         if (level == GameLevelManager.GameLevel.Level0_Tutorial)
         {
+            SetLevel1ApdPanelVisible(false);
             SetFase(FaseQuest.Tutorial);
         }
         else if (level == GameLevelManager.GameLevel.Level1_APD)
         {
+            SetLevel1ApdPanelVisible(true);
             SetFase(FaseQuest.PakaiAPD);
+            RefreshLevel1ApdPanel();
         }
         else
         {
+            SetLevel1ApdPanelVisible(false);
             _dcsDilihat = false;
             _dcsTombolDitekan = false;
             _voiceReportSelesai = false;
@@ -213,6 +226,7 @@ public class PlayerHUD : MonoBehaviour
         else if (n.Contains("walkie") || n.Contains("ht")) SetTaskDone(taskWalkieTalkie);
 
         _apdTerpasang = Mathf.Clamp(_apdTerpasang + 1, 0, TOTAL_APD);
+        RefreshLevel1ApdPanel();
         ShowNotif($"{namaApd} terpasang! ({_apdTerpasang}/{TOTAL_APD})", false);
 
         if (_faseSekarang == FaseQuest.PakaiAPD)
@@ -232,6 +246,7 @@ public class PlayerHUD : MonoBehaviour
             SetTaskPending(taskRespirator);
 
         _apdTerpasang = Mathf.Clamp(_apdTerpasang - 1, 0, TOTAL_APD);
+        RefreshLevel1ApdPanel();
         ShowNotif($"{namaApd} dilepas / disimpan.", false);
 
         if (_levelAktif == GameLevelManager.GameLevel.Level3_OreSlurry)
@@ -260,6 +275,8 @@ public class PlayerHUD : MonoBehaviour
         SetTaskDone(taskEarplug);
         SetTaskDone(taskWalkieTalkie);
         SetFase(FaseQuest.GunakanWT);
+        SetLevel1ApdPanelVisible(true);
+        RefreshLevel1ApdPanel();
         ShowNotif("Semua APD lengkap! Lapor lewat WT untuk lanjut ke Level 2.", true);
     }
 
@@ -565,6 +582,201 @@ public class PlayerHUD : MonoBehaviour
 
         if (apdContainer != null)
             apdContainer.SetActive(showApd);
+
+        if (_levelAktif == GameLevelManager.GameLevel.Level1_APD)
+        {
+            SetLevel1ApdPanelVisible(true);
+            RefreshLevel1ApdPanel();
+        }
+    }
+
+    private void EnsureLevel1ApdPanel()
+    {
+        if (_level1ApdPanel == null && txtQuestLabel != null)
+        {
+            Transform existing = txtQuestLabel.transform.parent.Find("Level1_APD_VisualPanel");
+            if (existing != null)
+            {
+                _level1ApdPanel = existing.gameObject;
+                _level1ApdMission = existing.Find("MissionText")?.GetComponent<TextMeshProUGUI>();
+                for (int i = 0; i < _level1ApdRows.Length; i++)
+                    _level1ApdRows[i] = existing.Find($"APD_Row_{i + 1}")?.GetComponent<Image>();
+            }
+        }
+
+        ConfigureLevel1ApdMissionText();
+
+        if (_level1ApdPanel != null || txtQuestLabel == null)
+            return;
+
+        RectTransform legacyPanel = txtQuestLabel.transform.parent as RectTransform;
+        if (legacyPanel == null)
+            return;
+
+        _level1ApdPanel = new GameObject("Level1_APD_VisualPanel", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        RectTransform panelRect = _level1ApdPanel.GetComponent<RectTransform>();
+        panelRect.SetParent(legacyPanel, false);
+        panelRect.anchorMin = new Vector2(1f, 1f);
+        panelRect.anchorMax = new Vector2(1f, 1f);
+        panelRect.pivot = new Vector2(1f, 1f);
+        panelRect.sizeDelta = new Vector2(560f, 1000f);
+        panelRect.anchoredPosition = new Vector2(0f, 0f);
+
+        Image background = _level1ApdPanel.GetComponent<Image>();
+        background.sprite = _apdPanelBackground;
+        background.type = Image.Type.Simple;
+        background.preserveAspect = false;
+        background.raycastTarget = false;
+
+        GameObject missionGo = new GameObject("MissionText", typeof(RectTransform), typeof(CanvasRenderer), typeof(TextMeshProUGUI));
+        RectTransform missionRect = missionGo.GetComponent<RectTransform>();
+        missionRect.SetParent(panelRect, false);
+        missionRect.anchorMin = new Vector2(0f, 1f);
+        missionRect.anchorMax = new Vector2(1f, 1f);
+        missionRect.pivot = new Vector2(0.5f, 1f);
+        missionRect.sizeDelta = new Vector2(-92f, 220f);
+        missionRect.anchoredPosition = new Vector2(0f, -132f);
+
+        _level1ApdMission = missionGo.GetComponent<TextMeshProUGUI>();
+        _level1ApdMission.font = txtQuestLabel.font;
+        _level1ApdMission.fontSize = 25f;
+        _level1ApdMission.fontStyle = FontStyles.Bold;
+        _level1ApdMission.color = Color.white;
+        _level1ApdMission.alignment = TextAlignmentOptions.TopLeft;
+        _level1ApdMission.textWrappingMode = TextWrappingModes.Normal;
+        _level1ApdMission.overflowMode = TextOverflowModes.Truncate;
+        _level1ApdMission.raycastTarget = false;
+        ConfigureLevel1ApdMissionText();
+
+        const float firstRowY = -366f;
+        const float rowStep = 86f;
+        for (int i = 0; i < _level1ApdRows.Length; i++)
+        {
+            GameObject rowGo = new GameObject($"APD_Row_{i + 1}", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            RectTransform rowRect = rowGo.GetComponent<RectTransform>();
+            rowRect.SetParent(panelRect, false);
+            rowRect.anchorMin = new Vector2(0.5f, 1f);
+            rowRect.anchorMax = new Vector2(0.5f, 1f);
+            rowRect.pivot = new Vector2(0.5f, 1f);
+            rowRect.sizeDelta = new Vector2(470f, 90f);
+            rowRect.anchoredPosition = new Vector2(0f, firstRowY - i * rowStep);
+
+            Image row = rowGo.GetComponent<Image>();
+            row.preserveAspect = true;
+            row.raycastTarget = false;
+            _level1ApdRows[i] = row;
+        }
+
+        _level1ApdPanel.transform.SetAsLastSibling();
+        _level1ApdPanel.SetActive(false);
+    }
+
+    private void SetLevel1ApdPanelVisible(bool visible)
+    {
+        EnsureLevel1ApdPanel();
+        if (_level1ApdPanel != null)
+            _level1ApdPanel.SetActive(visible);
+
+        Image legacyPanelBackground = txtQuestLabel != null
+            ? txtQuestLabel.transform.parent.GetComponent<Image>()
+            : null;
+        if (legacyPanelBackground != null)
+            legacyPanelBackground.enabled = !visible;
+
+        if (bgHeader != null) bgHeader.gameObject.SetActive(!visible);
+        if (txtLevelLabel != null) txtLevelLabel.gameObject.SetActive(!visible);
+        if (txtQuestLabel != null) txtQuestLabel.gameObject.SetActive(!visible);
+
+        GameObject legacyApd = taskHelm != null ? taskHelm.transform.parent.gameObject : null;
+        if (legacyApd != null) legacyApd.SetActive(false);
+        if (visible)
+        {
+            if (panelOperasional != null) panelOperasional.SetActive(false);
+            if (panelWalkieTalkieHint != null) panelWalkieTalkieHint.SetActive(false);
+        }
+    }
+
+    private void ConfigureLevel1ApdMissionText()
+    {
+        if (_level1ApdMission == null)
+            return;
+
+        _level1ApdMission.enableAutoSizing = true;
+        _level1ApdMission.fontSize = 34f;
+        _level1ApdMission.fontSizeMin = 22f;
+        _level1ApdMission.fontSizeMax = 36f;
+        _level1ApdMission.lineSpacing = 5f;
+        _level1ApdMission.margin = new Vector4(4f, 2f, 4f, 2f);
+        _level1ApdMission.alignment = TextAlignmentOptions.TopLeft;
+        _level1ApdMission.textWrappingMode = TextWrappingModes.Normal;
+        _level1ApdMission.overflowMode = TextOverflowModes.Truncate;
+    }
+
+    private void RefreshLevel1ApdPanel()
+    {
+        if (_level1ApdPanel == null || !_level1ApdPanel.activeInHierarchy)
+            return;
+
+        PhaseManager phase = PhaseManager.Instance;
+        bool[] worn =
+        {
+            phase != null && phase.isHelmetWorn,
+            phase != null && phase.isVestWorn,
+            phase != null && phase.isGlovesWorn,
+            phase != null && phase.isGlassesWorn,
+            phase != null && phase.isEarplugWorn,
+            phase != null && phase.isRespiratorWorn,
+            phase != null && phase.isBootsWorn
+        };
+
+        int completed = 0;
+        int nextMissing = -1;
+        for (int i = 0; i < _level1ApdRows.Length; i++)
+        {
+            if (worn[i]) completed++;
+            else if (nextMissing < 0) nextMissing = i;
+
+            Sprite sprite = worn[i]
+                ? GetApdSprite(_apdSpritesDone, i)
+                : GetApdSprite(_apdSpritesPending, i);
+            if (_level1ApdRows[i] != null)
+            {
+                _level1ApdRows[i].sprite = sprite;
+                _level1ApdRows[i].enabled = sprite != null;
+            }
+        }
+
+        if (_level1ApdMission == null)
+            return;
+
+        string[] names =
+        {
+            "helm industri", "rompi industri", "sarung tangan", "kacamata industri",
+            "penutup telinga", "masker industri", "sepatu industri"
+        };
+
+        if (completed >= worn.Length)
+        {
+            string report = GameLevelManager.Instance != null
+                ? GameLevelManager.Instance.GetLaporanVoiceDisplay(GameLevelManager.GameLevel.Level1_APD)
+                : "DCS, APD lengkap. Operator siap masuk ke area proses.";
+            _level1ApdMission.text =
+                "<b>APD LENGKAP</b>\n" +
+                "Ambil HT, tahan tombol bicara, lalu laporkan:\n" +
+                $"<color=#FFD95A>\"{report}\"</color>";
+        }
+        else
+        {
+            _level1ApdMission.text =
+                "<b>LENGKAPI APD WAJIB</b>\n" +
+                $"Pakai <color=#52E8FF>{names[nextMissing]}</color> dari loker APD.\n" +
+                $"Status pemeriksaan: <b>{completed}/7</b> terpasang.";
+        }
+    }
+
+    private static Sprite GetApdSprite(Sprite[] sprites, int index)
+    {
+        return sprites != null && index >= 0 && index < sprites.Length ? sprites[index] : null;
     }
 
     private void UpdateHintKataKunci(GameLevelManager.GameLevel level)
@@ -693,6 +905,16 @@ public class PlayerHUD : MonoBehaviour
 
     private string GetLabelLevel(GameLevelManager.GameLevel level)
     {
+        // Nomor display 9-13 bergeser setelah Level 9 lama digabung ke Level 8.
+        // Abaikan label lama yang masih terserialisasi di scene agar HUD tidak kembali
+        // menampilkan LEVEL 10 CCD / LEVEL 11 MHP / LEVEL 12 TAILING.
+        if (level == GameLevelManager.GameLevel.Level10_CCD
+            || level == GameLevelManager.GameLevel.Level11_MHP
+            || level == GameLevelManager.GameLevel.Level12_TailingDischarge
+            || level == GameLevelManager.GameLevel.Level13_TailingWaste
+            || level == GameLevelManager.GameLevel.Level14_Emergency)
+            return GetLabelLevelDefault(level);
+
         HudTextLevel teksLevel = GetTeksLevel(level);
         return Teks(teksLevel != null ? teksLevel.labelLevel : string.Empty, GetLabelLevelDefault(level));
     }

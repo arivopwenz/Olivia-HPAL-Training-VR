@@ -5,6 +5,8 @@ using UnityEngine.XR.Interaction.Toolkit.Interactables;
 public sealed class ApdDisplayItemStabilizer : MonoBehaviour
 {
     [SerializeField] private Transform homeAnchor;
+    [SerializeField] private Vector3 homeEulerOffset;
+    [SerializeField] private bool allowRotationWhileGrabbed = true;
     [SerializeField] private bool returnToHomeWhenReleased = true;
     [SerializeField] private bool keepGravityOff = true;
 
@@ -29,7 +31,7 @@ public sealed class ApdDisplayItemStabilizer : MonoBehaviour
             StabilizeBody();
             if (homeAnchor != null && (returnToHomeWhenReleased || !_wasSelected))
             {
-                transform.SetPositionAndRotation(homeAnchor.position, homeAnchor.rotation);
+                transform.SetPositionAndRotation(homeAnchor.position, GetHomeRotation());
             }
         }
 
@@ -40,7 +42,12 @@ public sealed class ApdDisplayItemStabilizer : MonoBehaviour
     {
         homeAnchor = anchor;
         if (homeAnchor != null && !(_grab != null && _grab.isSelected))
-            transform.SetPositionAndRotation(homeAnchor.position, homeAnchor.rotation);
+            transform.SetPositionAndRotation(homeAnchor.position, GetHomeRotation());
+    }
+
+    private Quaternion GetHomeRotation()
+    {
+        return homeAnchor.rotation * Quaternion.Euler(homeEulerOffset);
     }
 
     private void ConfigureGrab()
@@ -49,6 +56,9 @@ public sealed class ApdDisplayItemStabilizer : MonoBehaviour
             return;
 
         _grab.movementType = XRBaseInteractable.MovementType.Kinematic;
+        _grab.trackRotation = allowRotationWhileGrabbed;
+        _grab.matchAttachRotation = allowRotationWhileGrabbed;
+        _grab.smoothRotation = allowRotationWhileGrabbed;
         _grab.throwOnDetach = false;
         _grab.forceGravityOnDetach = false;
         _grab.retainTransformParent = true;

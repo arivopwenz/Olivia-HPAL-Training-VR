@@ -420,12 +420,34 @@ public class Level11MHPController : MonoBehaviour
     private Transform GetFilterPressStand()
     {
         var go = GameObject.Find("L10_FilterPressStand_Runtime") ?? new GameObject("L10_FilterPressStand_Runtime");
-        Vector3 standPos = new Vector3(47.5f, 0.6f, 129.8f);     // depan tray cake, hadap +z
+        // Area aman di luar envelope filter press. Posisi lama z=129.8 berada di antara
+        // frame/guard sehingga camera dapat muncul di dalam mesin.
+        Vector3 standPos = new Vector3(47.5f, 0.10f, 125.8f);
         Vector3 lookAt = new Vector3(47.5f, 2.5f, 135.5f);
         go.transform.position = standPos;
         Vector3 look = lookAt - standPos; look.y = 0f;
         go.transform.rotation = look.sqrMagnitude > 0.001f ? Quaternion.LookRotation(look.normalized, Vector3.up) : Quaternion.identity;
         return go.transform;
+    }
+
+    private void ProtectMhpFilterPressFromOcclusion()
+    {
+        Transform ram = FindWorldTransform("FilterPress_HydraulicRam_Main");
+        Transform root = ram != null ? ram.parent : null;
+        if (root == null)
+            return;
+
+        foreach (Renderer renderer in root.GetComponentsInChildren<Renderer>(true))
+        {
+            renderer.enabled = true;
+            renderer.forceRenderingOff = false;
+            renderer.allowOcclusionWhenDynamic = false;
+#if UNITY_EDITOR
+            var flags = UnityEditor.GameObjectUtility.GetStaticEditorFlags(renderer.gameObject);
+            flags &= ~(UnityEditor.StaticEditorFlags.OccludeeStatic | UnityEditor.StaticEditorFlags.OccluderStatic);
+            UnityEditor.GameObjectUtility.SetStaticEditorFlags(renderer.gameObject, flags);
+#endif
+        }
     }
 
     private Transform FindWorldTransform(string n)
@@ -574,6 +596,7 @@ public class Level11MHPController : MonoBehaviour
         _warehouseStarted = _dispatching = _baggingDone = false; _dispatchProgress = 0f; HideDispatchStation(); SetFillStream(false); EnsureWarehouseRefs(); RestoreWarehouseHeaps();
         PushPH(); SetProcessVisuals(false); ShowDoseButton(false); ShowInfoPanel(false); HideLab();
         HideAllTankLiquids();
+        ProtectMhpFilterPressFromOcclusion();
         ResetFilterPressFinale();
         if (_hud != null) _hud.ShowNotifPublic("Level 10: Larutan PLS dari CCD masuk pemurnian. Tekan DCS 10 untuk mulai.");
         TeleportPlayer(_teleportTargetDcs);

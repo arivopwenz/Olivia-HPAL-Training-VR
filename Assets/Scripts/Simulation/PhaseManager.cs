@@ -25,6 +25,21 @@ public class PhaseManager : MonoBehaviour
     public static event Action         OnAPD7Lengkap;
     public static event Action         OnAPDTidakLengkap;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStaticState()
+    {
+        Instance = null;
+        ClearStaticEvents();
+    }
+
+    private static void ClearStaticEvents()
+    {
+        OnApdItemWorn = null;
+        OnApdItemRemoved = null;
+        OnAPD7Lengkap = null;
+        OnAPDTidakLengkap = null;
+    }
+
     [Serializable]
     public class ApdItem
     {
@@ -128,7 +143,9 @@ public class PhaseManager : MonoBehaviour
 
     private void Awake()
     {
-        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+        // PhaseManager is scene-local and shares Game_Manager with other critical
+        // components. Never destroy the whole GameObject because of a stale static
+        // reference left by Enter Play Mode Options or a scene transition.
         Instance = this;
     }
 
@@ -226,6 +243,11 @@ public class PhaseManager : MonoBehaviour
     private void OnDestroy()
     {
         UnsubscribeLevelStarted();
+        if (Instance == this)
+        {
+            Instance = null;
+            ClearStaticEvents();
+        }
     }
 
     private void SubscribeLevelStarted()
@@ -698,7 +720,7 @@ public class PhaseManager : MonoBehaviour
         walkie.SetParent(socketTransform, false);
         walkie.localPosition = Vector3.zero;
         walkie.localRotation = Quaternion.Euler(8f, -18f, -6f);
-        walkie.localScale = new Vector3(0.16f, 0.37f, 0.06f);
+        walkie.localScale = Vector3.one * 0.163f;
 
         foreach (Renderer r in walkie.GetComponentsInChildren<Renderer>(true))
         {

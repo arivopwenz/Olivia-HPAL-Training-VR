@@ -19,6 +19,13 @@ using UnityEngine.XR.Interaction.Toolkit.Interactors;
 public class InteractorRayHealer : MonoBehaviour
 {
     private static InteractorRayHealer _instance;
+    private const string AutoObjectName = "XR_Interactor_Ray_Healer_Auto";
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStaticState()
+    {
+        _instance = null;
+    }
 
     [Tooltip("Heal di LateUpdate setiap frame. Set false kalau mau pakai interval saja.")]
     [SerializeField] private bool _aggressiveHeal = true;
@@ -36,7 +43,7 @@ public class InteractorRayHealer : MonoBehaviour
         if (_instance != null)
             return;
 
-        var go = new GameObject("XR_Interactor_Ray_Healer_Auto");
+        var go = new GameObject(AutoObjectName);
         DontDestroyOnLoad(go);
         _instance = go.AddComponent<InteractorRayHealer>();
     }
@@ -45,12 +52,24 @@ public class InteractorRayHealer : MonoBehaviour
     {
         if (_instance != null && _instance != this)
         {
-            Destroy(gameObject);
-            return;
+            // Prefer the healer authored in the gameplay scene. The old code
+            // destroyed this whole GameObject, which is the root "Script" object
+            // and consequently removed every gameplay manager below it.
+            if (_instance.gameObject.name == AutoObjectName)
+                Destroy(_instance.gameObject);
+            else
+                Destroy(_instance);
         }
 
         _instance = this;
-        DontDestroyOnLoad(gameObject);
+        if (gameObject.name == AutoObjectName)
+            DontDestroyOnLoad(gameObject);
+    }
+
+    private void OnDestroy()
+    {
+        if (_instance == this)
+            _instance = null;
     }
 
     private void Update()

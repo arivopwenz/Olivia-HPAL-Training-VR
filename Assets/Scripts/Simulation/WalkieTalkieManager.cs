@@ -60,6 +60,20 @@ public class WalkieTalkieManager : MonoBehaviour
     public static event Action OnPTTDitekan;
     public static event Action OnPTTDilepas;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStaticState()
+    {
+        Instance = null;
+        ClearStaticEvents();
+    }
+
+    private static void ClearStaticEvents()
+    {
+        OnKeywordTerdeteksi = null;
+        OnPTTDitekan = null;
+        OnPTTDilepas = null;
+    }
+
 #if UNITY_STANDALONE_WIN || UNITY_EDITOR_WIN
     private DictationRecognizer _recognizer;
 #endif
@@ -77,15 +91,8 @@ public class WalkieTalkieManager : MonoBehaviour
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
+        // Scene-local manager: always let the freshly loaded gameplay scene own it.
         Instance = this;
-        if (transform.parent == null)
-            DontDestroyOnLoad(gameObject);
     }
 
     private void Start()
@@ -156,6 +163,11 @@ public class WalkieTalkieManager : MonoBehaviour
     private void OnDestroy()
     {
         BersihkanRecognizer();
+        if (Instance == this)
+        {
+            Instance = null;
+            ClearStaticEvents();
+        }
     }
 
     private void OnApplicationQuit()

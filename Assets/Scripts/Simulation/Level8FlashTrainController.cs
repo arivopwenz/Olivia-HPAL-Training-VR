@@ -1929,20 +1929,23 @@ public class Level8FlashTrainController : MonoBehaviour
         canvasGO.transform.position = pos;
         canvasGO.transform.rotation = Quaternion.LookRotation(GetPlayerHeadForward(), Vector3.up);
         var rect = canvasGO.GetComponent<RectTransform>();
-        rect.sizeDelta = new Vector2(1.6f, 0.9f);
-        canvasGO.transform.localScale = Vector3.one * 0.6f;
+        rect.sizeDelta = new Vector2(1600f, 900f);
+        canvasGO.transform.localScale = Vector3.one * 0.00115f;
 
         AddUIPanel(canvasGO.transform, "BG", new Color(0.08f, 0.12f, 0.2f, 0.92f), Vector2.zero, Vector2.one);
-        AddUIText(canvasGO.transform, "Title", "✓ LEVEL 8 SELESAI",
-            new Color(0.4f, 1f, 0.5f), 36, FontStyle.Bold, TextAnchor.MiddleCenter,
+        AddUIPanel(canvasGO.transform, "Header", new Color(0.05f, 0.34f, 0.52f, 1f),
+            new Vector2(0f, 0.78f), Vector2.one);
+        AddUIText(canvasGO.transform, "Title", "LEVEL 8 SELESAI - FLASH TRAIN STABIL",
+            new Color(0.55f, 1f, 0.72f), 58, FontStyle.Bold, TextAnchor.MiddleCenter,
             new Vector2(0, 0.7f), new Vector2(1, 1f));
-        AddUIText(canvasGO.transform, "Sub", "Flash Train 3-stage stabil. Slurry mengalir ke CCD.",
-            Color.white, 22, FontStyle.Normal, TextAnchor.MiddleCenter,
-            new Vector2(0, 0.4f), new Vector2(1, 0.7f));
+        AddUIText(canvasGO.transform, "Sub",
+            "FV1 12 atm  |  FV2 3 atm  |  FV3 1.05 atm\nSlurry siap dialirkan ke Level 9 CCD untuk pemisahan padat-cair dan sampling PLS.",
+            Color.white, 34, FontStyle.Normal, TextAnchor.MiddleCenter,
+            new Vector2(0.06f, 0.42f), new Vector2(0.94f, 0.72f));
         AddUIButton(canvasGO.transform, "STAY (lihat proses)",
             new Vector2(0.05f, 0.05f), new Vector2(0.48f, 0.32f),
             new Color(0.2f, 0.4f, 0.7f), () => HideMissionComplete());
-        AddUIButton(canvasGO.transform, "KEMBALI KE DCS → LEVEL 9 (CCD)",
+        AddUIButton(canvasGO.transform, "LANJUT KE LEVEL 9 - CCD",
             new Vector2(0.52f, 0.05f), new Vector2(0.95f, 0.32f),
             new Color(0.3f, 0.7f, 0.4f), () => GoToNextLevel());
 
@@ -2011,6 +2014,7 @@ public class Level8FlashTrainController : MonoBehaviour
         var btn = go.AddComponent<UnityEngine.UI.Button>();
         btn.targetGraphic = img;
         btn.onClick.AddListener(() => onClick?.Invoke());
+        AttachMissionCanvasXrButton(go, onClick);
 
         var txtGo = new GameObject("Text");
         txtGo.transform.SetParent(go.transform, false);
@@ -2024,6 +2028,31 @@ public class Level8FlashTrainController : MonoBehaviour
         var trect = txtGo.GetComponent<RectTransform>();
         trect.anchorMin = Vector2.zero; trect.anchorMax = Vector2.one;
         trect.offsetMin = Vector2.zero; trect.offsetMax = Vector2.zero;
+    }
+
+    private void AttachMissionCanvasXrButton(GameObject buttonObject, System.Action onSelect)
+    {
+        Canvas.ForceUpdateCanvases();
+        RectTransform rect = buttonObject.GetComponent<RectTransform>();
+        float width = Mathf.Max(100f, rect.rect.width);
+        float height = Mathf.Max(80f, rect.rect.height);
+
+        GameObject hitbox = new GameObject("XR_Select_Hitbox");
+        hitbox.transform.SetParent(buttonObject.transform, false);
+        hitbox.transform.localPosition = Vector3.zero;
+        hitbox.transform.localRotation = Quaternion.identity;
+        hitbox.transform.localScale = Vector3.one;
+
+        BoxCollider collider = hitbox.AddComponent<BoxCollider>();
+        collider.isTrigger = true;
+        collider.center = Vector3.zero;
+        collider.size = new Vector3(width, height, 35f);
+
+        XRSimpleInteractable interactable = hitbox.AddComponent<XRSimpleInteractable>();
+        interactable.colliders.Clear();
+        interactable.colliders.Add(collider);
+        interactable.selectEntered.RemoveAllListeners();
+        interactable.selectEntered.AddListener(_ => onSelect?.Invoke());
     }
 
     // ============================================================

@@ -102,6 +102,40 @@ public class GameLevelManager : MonoBehaviour
     public static event Action OnLevel6ParameterChanged;
     public static event Action OnLevel10CCDStartAuthorized;
 
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStaticState()
+    {
+        Instance = null;
+        ClearStaticEvents();
+    }
+
+    private static void ClearStaticEvents()
+    {
+        OnLevelStarted = null;
+        OnLevelComplete = null;
+        OnDCSButtonShouldHighlight = null;
+        OnEmergencyTriggered = null;
+        OnDCSViewConfirmed = null;
+        OnDCSButtonPressed = null;
+        OnVoiceReportAccepted = null;
+        OnLevelTransitionRequested = null;
+        OnLevel3PhaseChanged = null;
+        OnLevel3OreReachedSlurry = null;
+        OnLevel4PhaseChanged = null;
+        OnLevel3LaporanAkhirDiterima = null;
+        OnLevel6ParameterChanged = null;
+        OnLevel10CCDStartAuthorized = null;
+    }
+
+    private void OnDestroy()
+    {
+        if (Instance == this)
+        {
+            Instance = null;
+            ClearStaticEvents();
+        }
+    }
+
     [Header("=== Status Level ===")]
     [SerializeField] private GameLevel _currentLevel = GameLevel.Level0_Tutorial;
     [SerializeField] private bool _levelSedangBerjalan;
@@ -178,15 +212,8 @@ public class GameLevelManager : MonoBehaviour
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-
+        // Scene-local manager: stale static state must not destroy this hierarchy.
         Instance = this;
-        if (transform.parent == null)
-            DontDestroyOnLoad(gameObject);
 
         if (_phaseManager == null)
             _phaseManager = FindFirstObjectByType<PhaseManager>();
@@ -2471,7 +2498,7 @@ public class GameLevelManager : MonoBehaviour
         }
 
         controller.DebugEnterLabQCFromGameLevelManager(startLabSequence: false);
-        Log("DEBUG", "Level 9 Lab QC siap: 3 sample PLS sudah di inventory/lab. Tekan L/G/Y untuk chain-of-custody, filtrasi, pH/free acid, ICP-OES, dan validasi CCD.", "yellow");
+        Log("DEBUG", "Level 9 Lab QC siap: dekati meja, grab alat yang disorot, lalu pasang ke dock biru untuk chain-of-custody, filtrasi, pH/free acid, ICP-OES, dan validasi CCD.", "yellow");
     }
 
     [ContextMenu("DEBUG: Level 9 - Mulai Sequence Lab QC PLS")]

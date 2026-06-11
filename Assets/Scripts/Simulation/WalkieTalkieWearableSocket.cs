@@ -7,9 +7,10 @@ public sealed class WalkieTalkieWearableSocket : MonoBehaviour
     [SerializeField] private string walkieObjectName = "Walkie Talkie";
     [SerializeField] private Vector3 dockLocalPosition = Vector3.zero;
     [SerializeField] private Vector3 dockLocalEuler = new Vector3(8f, -18f, -6f);
-    [SerializeField] private Vector3 dockLocalScale = new Vector3(0.16f, 0.37f, 0.06f);
+    [SerializeField] private Vector3 dockLocalScale = Vector3.one * 0.163f;
     [SerializeField] private bool requireWalkieTaken = true;
     [SerializeField] private bool markTakenOnGrab = true;
+    [SerializeField] private bool hideDockVisuals = true;
 
     private Transform _walkie;
     private XRGrabInteractable _grab;
@@ -19,6 +20,7 @@ public sealed class WalkieTalkieWearableSocket : MonoBehaviour
 
     private void Awake()
     {
+        HideDockVisuals();
         ResolveWalkie();
     }
 
@@ -136,5 +138,17 @@ public sealed class WalkieTalkieWearableSocket : MonoBehaviour
         _grab = go.GetComponent<XRGrabInteractable>();
         _rigidbody = go.GetComponent<Rigidbody>();
         _displayStabilizer = go.GetComponent<ApdDisplayItemStabilizer>();
+    }
+
+    private void HideDockVisuals()
+    {
+        if (!hideDockVisuals)
+            return;
+
+        foreach (Renderer renderer in GetComponentsInChildren<Renderer>(true))
+        {
+            if (renderer != null && renderer.transform != transform)
+                renderer.enabled = false;
+        }
     }
 }

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using Unity.XR.CoreUtils;
 using UnityEngine;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
 
 /// <summary>
 /// OLIVIA VR - Level10CCDController.cs
@@ -209,6 +210,8 @@ public class Level10CCDController : MonoBehaviour
         }
         _ccdLabActiveStep = -1;
         _ccdLabStepConfirmed = false;
+        _labResultAccepted = false;
+        ResetPhysicalLabTools();
 
         if (_sampleInventoryRoot != null)
         {
@@ -1336,13 +1339,13 @@ public class Level10CCDController : MonoBehaviour
     private Transform ResolveLabStepMarkerTarget()
     {
         if (_ccdLabActiveStep >= 0
-            && _ccdLabActiveStep < _ccdLabStepButtons.Length
-            && _ccdLabStepButtons[_ccdLabActiveStep] != null
-            && _ccdLabStepButtons[_ccdLabActiveStep].gameObject.activeInHierarchy)
-            return _ccdLabStepButtons[_ccdLabActiveStep];
+            && _ccdLabActiveStep < _ccdLabPhysicalTools.Length
+            && _ccdLabPhysicalTools[_ccdLabActiveStep] != null
+            && _ccdLabPhysicalTools[_ccdLabActiveStep].gameObject.activeInHierarchy)
+            return _ccdLabPhysicalTools[_ccdLabActiveStep];
 
-        if (_ccdLabStepButtons[0] != null && _ccdLabStepButtons[0].gameObject.activeInHierarchy)
-            return _ccdLabStepButtons[0];
+        if (_ccdLabPhysicalTools[0] != null && _ccdLabPhysicalTools[0].gameObject.activeInHierarchy)
+            return _ccdLabPhysicalTools[0];
 
         return ResolveLabMarkerTarget();
     }
@@ -1436,8 +1439,15 @@ public class Level10CCDController : MonoBehaviour
     private readonly Transform[] _ccdLabStepButtons = new Transform[5];
     private readonly Transform[] _ccdLabStepLabels = new Transform[5];
     private readonly bool[] _ccdLabStepDone = new bool[5];
+    private readonly Transform[] _ccdLabPhysicalTools = new Transform[5];
+    private readonly Transform[] _ccdLabPhysicalTargets = new Transform[5];
+    private readonly Vector3[] _ccdLabToolHomePositions = new Vector3[5];
+    private readonly Quaternion[] _ccdLabToolHomeRotations = new Quaternion[5];
+    private readonly XRGrabInteractable[] _ccdLabToolGrabs = new XRGrabInteractable[5];
+    private readonly bool[] _ccdLabToolWasSelected = new bool[5];
     private int _ccdLabActiveStep = -1;
     private bool _ccdLabStepConfirmed;
+    private bool _labResultAccepted;
 
     // Warna PLS per sample point. PLS HPAL real = larutan sulfat hijau-kekuningan (Ni/Co),
     // makin ke wash overflow makin encer/bening.
@@ -1501,7 +1511,7 @@ public class Level10CCDController : MonoBehaviour
         if (_hud != null)
             _hud.ShowNotifPublic(startLabSequence
                 ? "DEBUG: 3 sample PLS sudah masuk lab. Lab QC dimulai dari chain-of-custody."
-                : "DEBUG: 3 sample PLS sudah siap di Lab QC. Tekan L/G/Y untuk mulai analisa.", 8f);
+                : "DEBUG: 3 sample PLS siap di Lab QC. Dekati meja dan ikuti workflow alat fisik.", 8f);
 
         if (startLabSequence)
             SubmitPLSToLab();
@@ -1547,15 +1557,15 @@ public class Level10CCDController : MonoBehaviour
         UpdateSampleInventoryTouch();
         BillboardStationLabels();
         BillboardLabStepLabels();
+        UpdatePhysicalLabInteractions();
         // Keyboard fallback G/Y: ambil sample aktif (untuk desktop simulator tanpa VR controller).
         if ((Input.GetKeyDown(KeyCode.G) || Input.GetKeyDown(KeyCode.Y)) && _ccdStationsBuilt)
         {
             if (!TryStoreReadySampleByInput())
                 TryStartNearestSampleByInput();
         }
-        // Manual submit: tekan L/G/Y kalau semua sample sudah tersimpan dan player ada di lab.
-        if ((Input.GetKeyDown(KeyCode.L) || Input.GetKeyDown(KeyCode.G) || Input.GetKeyDown(KeyCode.Y))
-            && CountPLSSamples() >= 3 && !_ccdLabSubmitted)
+        // Mulai otomatis hanya setelah player benar-benar tiba di area meja lab.
+        if (CountPLSSamples() >= 3 && !_ccdLabSubmitted && !_ccdLabSequenceStarted && IsPlayerNearLab(5f))
             SubmitPLSToLab();
         // Fallback keyboard untuk tombol ACCEPT canvas hasil lab (Enter), selain klik ray XR.
         if (_pendingAcceptAction != null && _ccdLabQcCanvas != null && _ccdLabQcCanvas.activeInHierarchy
@@ -2081,7 +2091,7 @@ public class Level10CCDController : MonoBehaviour
         {
             TeleportPlayer(CreateLabStandSpot());
             if (_hud != null)
-                _hud.ShowNotifPublic("Semua sample PLS masuk lab. Dekati meja QC, tekan G/Y/L untuk mulai chain-of-custody dan analisa.", 7f);
+                _hud.ShowNotifPublic("Semua sample PLS masuk lab. Dekati meja QC; grab alat yang disorot lalu pasang pada dock biru.", 7f);
         }
 
         yield return new WaitForSeconds(fadeDuration * 0.5f);
@@ -2274,94 +2284,122 @@ public class Level10CCDController : MonoBehaviour
         if (_ccdLabBuilding == null)
             return;
 
-        Transform existing = _ccdLabBuilding.transform.Find("L9_LabInteractiveStations_Runtime");
-        if (existing != null && existing.childCount > 0)
-        {
-            CacheExistingLabStations(existing);
-            EnsureLabSampleBottleVisuals(existing);
-            return;
-        }
+        Transform legacy = _ccdLabBuilding.transform.Find("L9_LabInteractiveStations_Runtime");
+        if (legacy != null)
+            legacy.gameObject.SetActive(false);
 
-        GameObject root = existing != null ? existing.gameObject : new GameObject("L9_LabInteractiveStations_Runtime");
+        Transform existing = _ccdLabBuilding.transform.Find("L9_LabPhysicalWorkflow_Runtime");
+        GameObject root = existing != null ? existing.gameObject : new GameObject("L9_LabPhysicalWorkflow_Runtime");
         if (existing == null)
         {
             root.transform.SetParent(_ccdLabBuilding.transform, false);
-            root.transform.localPosition = new Vector3(0f, 1.15f, -0.65f);
+            root.transform.localPosition = new Vector3(0f, 1.12f, -0.65f);
             root.transform.localRotation = Quaternion.identity;
         }
 
         string[] titles =
         {
-            "1 SAMPLE LOGIN",
-            "2 FILTER / TSS",
-            "3 pH + FREE ACID",
-            "4 ICP-OES METALS",
-            "5 VALIDASI CCD"
+            "1 CHAIN OF CUSTODY",
+            "2 FILTRASI 0.45 um",
+            "3 pH + TITRASI",
+            "4 ICP-OES Ni/Co",
+            "5 REVIEW & RELEASE"
         };
-        string[] subtitles =
+        string[] instructions =
         {
-            "scan seal + ID",
-            "0.45 um filter",
-            "probe + titrasi",
-            "vial ke analyzer",
-            "pass/fail window"
+            "GRAB carrier botol -> taruh di scanner",
+            "GRAB membrane -> pasang ke funnel",
+            "GRAB probe -> celupkan ke beaker",
+            "GRAB vial rack -> masukkan analyzer",
+            "GRAB report -> taruh di release dock"
         };
 
         for (int i = 0; i < 5; i++)
         {
             GameObject station = new GameObject("LabStep_" + (i + 1));
             station.transform.SetParent(root.transform, false);
-            station.transform.localPosition = new Vector3((i - 2) * 0.72f, 0f, 0f);
+            station.transform.localPosition = new Vector3((i - 2) * 0.92f, 0f, 0f);
             _ccdLabStepStations[i] = station;
 
-            CreateLabCube(station.transform, "BenchPad", new Vector3(0f, -0.04f, 0f), new Vector3(0.56f, 0.08f, 0.46f), new Color(0.12f, 0.16f, 0.18f));
+            CreateLabCube(station.transform, "BenchPad", new Vector3(0f, -0.05f, 0f),
+                new Vector3(0.78f, 0.10f, 0.62f), new Color(0.09f, 0.13f, 0.16f));
+            CreateLabCube(station.transform, "BackSplash", new Vector3(0f, 0.32f, 0.27f),
+                new Vector3(0.78f, 0.62f, 0.05f), new Color(0.12f, 0.19f, 0.23f));
 
+            GameObject tool;
+            GameObject target;
             if (i == 0)
             {
-                CreateLabCube(station.transform, "BarcodeScanner", new Vector3(-0.12f, 0.11f, 0.02f), new Vector3(0.18f, 0.08f, 0.25f), new Color(0.04f, 0.05f, 0.06f));
-                CreateLabCube(station.transform, "SampleLogbook", new Vector3(0.13f, 0.09f, 0.02f), new Vector3(0.22f, 0.035f, 0.30f), new Color(0.10f, 0.18f, 0.30f));
+                target = CreateLabCube(station.transform, "BarcodeScanner_Dock",
+                    new Vector3(0.20f, 0.10f, -0.02f), new Vector3(0.28f, 0.08f, 0.30f),
+                    new Color(0.05f, 0.55f, 0.75f));
+                tool = CreateLabCube(station.transform, "SampleBottleCarrier",
+                    new Vector3(-0.22f, 0.12f, -0.02f), new Vector3(0.30f, 0.12f, 0.28f),
+                    new Color(0.15f, 0.30f, 0.38f));
+                for (int v = 0; v < 3; v++)
+                    CreateLabSampleBottle(tool.transform, "PLS_Th" + (v == 0 ? 1 : v == 1 ? 3 : 5),
+                        new Vector3(-0.09f + v * 0.09f, 0.16f, 0f), 0.11f, _ccdSampleColors[v]);
             }
             else if (i == 1)
             {
-                CreateLabCylinder(station.transform, "FilterFunnel", new Vector3(0f, 0.18f, 0f), new Vector3(0.13f, 0.18f, 0.13f), new Color(0.85f, 0.95f, 1f, 0.45f), true);
-                CreateLabCylinder(station.transform, "FilterFlask", new Vector3(0f, 0.02f, 0f), new Vector3(0.18f, 0.11f, 0.18f), new Color(0.50f, 0.72f, 0.74f, 0.55f), true);
+                CreateLabCylinder(station.transform, "VacuumFlask", new Vector3(0.18f, 0.06f, 0f),
+                    new Vector3(0.16f, 0.12f, 0.16f), new Color(0.52f, 0.75f, 0.82f, 0.42f), true);
+                target = CreateLabCylinder(station.transform, "FilterFunnel_Dock", new Vector3(0.18f, 0.24f, 0f),
+                    new Vector3(0.14f, 0.08f, 0.14f), new Color(0.10f, 0.72f, 0.82f, 0.55f), true);
+                tool = CreateLabCylinder(station.transform, "FilterMembrane_Cassette", new Vector3(-0.22f, 0.12f, 0f),
+                    new Vector3(0.13f, 0.025f, 0.13f), new Color(0.92f, 0.96f, 1f), false);
             }
             else if (i == 2)
             {
-                CreateLabCube(station.transform, "PHMeter", new Vector3(-0.12f, 0.12f, 0.03f), new Vector3(0.20f, 0.15f, 0.12f), new Color(0.04f, 0.08f, 0.10f));
-                CreateLabCylinder(station.transform, "Burette", new Vector3(0.14f, 0.22f, 0.02f), new Vector3(0.035f, 0.30f, 0.035f), new Color(0.85f, 0.95f, 1f, 0.35f), true);
+                CreateLabCube(station.transform, "PHMeter_Display", new Vector3(0.22f, 0.23f, 0.16f),
+                    new Vector3(0.24f, 0.18f, 0.08f), new Color(0.03f, 0.12f, 0.14f));
+                target = CreateLabCylinder(station.transform, "TitrationBeaker_Dock", new Vector3(0.18f, 0.10f, -0.03f),
+                    new Vector3(0.14f, 0.12f, 0.14f), new Color(0.48f, 0.72f, 0.42f, 0.48f), true);
+                tool = CreateLabCylinder(station.transform, "Calibrated_PH_Probe", new Vector3(-0.22f, 0.23f, 0f),
+                    new Vector3(0.035f, 0.24f, 0.035f), new Color(0.85f, 0.92f, 0.95f), false);
             }
             else if (i == 3)
             {
-                CreateLabCube(station.transform, "ICPTray", new Vector3(-0.02f, 0.07f, 0f), new Vector3(0.36f, 0.08f, 0.24f), new Color(0.10f, 0.12f, 0.16f));
+                target = CreateLabCube(station.transform, "ICP_Autosampler_Dock", new Vector3(0.20f, 0.10f, 0f),
+                    new Vector3(0.30f, 0.10f, 0.28f), new Color(0.08f, 0.58f, 0.72f));
+                tool = CreateLabCube(station.transform, "ICP_Vial_Rack", new Vector3(-0.22f, 0.12f, 0f),
+                    new Vector3(0.30f, 0.10f, 0.25f), new Color(0.12f, 0.16f, 0.20f));
                 for (int v = 0; v < 3; v++)
-                    CreateLabSampleBottle(station.transform, "Vial_" + v, new Vector3(-0.12f + v * 0.12f, 0.18f, 0.02f), 0.10f, _ccdSampleColors[Mathf.Clamp(v, 0, 2)]);
+                    CreateLabSampleBottle(tool.transform, "DigestVial_" + (v + 1),
+                        new Vector3(-0.09f + v * 0.09f, 0.14f, 0f), 0.09f, _ccdSampleColors[v]);
             }
             else
             {
-                CreateLabCube(station.transform, "ValidationConsole", new Vector3(0f, 0.12f, 0f), new Vector3(0.38f, 0.16f, 0.20f), new Color(0.02f, 0.14f, 0.10f));
-                CreateLabCube(station.transform, "PassLamp", new Vector3(0f, 0.25f, -0.02f), new Vector3(0.16f, 0.05f, 0.05f), new Color(0.05f, 0.85f, 0.25f));
+                target = CreateLabCube(station.transform, "QC_Release_Dock", new Vector3(0.20f, 0.12f, 0f),
+                    new Vector3(0.30f, 0.08f, 0.34f), new Color(0.08f, 0.62f, 0.28f));
+                tool = CreateLabCube(station.transform, "CCD_QC_Report", new Vector3(-0.22f, 0.12f, 0f),
+                    new Vector3(0.28f, 0.035f, 0.34f), new Color(0.16f, 0.34f, 0.24f));
+                CreateLabCube(station.transform, "PassLamp", new Vector3(0.20f, 0.29f, 0.20f),
+                    new Vector3(0.16f, 0.06f, 0.06f), new Color(0.04f, 0.82f, 0.24f));
             }
 
-            GameObject button = CreateLabCylinder(station.transform, "ACTION_BUTTON", new Vector3(0f, 0.13f, -0.28f), new Vector3(0.13f, 0.045f, 0.13f), new Color(0.05f, 0.85f, 0.25f), false);
-            _ccdLabStepButtons[i] = button.transform;
-            int captured = i;
-            WireLabStepButton(button, captured);
+            _ccdLabPhysicalTools[i] = tool.transform;
+            _ccdLabPhysicalTargets[i] = target.transform;
+            _ccdLabToolHomePositions[i] = tool.transform.localPosition;
+            _ccdLabToolHomeRotations[i] = tool.transform.localRotation;
+            foreach (Collider targetCollider in target.GetComponents<Collider>())
+                Destroy(targetCollider);
 
             GameObject labelGo = new GameObject("StepLabel");
             labelGo.transform.SetParent(station.transform, false);
-            labelGo.transform.localPosition = new Vector3(0f, 0.42f, -0.30f);
+            labelGo.transform.localPosition = new Vector3(0f, 0.55f, -0.30f);
             TextMesh tm = labelGo.AddComponent<TextMesh>();
-            tm.text = titles[i] + "\n" + subtitles[i];
-            tm.fontSize = 34;
-            tm.characterSize = 0.010f;
+            tm.text = titles[i] + "\n" + instructions[i];
+            tm.fontSize = 40;
+            tm.characterSize = 0.0095f;
             tm.anchor = TextAnchor.MiddleCenter;
             tm.alignment = TextAlignment.Center;
             tm.color = Color.white;
             _ccdLabStepLabels[i] = labelGo.transform;
-
             SetLabStepVisual(i, false, false);
         }
+
+        StartCoroutine(AttachPhysicalLabToolsNextFrame());
 
         EnsureLabSampleBottleVisuals(root.transform);
     }
@@ -2475,6 +2513,132 @@ public class Level10CCDController : MonoBehaviour
         return go;
     }
 
+    private void MakeLabToolGrabbable(GameObject tool, int stepIndex)
+    {
+        if (tool == null || stepIndex < 0 || stepIndex >= _ccdLabToolGrabs.Length)
+            return;
+
+        BoxCollider collider = tool.AddComponent<BoxCollider>();
+        collider.size = Vector3.one;
+        collider.isTrigger = false;
+
+        XRGrabInteractable grab = tool.AddComponent<XRGrabInteractable>();
+        Rigidbody body = tool.GetComponent<Rigidbody>();
+        if (body == null)
+            throw new MissingComponentException($"XRGrabInteractable tidak membuat Rigidbody pada {tool.name}.");
+        body.isKinematic = true;
+        body.useGravity = false;
+
+        grab.movementType = XRBaseInteractable.MovementType.Instantaneous;
+        grab.throwOnDetach = false;
+        grab.colliders.Clear();
+        grab.colliders.Add(collider);
+        grab.selectEntered.RemoveAllListeners();
+        grab.selectEntered.AddListener(_ => _ccdLabToolWasSelected[stepIndex] = true);
+        _ccdLabToolGrabs[stepIndex] = grab;
+    }
+
+    private IEnumerator AttachPhysicalLabToolsNextFrame()
+    {
+        // CreateLabCube/CreateLabCylinder membersihkan collider dekoratif di akhir frame.
+        // Tunggu pembersihan selesai supaya XR Interaction Manager menerima collider final.
+        yield return new WaitForEndOfFrame();
+        yield return null;
+
+        for (int i = 0; i < _ccdLabPhysicalTools.Length; i++)
+        {
+            try
+            {
+                Transform tool = _ccdLabPhysicalTools[i];
+                if (tool != null)
+                {
+                    foreach (Collider staleCollider in tool.GetComponents<Collider>())
+                        DestroyImmediate(staleCollider);
+                    MakeLabToolGrabbable(tool.gameObject, i);
+                }
+            }
+            catch (System.Exception exception)
+            {
+                Debug.LogError($"[Level9 CCD] Gagal memasang grab VR pada alat lab {i + 1}: {exception.Message}");
+            }
+        }
+    }
+
+    private void UpdatePhysicalLabInteractions()
+    {
+        int step = _ccdLabActiveStep;
+        if (!_ccdLabSequenceStarted || step < 0 || step >= _ccdLabPhysicalTools.Length)
+            return;
+
+        Transform tool = _ccdLabPhysicalTools[step];
+        Transform target = _ccdLabPhysicalTargets[step];
+        XRGrabInteractable grab = _ccdLabToolGrabs[step];
+        if (tool == null || target == null || grab == null || !_ccdLabToolWasSelected[step])
+            return;
+
+        if (Vector3.Distance(tool.position, target.position) <= 0.16f)
+            CompletePhysicalLabStep(step);
+    }
+
+    private void CompletePhysicalLabStep(int stepIndex)
+    {
+        if (stepIndex != _ccdLabActiveStep || _ccdLabStepDone[stepIndex] || _ccdLabStepConfirmed)
+            return;
+
+        Transform tool = _ccdLabPhysicalTools[stepIndex];
+        Transform target = _ccdLabPhysicalTargets[stepIndex];
+        XRGrabInteractable grab = _ccdLabToolGrabs[stepIndex];
+        if (grab != null)
+        {
+            grab.enabled = false;
+            Rigidbody body = grab.GetComponent<Rigidbody>();
+            if (body != null)
+            {
+                if (!body.isKinematic)
+                {
+                    body.linearVelocity = Vector3.zero;
+                    body.angularVelocity = Vector3.zero;
+                }
+                body.isKinematic = true;
+            }
+        }
+
+        if (tool != null && target != null)
+            tool.SetPositionAndRotation(target.position, target.rotation);
+
+        _ccdLabStepConfirmed = true;
+        if (_hud != null)
+            _hud.ShowNotifPublic("Alat terpasang pada posisi proses. Analisa berjalan...", 3f);
+    }
+
+    private void ResetPhysicalLabTools()
+    {
+        for (int i = 0; i < _ccdLabPhysicalTools.Length; i++)
+        {
+            _ccdLabToolWasSelected[i] = false;
+            Transform tool = _ccdLabPhysicalTools[i];
+            if (tool != null)
+            {
+                tool.localPosition = _ccdLabToolHomePositions[i];
+                tool.localRotation = _ccdLabToolHomeRotations[i];
+            }
+
+            XRGrabInteractable grab = _ccdLabToolGrabs[i];
+            if (grab != null)
+                grab.enabled = true;
+        }
+    }
+
+    private bool IsPlayerNearLab(float radius)
+    {
+        if (_ccdLabBuilding == null)
+            return false;
+
+        Vector3 head = GetPlayerHead();
+        Vector3 lab = _ccdLabBuilding.transform.position;
+        return Vector2.Distance(new Vector2(head.x, head.z), new Vector2(lab.x, lab.z)) <= radius;
+    }
+
     private void WireLabStepButton(GameObject button, int stepIndex)
     {
         if (button == null) return;
@@ -2512,9 +2676,13 @@ public class Level10CCDController : MonoBehaviour
         if (bench != null && bench.TryGetComponent(out Renderer br))
             ApplySimpleMat(br, pad);
 
-        Transform button = _ccdLabStepButtons[stepIndex];
-        if (button != null && button.TryGetComponent(out Renderer rr))
-            ApplySimpleMat(rr, done ? new Color(0.08f, 0.45f, 0.15f) : active ? new Color(1f, 0.86f, 0.1f) : new Color(0.05f, 0.85f, 0.25f));
+        Transform tool = _ccdLabPhysicalTools[stepIndex];
+        if (tool != null && tool.TryGetComponent(out Renderer rr))
+            ApplySimpleMat(rr, done ? new Color(0.08f, 0.45f, 0.15f) : active ? new Color(1f, 0.72f, 0.08f) : new Color(0.22f, 0.38f, 0.46f));
+
+        Transform target = _ccdLabPhysicalTargets[stepIndex];
+        if (target != null && target.TryGetComponent(out Renderer tr))
+            ApplySimpleMat(tr, done ? new Color(0.08f, 0.62f, 0.20f) : active ? new Color(0.05f, 0.85f, 1f) : new Color(0.08f, 0.28f, 0.34f));
 
         if (_ccdLabStepLabels[stepIndex] != null)
         {
@@ -2604,7 +2772,9 @@ public class Level10CCDController : MonoBehaviour
 
         ShowImmersiveL10LabResultCanvas();
         if (_hud != null)
-            _hud.ShowNotifPublic("Hasil QC keluar: PLS memenuhi window proses. Klik ACCEPT atau tekan Enter untuk lanjut.", 8f);
+            _hud.ShowNotifPublic("Hasil QC Level 9 keluar. Baca ringkasan assay; release otomatis setelah verifikasi fisik selesai.", 8f);
+        yield return new WaitForSeconds(5f);
+        OnL10LabAccepted();
     }
 
     private IEnumerator WaitForLabStepInput(int stepIndex, string prompt)
@@ -2615,16 +2785,13 @@ public class Level10CCDController : MonoBehaviour
             SetLabStepVisual(i, i == stepIndex, _ccdLabStepDone[i]);
 
         if (_ccdLabScreenText != null)
-            _ccdLabScreenText.text = prompt + "\nTekan tombol kuning alat lab";
+            _ccdLabScreenText.text = prompt + "\nGRAB alat bercahaya dan tempatkan ke dock biru";
         if (_hud != null)
-            _hud.ShowNotifPublic(prompt + " Tekan tombol kuning pada station lab yang ditandai.", 7f);
+            _hud.ShowNotifPublic(prompt + " Grab alat yang menyala, lalu tempatkan ke dock biru pada station.", 8f);
 
         yield return null;
         while (!_ccdLabStepConfirmed)
         {
-            if (Input.GetKeyDown(KeyCode.G) || Input.GetKeyDown(KeyCode.Y) || Input.GetKeyDown(KeyCode.L))
-                ConfirmLabStep(stepIndex);
-
             if (_ccdLabAnalyzerRotor != null)
                 _ccdLabAnalyzerRotor.Rotate(Vector3.up, 35f * Time.deltaTime, Space.Self);
             yield return null;
@@ -2670,7 +2837,9 @@ public class Level10CCDController : MonoBehaviour
         if (_ccdLabScreenText != null) _ccdLabScreenText.text = "QC SELESAI\nPLS dalam SOP ✓\nNi 5.2  Co 0.45\nFree acid 18.0 g/L";
 
         ShowL10LabResultCanvas();
-        if (_hud != null) _hud.ShowNotifPublic("Hasil QC keluar: PLS dalam SOP. Klik tombol ACCEPT (atau tekan Enter) untuk lanjut.", 8f);
+        if (_hud != null) _hud.ShowNotifPublic("Hasil QC keluar: PLS dalam SOP. Release tersimpan otomatis.", 8f);
+        yield return new WaitForSeconds(5f);
+        OnL10LabAccepted();
     }
 
     private void ShowImmersiveL10LabResultCanvas()
@@ -2690,16 +2859,16 @@ public class Level10CCDController : MonoBehaviour
         canvasGO.AddComponent<UnityEngine.UI.CanvasScaler>();
         canvasGO.AddComponent<UnityEngine.UI.GraphicRaycaster>();
 
-        canvasGO.transform.localScale = Vector3.one * 0.85f;
+        canvasGO.transform.localScale = Vector3.one * 0.00085f;
         var rect = canvasGO.GetComponent<RectTransform>();
-        rect.sizeDelta = new Vector2(2.15f, 1.55f);
+        rect.sizeDelta = new Vector2(2150f, 1550f);
         _labResultCanvasFollowPlayer = true;
         PositionLabResultCanvas(canvasGO.transform);
 
         AddPanel(canvasGO.transform, "BG", new Color(0.035f, 0.07f, 0.12f, 0.98f), Vector2.zero, Vector2.one);
         AddPanel(canvasGO.transform, "TitleBar", new Color(0.08f, 0.28f, 0.42f, 1f), new Vector2(0f, 0.86f), new Vector2(1f, 1f));
-        AddText(canvasGO.transform, "Title", "LAB QC - CCD OVERFLOW PLS",
-            new Color(0.7f, 1f, 0.85f), 30, FontStyle.Bold, TextAnchor.MiddleCenter,
+        AddText(canvasGO.transform, "Title", "LEVEL 9 - LAB QC CCD OVERFLOW PLS",
+            new Color(0.7f, 1f, 0.85f), 72, FontStyle.Bold, TextAnchor.MiddleCenter,
             new Vector2(0f, 0.86f), new Vector2(1f, 1f));
 
         string[] rows =
@@ -2713,19 +2882,21 @@ public class Level10CCDController : MonoBehaviour
         for (int i = 0; i < rows.Length; i++)
         {
             float yMin = 0.61f - i * 0.10f;
-            AddText(canvasGO.transform, "QCRow" + i, rows[i], Color.white, 16, FontStyle.Normal,
+            AddText(canvasGO.transform, "QCRow" + i, rows[i], Color.white, 38, FontStyle.Normal,
                 TextAnchor.MiddleLeft, new Vector2(0.05f, yMin), new Vector2(0.95f, yMin + 0.095f));
         }
 
         AddText(canvasGO.transform, "Verdict",
             "VERDICT: PASS. Training window: Ni 3-6 g/L, Co 0.2-0.8 g/L, free acid 10-60 g/L, TSS <500 mg/L, recovery >=95%.",
-            new Color(0.6f, 1f, 0.7f), 17, FontStyle.Italic, TextAnchor.MiddleCenter,
+            new Color(0.6f, 1f, 0.7f), 40, FontStyle.Italic, TextAnchor.MiddleCenter,
             new Vector2(0.05f, 0.13f), new Vector2(0.95f, 0.30f));
-        AddButton(canvasGO.transform, "ACCEPT & LANJUT",
-            new Vector2(0.3f, 0.04f), new Vector2(0.7f, 0.13f),
-            new Color(0.2f, 0.6f, 0.3f), () => OnL10LabAccepted());
+        AddText(canvasGO.transform, "ReleaseStatus",
+            "RELEASE DITANDATANGANI SECARA FISIK - HASIL AKAN TERSIMPAN OTOMATIS",
+            new Color(0.35f, 0.9f, 1f), 34, FontStyle.Bold, TextAnchor.MiddleCenter,
+            new Vector2(0.08f, 0.035f), new Vector2(0.92f, 0.13f));
 
         _ccdLabQcCanvas = canvasGO;
+        _pendingAcceptAction = null;
     }
 
     private void ShowL10LabResultCanvas()
@@ -2744,15 +2915,15 @@ public class Level10CCDController : MonoBehaviour
         canvasGO.AddComponent<UnityEngine.UI.CanvasScaler>();
         canvasGO.AddComponent<UnityEngine.UI.GraphicRaycaster>();
         var rect = canvasGO.GetComponent<RectTransform>();
-        rect.sizeDelta = new Vector2(2.0f, 1.4f);
-        canvasGO.transform.localScale = Vector3.one * 0.85f;
+        rect.sizeDelta = new Vector2(2000f, 1400f);
+        canvasGO.transform.localScale = Vector3.one * 0.00085f;
         _labResultCanvasFollowPlayer = true;
         PositionLabResultCanvas(canvasGO.transform);
 
         AddPanel(canvasGO.transform, "BG", new Color(0.04f, 0.08f, 0.13f, 0.98f), Vector2.zero, Vector2.one);
         AddPanel(canvasGO.transform, "TitleBar", new Color(0.10f, 0.30f, 0.45f, 1f), new Vector2(0f, 0.85f), new Vector2(1f, 1f));
         AddText(canvasGO.transform, "Title", "LABORATORY QC — PLS OVERFLOW CCD",
-            new Color(0.7f, 1f, 0.85f), 30, FontStyle.Bold, TextAnchor.MiddleCenter,
+            new Color(0.7f, 1f, 0.85f), 68, FontStyle.Bold, TextAnchor.MiddleCenter,
             new Vector2(0, 0.85f), new Vector2(1, 1f));
         string[] data = {
             "Th-1 PLS:  Free acid 18.0 g/L | Ni 5.2 g/L | Co 0.45 | Fe 0.8  ✓",
@@ -2762,23 +2933,28 @@ public class Level10CCDController : MonoBehaviour
         for (int i = 0; i < 3; i++)
         {
             float yMin = 0.55f - i * 0.13f;
-            AddText(canvasGO.transform, $"S{i}", data[i], Color.white, 17, FontStyle.Normal,
+            AddText(canvasGO.transform, $"S{i}", data[i], Color.white, 38, FontStyle.Normal,
                 TextAnchor.MiddleLeft, new Vector2(0.05f, yMin), new Vector2(0.95f, yMin + 0.12f));
         }
         AddText(canvasGO.transform, "Verdict",
             "VERDICT: PLS dalam SOP. Wash efficiency CCD ≈ 95%. Siap ke neutralisasi.",
-            new Color(0.6f, 1f, 0.7f), 18, FontStyle.Italic, TextAnchor.MiddleCenter,
+            new Color(0.6f, 1f, 0.7f), 40, FontStyle.Italic, TextAnchor.MiddleCenter,
             new Vector2(0.05f, 0.16f), new Vector2(0.95f, 0.32f));
-        AddButton(canvasGO.transform, "ACCEPT & LANJUT",
-            new Vector2(0.3f, 0.04f), new Vector2(0.7f, 0.14f),
-            new Color(0.2f, 0.6f, 0.3f), () => OnL10LabAccepted());
+        AddText(canvasGO.transform, "ReleaseStatus", "RELEASE QC TERSIMPAN OTOMATIS",
+            new Color(0.35f, 0.9f, 1f), 34, FontStyle.Bold, TextAnchor.MiddleCenter,
+            new Vector2(0.2f, 0.04f), new Vector2(0.8f, 0.14f));
         _ccdLabQcCanvas = canvasGO;
+        _pendingAcceptAction = null;
     }
 
     private void OnL10LabAccepted()
     {
+        if (_labResultAccepted)
+            return;
+        _labResultAccepted = true;
         if (_ccdLabQcCanvas != null) _ccdLabQcCanvas.SetActive(false);
         _labResultCanvasFollowPlayer = false;
+        _pendingAcceptAction = null;
         GameLevelManager.Instance?.NotifyLevel10SamplePLSAccepted();
         if (_hud != null) _hud.ShowNotifPublic("Lab QC PLS lulus. Lapor HT (tahan T): 'CCD aktif, PLS lulus QC'.", 8f);
     }
