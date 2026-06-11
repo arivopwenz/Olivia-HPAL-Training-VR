@@ -124,6 +124,12 @@ public sealed class XRGloveHandVisualController : MonoBehaviour
     private void ApplyWornState(bool worn)
     {
         _lastWornState = worn;
+        if (worn)
+        {
+            ApplyRuntimeMaterial(_left.GloveInstance);
+            ApplyRuntimeMaterial(_right.GloveInstance);
+        }
+
         SetGloveVisible(_left, worn);
         SetGloveVisible(_right, worn);
     }
@@ -153,6 +159,16 @@ public sealed class XRGloveHandVisualController : MonoBehaviour
 
             Material[] materials = renderer.sharedMaterials;
             int slotCount = materials != null && materials.Length > 0 ? materials.Length : 1;
+            bool alreadyApplied = materials != null && materials.Length == slotCount;
+            for (int i = 0; alreadyApplied && i < materials.Length; i++)
+                alreadyApplied = materials[i] == runtimeGloveMaterial;
+
+            if (alreadyApplied)
+            {
+                renderer.enabled = true;
+                continue;
+            }
+
             materials = new Material[slotCount];
             for (int i = 0; i < materials.Length; i++)
                 materials[i] = runtimeGloveMaterial;
@@ -176,6 +192,7 @@ public sealed class XRGloveHandVisualController : MonoBehaviour
         float targetPose = Mathf.Clamp01(Mathf.Max(grip, trigger));
         hand.Pose = Mathf.MoveTowards(hand.Pose, targetPose, poseSpeed * Time.unscaledDeltaTime);
         clip.SampleAnimation(hand.GloveInstance, hand.Pose * clip.length * 0.5f);
+        ApplyRuntimeMaterial(hand.GloveInstance);
         AlignToTrackedHand(hand);
     }
 
