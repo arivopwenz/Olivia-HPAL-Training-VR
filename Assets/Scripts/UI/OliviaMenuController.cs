@@ -86,7 +86,7 @@ public sealed class OliviaMenuController : MonoBehaviour
     public void PauseGame()
     {
         _paused = true;
-        Time.timeScale = 0f;
+        Time.timeScale = 0.0001f;
         AudioListener.pause = true;
         if (pausePanel != null)
             pausePanel.SetActive(true);

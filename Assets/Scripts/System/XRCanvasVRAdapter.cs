@@ -1,5 +1,8 @@
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+using UnityEngine.XR.Interaction.Toolkit.Interactables;
+
 
 /// <summary>
 /// Converts desktop overlay HUD canvases into head-locked world-space canvases
@@ -7,7 +10,7 @@ using UnityEngine.SceneManagement;
 /// </summary>
 public static class XRCanvasVRAdapter
 {
-    private static readonly Vector3 CanvasLocalPosition = new Vector3(0f, -0.103f, 0.62f);
+    private static readonly Vector3 CanvasLocalPosition = new Vector3(0f, -0.112f, 0.615f);
     private static readonly Vector2 CanvasSize = new Vector2(1671.062f, 1240.888f);
     private const float CanvasScale = 0.00075f;
 
@@ -65,6 +68,51 @@ public static class XRCanvasVRAdapter
             rect.localPosition = CanvasLocalPosition;
             rect.localRotation = Quaternion.identity;
             rect.localScale = Vector3.one * CanvasScale;
+
+            if (CanvasNames[i] == "Pause_Menu_Canvas")
+                SetupXrButtons(canvasObject);
+
+        }
+    }
+
+
+    private static void SetupXrButtons(GameObject canvasObject)
+    {
+        Button[] buttons = canvasObject.GetComponentsInChildren<Button>(true);
+        if (buttons.Length == 0) return;
+
+        Canvas.ForceUpdateCanvases();
+
+        for (int b = 0; b < buttons.Length; b++)
+        {
+            Button btn = buttons[b];
+            RectTransform btnRect = btn.GetComponent<RectTransform>();
+            if (btnRect == null) continue;
+
+            float w = btnRect.rect.width;
+            float h = btnRect.rect.height;
+            if (w < 1f || h < 1f)
+            {
+                RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
+                float pw = canvasRect != null ? canvasRect.rect.width : CanvasSize.x;
+                float ph = canvasRect != null ? canvasRect.rect.height : CanvasSize.y;
+                w = Mathf.Max(w, (btnRect.anchorMax.x - btnRect.anchorMin.x) * pw);
+                h = Mathf.Max(h, (btnRect.anchorMax.y - btnRect.anchorMin.y) * ph);
+            }
+
+            BoxCollider bc = btn.GetComponent<BoxCollider>();
+            if (bc == null) bc = btn.gameObject.AddComponent<BoxCollider>();
+            bc.isTrigger = true;
+            bc.size = new Vector3(Mathf.Max(w, 10f), Mathf.Max(h, 10f), 20f);
+            bc.center = Vector3.zero;
+
+            XRSimpleInteractable simple = btn.GetComponent<XRSimpleInteractable>();
+            if (simple == null) simple = btn.gameObject.AddComponent<XRSimpleInteractable>();
+            simple.colliders.Clear();
+            simple.colliders.Add(bc);
+
+            Button capturedBtn = btn;
+            simple.selectEntered.AddListener(_ => capturedBtn.onClick.Invoke());
         }
     }
 }
