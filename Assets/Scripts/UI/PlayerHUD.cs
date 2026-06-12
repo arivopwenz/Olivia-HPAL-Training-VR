@@ -61,8 +61,8 @@ public class PlayerHUD : MonoBehaviour
 
     [Header("=== Panel Visual Level 1 APD ===")]
     [SerializeField] private Sprite _apdPanelBackground;
-    [SerializeField] private Sprite[] _apdSpritesPending = new Sprite[7];
-    [SerializeField] private Sprite[] _apdSpritesDone = new Sprite[7];
+    [SerializeField] private Sprite[] _apdSpritesPending = new Sprite[8];
+    [SerializeField] private Sprite[] _apdSpritesDone = new Sprite[8];
 
     [Header("=== Panel Operasional ===")]
     public GameObject panelOperasional;
@@ -117,7 +117,7 @@ public class PlayerHUD : MonoBehaviour
     private Coroutine _transitionCoroutine;
     [SerializeField] private GameObject _level1ApdPanel;
     [SerializeField] private TextMeshProUGUI _level1ApdMission;
-    [SerializeField] private Image[] _level1ApdRows = new Image[7];
+    [SerializeField] private Image[] _level1ApdRows = new Image[8];
 
     private void OnValidate()
     {
@@ -592,6 +592,8 @@ public class PlayerHUD : MonoBehaviour
 
     private void EnsureLevel1ApdPanel()
     {
+        EnsureLevel1ApdArraySizes();
+
         if (_level1ApdPanel == null && txtQuestLabel != null)
         {
             Transform existing = txtQuestLabel.transform.parent.Find("Level1_APD_VisualPanel");
@@ -619,8 +621,9 @@ public class PlayerHUD : MonoBehaviour
         panelRect.anchorMin = new Vector2(1f, 1f);
         panelRect.anchorMax = new Vector2(1f, 1f);
         panelRect.pivot = new Vector2(1f, 1f);
-        panelRect.sizeDelta = new Vector2(560f, 1000f);
-        panelRect.anchoredPosition = new Vector2(0f, 0f);
+        panelRect.sizeDelta = new Vector2(1181f, 2074.2f);
+        panelRect.anchoredPosition = new Vector2(2f, -2.5165f);
+        panelRect.localScale = Vector3.one * 0.3709809f;
 
         Image background = _level1ApdPanel.GetComponent<Image>();
         background.sprite = _apdPanelBackground;
@@ -634,12 +637,12 @@ public class PlayerHUD : MonoBehaviour
         missionRect.anchorMin = new Vector2(0f, 1f);
         missionRect.anchorMax = new Vector2(1f, 1f);
         missionRect.pivot = new Vector2(0.5f, 1f);
-        missionRect.sizeDelta = new Vector2(-92f, 220f);
-        missionRect.anchoredPosition = new Vector2(0f, -132f);
+        missionRect.sizeDelta = new Vector2(-179.727f, 220f);
+        missionRect.anchoredPosition = new Vector2(43.863f, -337f);
 
         _level1ApdMission = missionGo.GetComponent<TextMeshProUGUI>();
         _level1ApdMission.font = txtQuestLabel.font;
-        _level1ApdMission.fontSize = 25f;
+        _level1ApdMission.fontSize = 45f;
         _level1ApdMission.fontStyle = FontStyles.Bold;
         _level1ApdMission.color = Color.white;
         _level1ApdMission.alignment = TextAlignmentOptions.TopLeft;
@@ -648,8 +651,11 @@ public class PlayerHUD : MonoBehaviour
         _level1ApdMission.raycastTarget = false;
         ConfigureLevel1ApdMissionText();
 
-        const float firstRowY = -366f;
-        const float rowStep = 86f;
+        float[] rowY =
+        {
+            -710.4289f, -879.9048f, -1041.1349f, -1202.0203f,
+            -1362.709f, -1532.254f, -1705.8333f, -1874.9165f
+        };
         for (int i = 0; i < _level1ApdRows.Length; i++)
         {
             GameObject rowGo = new GameObject($"APD_Row_{i + 1}", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
@@ -658,8 +664,9 @@ public class PlayerHUD : MonoBehaviour
             rowRect.anchorMin = new Vector2(0.5f, 1f);
             rowRect.anchorMax = new Vector2(0.5f, 1f);
             rowRect.pivot = new Vector2(0.5f, 1f);
-            rowRect.sizeDelta = new Vector2(470f, 90f);
-            rowRect.anchoredPosition = new Vector2(0f, firstRowY - i * rowStep);
+            rowRect.sizeDelta = new Vector2(538f, 101.353f);
+            rowRect.anchoredPosition = new Vector2(-2f, rowY[i]);
+            rowRect.localScale = Vector3.one * 1.5214254f;
 
             Image row = rowGo.GetComponent<Image>();
             row.preserveAspect = true;
@@ -669,6 +676,16 @@ public class PlayerHUD : MonoBehaviour
 
         _level1ApdPanel.transform.SetAsLastSibling();
         _level1ApdPanel.SetActive(false);
+    }
+
+    private void EnsureLevel1ApdArraySizes()
+    {
+        if (_apdSpritesPending == null || _apdSpritesPending.Length != TOTAL_APD)
+            Array.Resize(ref _apdSpritesPending, TOTAL_APD);
+        if (_apdSpritesDone == null || _apdSpritesDone.Length != TOTAL_APD)
+            Array.Resize(ref _apdSpritesDone, TOTAL_APD);
+        if (_level1ApdRows == null || _level1ApdRows.Length != TOTAL_APD)
+            Array.Resize(ref _level1ApdRows, TOTAL_APD);
     }
 
     private void SetLevel1ApdPanelVisible(bool visible)
@@ -701,10 +718,8 @@ public class PlayerHUD : MonoBehaviour
         if (_level1ApdMission == null)
             return;
 
-        _level1ApdMission.enableAutoSizing = true;
-        _level1ApdMission.fontSize = 34f;
-        _level1ApdMission.fontSizeMin = 22f;
-        _level1ApdMission.fontSizeMax = 36f;
+        _level1ApdMission.enableAutoSizing = false;
+        _level1ApdMission.fontSize = 45f;
         _level1ApdMission.lineSpacing = 5f;
         _level1ApdMission.margin = new Vector4(4f, 2f, 4f, 2f);
         _level1ApdMission.alignment = TextAlignmentOptions.TopLeft;
@@ -726,7 +741,8 @@ public class PlayerHUD : MonoBehaviour
             phase != null && phase.isGlassesWorn,
             phase != null && phase.isEarplugWorn,
             phase != null && phase.isRespiratorWorn,
-            phase != null && phase.isBootsWorn
+            phase != null && phase.isBootsWorn,
+            phase != null && phase.isWalkieTalkieTaken
         };
 
         int completed = 0;
@@ -752,7 +768,7 @@ public class PlayerHUD : MonoBehaviour
         string[] names =
         {
             "helm industri", "rompi industri", "sarung tangan", "kacamata industri",
-            "penutup telinga", "masker industri", "sepatu industri"
+            "penutup telinga", "masker industri", "sepatu industri", "walkie talkie"
         };
 
         if (completed >= worn.Length)
@@ -770,7 +786,7 @@ public class PlayerHUD : MonoBehaviour
             _level1ApdMission.text =
                 "<b>LENGKAPI APD WAJIB</b>\n" +
                 $"Pakai <color=#52E8FF>{names[nextMissing]}</color> dari loker APD.\n" +
-                $"Status pemeriksaan: <b>{completed}/7</b> terpasang.";
+                $"Status pemeriksaan: <b>{completed}/8</b> terpasang.";
         }
     }
 
