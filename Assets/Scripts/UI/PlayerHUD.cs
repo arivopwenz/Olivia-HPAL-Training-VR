@@ -61,6 +61,9 @@ public class PlayerHUD : MonoBehaviour
 
     [Header("=== Panel Visual Level 1 APD ===")]
     [SerializeField] private Sprite _apdPanelBackground;
+    [SerializeField] private Sprite _level2PanelBackground;
+    [SerializeField] private Sprite[] _level2TaskSpritesPending = new Sprite[3];
+    [SerializeField] private Sprite[] _level2TaskSpritesDone = new Sprite[3];
     [SerializeField] private Sprite[] _apdSpritesPending = new Sprite[8];
     [SerializeField] private Sprite[] _apdSpritesDone = new Sprite[8];
 
@@ -118,6 +121,7 @@ public class PlayerHUD : MonoBehaviour
     [SerializeField] private GameObject _level1ApdPanel;
     [SerializeField] private TextMeshProUGUI _level1ApdMission;
     [SerializeField] private Image[] _level1ApdRows = new Image[8];
+    [SerializeField] private Image[] _level2TaskRows = new Image[3];
 
     private void OnValidate()
     {
@@ -189,6 +193,19 @@ public class PlayerHUD : MonoBehaviour
             SetFase(FaseQuest.PakaiAPD);
             RefreshLevel1ApdPanel();
         }
+        else if (level == GameLevelManager.GameLevel.Level2_DCSPrep)
+        {
+            SetLevel2PanelVisible(true);
+            _dcsDilihat = false;
+            _dcsTombolDitekan = false;
+            _voiceReportSelesai = false;
+            _level3LaporanAwalSelesai = false;
+            _level3OreSampaiSlurry = false;
+            _level3Slurry25Tercapai = false;
+            _level5LaporanAwalDone = false;
+            SetFase(FaseQuest.LihatDCS);
+            UpdateOperasionalChecklist(level);
+        }
         else
         {
             SetLevel1ApdPanelVisible(false);
@@ -199,7 +216,7 @@ public class PlayerHUD : MonoBehaviour
             _level3OreSampaiSlurry = false;
             _level3Slurry25Tercapai = false;
             _level5LaporanAwalDone = false;
-            SetFase(level == GameLevelManager.GameLevel.Level2_DCSPrep ? FaseQuest.LihatDCS : FaseQuest.MulaiMesin);
+            SetFase(FaseQuest.MulaiMesin);
             UpdateOperasionalChecklist(level);
             if (level == GameLevelManager.GameLevel.Level3_OreSlurry)
                 RefreshLevel3Hud();
@@ -588,6 +605,11 @@ public class PlayerHUD : MonoBehaviour
             SetLevel1ApdPanelVisible(true);
             RefreshLevel1ApdPanel();
         }
+        else if (_levelAktif == GameLevelManager.GameLevel.Level2_DCSPrep)
+        {
+            SetLevel2PanelVisible(true);
+            RefreshLevel2TaskRows();
+        }
     }
 
     private void EnsureLevel1ApdPanel()
@@ -691,18 +713,11 @@ public class PlayerHUD : MonoBehaviour
     private void SetLevel1ApdPanelVisible(bool visible)
     {
         EnsureLevel1ApdPanel();
+        ConfigureVisualPanelForLevel1();
         if (_level1ApdPanel != null)
             _level1ApdPanel.SetActive(visible);
 
-        Image legacyPanelBackground = txtQuestLabel != null
-            ? txtQuestLabel.transform.parent.GetComponent<Image>()
-            : null;
-        if (legacyPanelBackground != null)
-            legacyPanelBackground.enabled = !visible;
-
-        if (bgHeader != null) bgHeader.gameObject.SetActive(!visible);
-        if (txtLevelLabel != null) txtLevelLabel.gameObject.SetActive(!visible);
-        if (txtQuestLabel != null) txtQuestLabel.gameObject.SetActive(!visible);
+        SetLegacyQuestVisible(!visible);
 
         GameObject legacyApd = taskHelm != null ? taskHelm.transform.parent.gameObject : null;
         if (legacyApd != null) legacyApd.SetActive(false);
@@ -710,6 +725,178 @@ public class PlayerHUD : MonoBehaviour
         {
             if (panelOperasional != null) panelOperasional.SetActive(false);
             if (panelWalkieTalkieHint != null) panelWalkieTalkieHint.SetActive(false);
+        }
+    }
+
+    private void SetLevel2PanelVisible(bool visible)
+    {
+        EnsureLevel1ApdPanel();
+        ConfigureVisualPanelForLevel2();
+        if (_level1ApdPanel != null)
+            _level1ApdPanel.SetActive(visible);
+
+        SetLegacyQuestVisible(!visible);
+
+        GameObject legacyApd = taskHelm != null ? taskHelm.transform.parent.gameObject : null;
+        if (legacyApd != null) legacyApd.SetActive(false);
+        if (visible)
+        {
+            if (panelOperasional != null) panelOperasional.SetActive(false);
+            if (panelWalkieTalkieHint != null) panelWalkieTalkieHint.SetActive(false);
+        }
+    }
+
+    private void SetLegacyQuestVisible(bool visible)
+    {
+        Image legacyPanelBackground = txtQuestLabel != null
+            ? txtQuestLabel.transform.parent.GetComponent<Image>()
+            : null;
+        if (legacyPanelBackground != null)
+            legacyPanelBackground.enabled = visible;
+
+        if (bgHeader != null) bgHeader.gameObject.SetActive(visible);
+        if (txtLevelLabel != null) txtLevelLabel.gameObject.SetActive(visible);
+        if (txtQuestLabel != null) txtQuestLabel.gameObject.SetActive(visible);
+    }
+
+    private void ConfigureVisualPanelForLevel1()
+    {
+        if (_level1ApdPanel == null)
+            return;
+
+        Image background = _level1ApdPanel.GetComponent<Image>();
+        if (background != null)
+            background.sprite = _apdPanelBackground;
+
+        if (_level1ApdMission != null)
+            _level1ApdMission.gameObject.SetActive(true);
+
+        if (_level1ApdRows != null)
+        {
+            for (int i = 0; i < _level1ApdRows.Length; i++)
+            {
+                if (_level1ApdRows[i] != null)
+                    _level1ApdRows[i].gameObject.SetActive(true);
+            }
+        }
+
+        SetLevel2TaskRowsActive(false);
+    }
+
+    private void ConfigureVisualPanelForLevel2()
+    {
+        if (_level1ApdPanel == null)
+            return;
+
+        EnsureLevel2TaskRows();
+
+        Image background = _level1ApdPanel.GetComponent<Image>();
+        if (background != null)
+            background.sprite = _level2PanelBackground != null ? _level2PanelBackground : _apdPanelBackground;
+
+        if (_level1ApdMission != null)
+        {
+            _level1ApdMission.gameObject.SetActive(true);
+            _level1ApdMission.text = txtQuestLabel != null ? txtQuestLabel.text : string.Empty;
+        }
+
+        if (_level1ApdRows != null)
+        {
+            for (int i = 0; i < _level1ApdRows.Length; i++)
+            {
+                if (_level1ApdRows[i] != null)
+                    _level1ApdRows[i].gameObject.SetActive(false);
+            }
+        }
+
+        SetLevel2TaskRowsActive(true);
+        RefreshLevel2TaskRows();
+
+        if (panelOperasional != null) panelOperasional.SetActive(false);
+        if (panelWalkieTalkieHint != null) panelWalkieTalkieHint.SetActive(false);
+        SetLegacyQuestVisible(false);
+    }
+
+    private void EnsureLevel2TaskRows()
+    {
+        if (_level1ApdPanel == null)
+            return;
+
+        if (_level2TaskRows == null || _level2TaskRows.Length != 3)
+            Array.Resize(ref _level2TaskRows, 3);
+        if (_level2TaskSpritesPending == null || _level2TaskSpritesPending.Length != 3)
+            Array.Resize(ref _level2TaskSpritesPending, 3);
+        if (_level2TaskSpritesDone == null || _level2TaskSpritesDone.Length != 3)
+            Array.Resize(ref _level2TaskSpritesDone, 3);
+
+        RectTransform panelRect = _level1ApdPanel.GetComponent<RectTransform>();
+        if (panelRect == null)
+            return;
+
+        float[] rowY = { -847f, -1046f, -1271f };
+        for (int i = 0; i < _level2TaskRows.Length; i++)
+        {
+            string rowName = $"Level2_Task_Row_{i + 1}";
+            Transform existing = panelRect.Find(rowName);
+            GameObject rowGo = existing != null
+                ? existing.gameObject
+                : new GameObject(rowName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+
+            RectTransform rowRect = rowGo.GetComponent<RectTransform>();
+            rowRect.SetParent(panelRect, false);
+            rowRect.anchorMin = new Vector2(0.5f, 1f);
+            rowRect.anchorMax = new Vector2(0.5f, 1f);
+            rowRect.pivot = new Vector2(0.5f, 1f);
+            rowRect.sizeDelta = new Vector2(638f, 105f);
+            rowRect.anchoredPosition3D = new Vector3(-2f, rowY[i], 11f);
+            rowRect.localScale = Vector3.one * 1.457006f;
+
+            Image row = rowGo.GetComponent<Image>();
+            row.type = Image.Type.Simple;
+            row.preserveAspect = true;
+            row.raycastTarget = false;
+            _level2TaskRows[i] = row;
+        }
+    }
+
+    private void SetLevel2TaskRowsActive(bool active)
+    {
+        if (_level2TaskRows == null)
+            return;
+
+        for (int i = 0; i < _level2TaskRows.Length; i++)
+        {
+            if (_level2TaskRows[i] != null)
+                _level2TaskRows[i].gameObject.SetActive(active);
+        }
+    }
+
+    private void RefreshLevel2TaskRows()
+    {
+        if (_levelAktif != GameLevelManager.GameLevel.Level2_DCSPrep)
+            return;
+
+        EnsureLevel2TaskRows();
+
+        bool[] done =
+        {
+            _dcsDilihat,
+            _dcsTombolDitekan,
+            _voiceReportSelesai
+        };
+
+        for (int i = 0; i < _level2TaskRows.Length; i++)
+        {
+            Image row = _level2TaskRows[i];
+            if (row == null)
+                continue;
+
+            Sprite sprite = done[i]
+                ? GetSprite(_level2TaskSpritesDone, i)
+                : GetSprite(_level2TaskSpritesPending, i);
+            row.sprite = sprite;
+            row.enabled = sprite != null;
+            row.gameObject.SetActive(true);
         }
     }
 
@@ -791,6 +978,11 @@ public class PlayerHUD : MonoBehaviour
     }
 
     private static Sprite GetApdSprite(Sprite[] sprites, int index)
+    {
+        return sprites != null && index >= 0 && index < sprites.Length ? sprites[index] : null;
+    }
+
+    private static Sprite GetSprite(Sprite[] sprites, int index)
     {
         return sprites != null && index >= 0 && index < sprites.Length ? sprites[index] : null;
     }
@@ -1014,6 +1206,16 @@ public class PlayerHUD : MonoBehaviour
             return;
 
         var lines = new List<string>();
+        if (level == GameLevelManager.GameLevel.Level2_DCSPrep)
+        {
+            txtParameterInfo.text = string.Empty;
+            if (panelOperasional != null) panelOperasional.SetActive(false);
+            if (panelWalkieTalkieHint != null) panelWalkieTalkieHint.SetActive(false);
+            SetLegacyQuestVisible(false);
+            RefreshLevel2TaskRows();
+            return;
+        }
+
         if (level == GameLevelManager.GameLevel.Level3_OreSlurry)
         {
             bool apdLapanganSiap = PhaseManager.Instance == null || PhaseManager.Instance.Level3FieldApdLengkap;
@@ -1026,9 +1228,6 @@ public class PlayerHUD : MonoBehaviour
             txtParameterInfo.text = string.Join("\n", lines);
             return;
         }
-
-        if (level == GameLevelManager.GameLevel.Level2_DCSPrep)
-            lines.Add($"{Check(_dcsDilihat)} Lihat mesin DCS");
 
         if (data.nomorTombolDCS > 0 && level != GameLevelManager.GameLevel.Level10_CCD)
             lines.Add($"{Check(_dcsTombolDitekan)} Klik tombol DCS {data.nomorTombolDCS}");
@@ -1264,6 +1463,14 @@ public class PlayerHUD : MonoBehaviour
         txtQuestLabel.textWrappingMode = TextWrappingModes.Normal;
         txtQuestLabel.overflowMode = TextOverflowModes.Overflow;
         txtQuestLabel.alignment = TextAlignmentOptions.TopLeft;
+
+        if (_levelAktif == GameLevelManager.GameLevel.Level2_DCSPrep &&
+            _level1ApdPanel != null &&
+            _level1ApdPanel.activeInHierarchy &&
+            _level1ApdMission != null)
+        {
+            _level1ApdMission.text = teks;
+        }
     }
 
     private void SetTaskDone(TextMeshProUGUI txt)
